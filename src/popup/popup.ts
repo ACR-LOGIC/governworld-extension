@@ -921,12 +921,23 @@ function hideDocProgress(): void {
   if (progress) progress.hidden = true;
 }
 
+/**
+ * True when the worker reported that a redaction could NOT be verified.
+ *
+ * `renderDocStage` surfaces that as an error, but the subsequent
+ * `POPUP_DOC_DONE` used to overwrite it with a plain success line — so a file
+ * whose boxes were measured as uncovered was reported to the user as safely
+ * redacted. The failure must survive the success message.
+ */
+let docVerificationProblem = false;
+
 function renderDocStage(message: Extract<PopupFromWorker, { type: "POPUP_DOC_STATUS" }>): void {
   const progress = document.getElementById("doc-progress") as HTMLDivElement | null;
   const progressText = document.getElementById("doc-progress-text") as HTMLSpanElement | null;
   if (!progress) return;
 
   if (message.problem) {
+    docVerificationProblem = true;
     setDocStatus(message.problem, true);
     return;
   }
@@ -953,6 +964,9 @@ function resetDocStages(): void {
   const progressText = document.getElementById("doc-progress-text") as HTMLSpanElement | null;
   if (progress) progress.hidden = true;
   if (progressText) progressText.textContent = t(currentLang, "doc_processing");
+  // Cleared per run: otherwise one unverified redaction would suppress the
+  // success message of every later, correctly verified one.
+  docVerificationProblem = false;
 }
 
 const overlayRedrawers: (() => void)[] = [];
@@ -2820,7 +2834,13 @@ export async function initPopup(): Promise<void> {
           finishWith(t(current.language, "doc_save_failed", { name: message.outputName }), true);
         }
       } else {
-        finishWith(`Saved ${message.outputName}. The original file was not changed.`, false);
+        // A verification failure is reported above as an error, but this success
+        // line would immediately replace it — leaving the user believing a file
+        // whose boxes were measured as uncovered was safely redacted. The failure
+        // is the more important message, so it wins.
+        if (!docVerificationProblem) {
+          finishWith(`Saved ${message.outputName}. The original file was not changed.`, false);
+        }
       }
 
       // Offer the print view only when the worker actually staged verified

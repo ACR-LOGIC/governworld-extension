@@ -9,7 +9,11 @@ import type { Rect } from "../shared/types.js";
  * or server state, and is always removed when the scan session ends.
  */
 
-interface OverlayRect extends Rect {
+/**
+ * One painted rectangle. Exported so callers describe overlays with a real type
+ * rather than an inline literal that can drift from the one used here.
+ */
+export interface OverlayRect extends Rect {
   kind: "highlight" | "mask";
   label: string;
   /** When set, the mask block renders this label in white on top (e.g. [SSN]). */
@@ -45,7 +49,19 @@ export function createOverlay(root: Document): OverlayController {
     pointerEvents: "none",
   } as Partial<CSSStyleDeclaration>);
 
-  const shadow = host.attachShadow({ mode: "open" });
+  // CLOSED, not open. With an open root, page JavaScript could read every mask
+  // rect, its category and its label straight out of `host.shadowRoot` — which
+  // hands a third-party script a map of exactly where the PII on this page is,
+  // a disclosure the user never agreed to and cannot see. It could also remove
+  // the host and present the user with an unmasked page while the extension still
+  // reported masks applied, which is the false assurance this tool exists to
+  // avoid.
+  //
+  // Closing the root costs nothing here: `layer` is captured below, so painting
+  // never goes back through the host. The host element itself stays in the light
+  // DOM and keeps `data-gw-scan-overlay`, which is what lets the test harnesses
+  // confirm the overlay exists without being able to read inside it.
+  const shadow = host.attachShadow({ mode: "closed" });
   const layer = root.createElement("div");
   Object.assign(layer.style, {
     position: "fixed",

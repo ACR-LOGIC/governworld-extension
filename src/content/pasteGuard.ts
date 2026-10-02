@@ -180,6 +180,21 @@ export interface PasteGuardDialogCallbacks {
 export interface ActiveDialogHandle {
   host: HTMLElement;
   close: () => void;
+  /**
+   * Invoke a dialog action by its stable id (`gw-btn-sanitize`, `gw-btn-raw`,
+   * `gw-btn-cancel`).
+   *
+   * Exists because the shadow root is CLOSED. The tests need to drive the
+   * dialog the way a user does — clicking a real button — and they used to do it
+   * by walking `host.shadowRoot`, which is exactly the reachability that let
+   * page JavaScript read the dialog and force "Paste Unchanged". This exposes the
+   * three outcomes deliberately instead of the whole tree, so the tests keep
+   * testing real behaviour while page script cannot reach them.
+   *
+   * Returns false when the action is unknown, so a renamed button fails the
+   * test rather than silently passing.
+   */
+  press: (buttonId: "gw-btn-sanitize" | "gw-btn-raw" | "gw-btn-cancel") => boolean;
 }
 
 /** Stylesheet for the isolated Shadow DOM modal */
@@ -407,7 +422,15 @@ export function showPasteGuardDialog(
 
   const host = doc.createElement("div");
   host.id = "__governworld-paste-guard-host";
-  const shadow = host.attachShadow({ mode: "open" });
+  // CLOSED, not open. With an open root, page JavaScript could reach the dialog,
+  // read the match count and masked previews, and — the real risk — dispatch a
+  // click on `#gw-btn-raw` to choose "Paste Unchanged" on the user's behalf,
+  // bypassing the guard entirely without them ever seeing it.
+  //
+  // Nothing here needs the root to be reachable: the handlers below close over
+  // `btnSanitize`/`btnRaw`/`btnCancel` directly, and `shadow.activeElement` is
+  // read from the retained `shadow` reference rather than from the host.
+  const shadow = host.attachShadow({ mode: "closed" });
 
   const styleEl = doc.createElement("style");
   styleEl.textContent = MODAL_STYLES;
@@ -586,6 +609,21 @@ export function showPasteGuardDialog(
     callbacks.onCancel();
   });
 
+  // The single place a dialog action is dispatched, so `press` below and the real
+  // click handlers cannot drift apart.
+  const ACTIONS = {
+    "gw-btn-sanitize": btnSanitize,
+    "gw-btn-raw": btnRaw,
+    "gw-btn-cancel": btnCancel,
+  } as const;
+
+  const press = (buttonId: keyof typeof ACTIONS): boolean => {
+    const button = ACTIONS[buttonId];
+    if (!button) return false;
+    button.click();
+    return true;
+  };
+
   backdrop.addEventListener("click", handleBackdropClick);
   doc.addEventListener("keydown", handleKeydown, true);
 
@@ -598,7 +636,7 @@ export function showPasteGuardDialog(
     }
   }, 0);
 
-  return { host, close };
+  return { host, close, press };
 }
 
 /** Check if an element is an editable target */

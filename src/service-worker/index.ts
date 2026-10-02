@@ -688,16 +688,30 @@ async function handlePopupDocRedact(
       downloadOk = false;
     }
 
+    // The audit outcome must reflect what was actually established, not merely
+    // that bytes were produced. A redaction whose boxes were measured as NOT
+    // covered was recorded as "ok" and shown as a success, which is precisely the
+    // false all-clear this product exists to prevent. The file is still delivered
+    // — the user may want to inspect it — but the chain and the message must say
+    // it was not verified.
+    const verified = verification.verified;
+
     await clearDocSession(docId);
     // Only ship the bytes over the message port when the service-worker
     // download actually failed. Sending them unconditionally produced the file
     // twice on the happy path and pushed a full document through the extension
     // messaging channel for no reason.
     if (downloadOk) {
-      // The browser accepted the file, so the outcome is known here. Recording
-      // "ok" unconditionally would still be wrong, but this path genuinely
-      // succeeded.
-      void recordAudit({ ts: new Date().toISOString(), action: "doc_redacted", docHash, outcome: "ok" });
+      // The browser accepted the file, so delivery is known here. It still says
+      // nothing about whether the boxes were covered, which is why `verified`
+      // gates the outcome rather than the download.
+      void recordAudit({
+        ts: new Date().toISOString(),
+        action: "doc_redacted",
+        docHash,
+        outcome: verified ? "ok" : "error",
+        ...(verified ? {} : { counts: { unverified: verification.checkedRegions - verification.darkRegions } }),
+      });
       notifyPopup({ type: "POPUP_DOC_DONE", requestId, outputName, outputMimeType, printFileKey: printRef?.fileKey });
     } else {
       // The worker cannot know whether the popup's fallback download reached the
@@ -730,6 +744,32 @@ function countByCategory(findings: { category: string }[]): Record<string, numbe
   const counts: Record<string, number> = {};
   for (const f of findings) counts[f.category] = (counts[f.category] ?? 0) + 1;
   return counts;
+}
+
+/**
+ * A short token that identifies a media element by its CSS selector, using only
+ * the characters a finding id may contain.
+ *
+ * The id used to be `pdf_${cssSelector}_${findingId}`, and a cssSelector
+ * legitimately contains `>`, `[`, `]`, `"`, `#`, `.` and `:`. None are permitted
+ * by `FINDING_ID_RE`, and finding validation is all-or-nothing, so one such id
+ * made the entire `POPUP_STATE` invalid. The popup dropped it silently, and
+ * because the bad id was persisted into the session first, every later
+ * `POPUP_GET_STATE` for that tab was rejected too — so the tab stopped receiving
+ * state updates at all.
+ *
+ * A hash is used rather than a stripped selector because stripping characters
+ * would collide two distinct elements into one id, and ids must stay unique per
+ * finding. Deterministic, so the same element always yields the same id across
+ * runs and the mapping remains explainable.
+ */
+function selectorToken(selector: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < selector.length; i += 1) {
+    h ^= selector.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return `e${h.toString(36)}`;
 }
 
 /**
@@ -890,7 +930,7 @@ async function handleContentScanResult(message: Extract<WorkerMessage, { type: "
                 if (meetsThreshold(settings, f.category, f.confidence)) {
                   newFindings.push({
                     ...f,
-                    id: `pdf_${item.cssSelector}_${f.id}`,
+                    id: `pdf_${selectorToken(item.cssSelector)}_${f.id}`,
                     source: "local-rules",
                     selected: false,
                   });

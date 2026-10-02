@@ -32,6 +32,8 @@ let clearAllFilesCalls = 0;
 
 let downloadShouldFail = false;
 let redactShouldThrow = false;
+/** Flips the pipeline's verification result, so the unverified path can be tested. */
+let verificationShouldFail = false;
 /** Swapped in by the large-artifact test so the encoder faces real pressure. */
 let largeArtifact: Uint8Array | null = null;
 
@@ -53,13 +55,21 @@ vi.mock('../src/service-worker/documents.js', () => ({
       outputName: 'report-redacted.pdf',
       outputBytes: largeArtifact ?? FAKE_ARTIFACT,
       outputMimeType: 'application/pdf',
-      verification: {
-        verified: true,
-        darkRegions: 1,
-        checkedRegions: 1,
-        method: 'saved-file' as const,
-        failures: []
-      },
+      verification: verificationShouldFail
+        ? {
+            verified: false,
+            darkRegions: 0,
+            checkedRegions: 1,
+            method: 'page-pixels' as const,
+            failures: ['page 1: region at 10,20 is only 0.0% covered']
+          }
+        : {
+            verified: true,
+            darkRegions: 1,
+            checkedRegions: 1,
+            method: 'saved-file' as const,
+            failures: []
+          },
       redactedRegions: 1
     };
   },
@@ -163,6 +173,7 @@ describe('document redaction audit integrity', () => {
     auditRecords.length = 0;
     downloadShouldFail = false;
     redactShouldThrow = false;
+    verificationShouldFail = false;
   });
 
   it('records outcome "ok" when the download actually succeeded', async () => {
@@ -181,6 +192,40 @@ describe('document redaction audit integrity', () => {
     // The defect recorded "ok" here. A failed delivery must never be logged as
     // a success inside a cryptographically signed audit chain.
     expect(redactAudit()!.outcome).not.toBe('ok');
+    expect(redactAudit()!.outcome).toBe('error');
+  });
+
+  it('does NOT claim success when the redaction could not be verified', async () => {
+    // Producing bytes is not the same as redacting. The pipeline measures each
+    // box after painting it, and reports `verified: false` when a box was found
+    // uncovered. Recording that as outcome "ok" inside a cryptographically signed
+    // chain asserted a safe redaction that had demonstrably failed — and the file
+    // was still handed to the user.
+    verificationShouldFail = true;
+    await invoke(REDACT_REQUEST, SENDER);
+    expect(redactAudit(), 'a doc_redacted audit record must be emitted').toBeDefined();
+    expect(redactAudit()!.outcome).not.toBe('ok');
+    expect(redactAudit()!.outcome).toBe('error');
+  });
+
+  it('still tells the popup the verification failed', async () => {
+    // The popup shows the problem in POPUP_DOC_STATUS; without it the user would
+    // only ever see the download succeeding.
+    verificationShouldFail = true;
+    await invoke(REDACT_REQUEST, SENDER);
+    const status = runtimeSent.find(
+      (m) => m.type === 'POPUP_DOC_STATUS' && (m as Record<string, unknown>).problem
+    ) as Record<string, unknown> | undefined;
+    expect(status, 'no status message carried a verification problem').toBeDefined();
+    expect(String(status!.problem)).toMatch(/only 0\.0% covered/);
+  });
+
+  it('records ok when the redaction is verified even if delivery later fails', async () => {
+    // The inverse guard: the outcome must be driven by verification and delivery
+    // together, so fixing the defect must not have made every failure "error".
+    downloadShouldFail = true;
+    await invoke(REDACT_REQUEST, SENDER);
+    await invoke({ type: 'POPUP_DOC_DELIVERY_REPORT', requestId: 'req-redact', delivered: false }, SENDER);
     expect(redactAudit()!.outcome).toBe('error');
   });
 

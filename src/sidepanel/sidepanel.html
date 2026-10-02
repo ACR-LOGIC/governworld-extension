@@ -469,7 +469,7 @@
             <fieldset id="category-list" class="category-fieldset">
               <legend data-i18n="categories_label">Protection Categories</legend>
             </fieldset>
-            <p class="footnote" data-i18n="threshold_disclosure">Detection thresholds are applied automatically by the selected compliance preset. Switch to Custom to choose individual categories.</p>
+            <p class="footnote" data-i18n="threshold_disclosure">Compliance presets choose which categories are detected. Every finding above a category's confidence threshold is reported; nothing is silently discarded.</p>
           <label class="toggle-row">
             <input id="placeholder-toggle" type="checkbox" role="switch" aria-checked="false" />
             <span data-i18n="placeholder_toggle">Show redaction labels</span>
@@ -685,10 +685,11 @@
               a new file. Your original is never modified. Every stage of that happens on your device.
             </p>
             <p class="footnote">
-              Detection is deterministic pattern matching across 20 categories, with a configurable per-category
-              confidence threshold and compliance presets to set those thresholds for you. Findings are shown as
-              masked previews so the extension can help you without displaying your secrets in the clear, which
-              is a privacy feature and also a reason to verify anything important against the source.
+              Detection is deterministic pattern matching across 20 categories, with per-category confidence
+              thresholds you can configure and compliance presets to set the categories each regime cares about.
+              Findings are shown as masked previews so the extension can help you without displaying your secrets
+              in the clear, which is a privacy feature and also a reason to verify anything important against the
+              source.
             </p>
           </div>
 
