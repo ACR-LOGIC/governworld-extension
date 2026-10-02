@@ -319,6 +319,44 @@ describe("label-bound identifiers no longer mask ordinary prose", () => {
   });
 });
 
+describe("uppercase-only identifiers survive a lowercase render", () => {
+  // DEA, MBI and Indian PAN are uppercase by specification, but OCR and PDF text
+  // layers routinely emit them lowercase. Matching case-sensitively meant a
+  // prescriber's DEA number on a scanned referral letter was not detected at all
+  // — the exact documents this tool exists to protect were the ones missed.
+  // The validators still enforce the real uppercase format; detection just stops
+  // requiring the scan to have got the casing right.
+
+  it("detects a lowercase DEA number", () => {
+    expect(values("dea ab1234563", "dea")).toEqual(["ab1234563"]);
+    expect(values("DEA AB1234563", "dea")).toEqual(["AB1234563"]);
+  });
+
+  it("detects a lowercase MBI after its label", () => {
+    const mbi = "1eg4-te5-mk73";
+    expect(values(`MBI: ${mbi}`, "mbi")).toEqual([mbi]);
+  });
+
+  it("detects a lowercase Indian PAN", () => {
+    expect(values("pan abcpk1234a", "pan_india")).toEqual(["abcpk1234a"]);
+  });
+
+  it("reports the value as it appears, not the uppercased copy", () => {
+    // The finding must map back to the original text, or the mask lands on the
+    // wrong span and the real value stays visible.
+    const text = "dea ab1234563";
+    const finding = run(text).find((m) => m.category === "dea");
+    expect(finding && text.slice(finding.start, finding.end)).toBe("ab1234563");
+  });
+
+  it("still rejects values that are invalid in any casing", () => {
+    // Case tolerance must not weaken the format check. These fail `isValidDea`
+    // (Q is not a registrant code, AB1234567 is one digit short).
+    expect(values("dea qb1234563", "dea")).toEqual([]);
+    expect(values("dea ab123456", "dea")).toEqual([]);
+  });
+});
+
 describe("the SSN cue requires the full phrase", () => {
   it("does not fire on the bare word 'social'", () => {
     expect(values("Join our social 123456789 community", "ssn")).toEqual([]);

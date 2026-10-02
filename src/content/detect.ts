@@ -421,8 +421,9 @@ function detectAadhaar(text: string): RawMatch[] {
   return out;
 }
 
-// Indian PAN
-const PAN_INDIA_RE = /\b[A-Z]{5}\d{4}[A-Z]\b/g;
+// Indian PAN. `isValidPanIndia` uppercases its input, so matching case-insensitively
+// costs nothing and catches a PAN that OCR or a PDF text layer rendered in lowercase.
+const PAN_INDIA_RE = /\b[A-Za-z]{5}\d{4}[A-Za-z]\b/g;
 const PAN_INDIA_CUE_RE = /\b(?:pan(?:\s*(?:card|number|no|#))?|permanent\s+account\s+number)\b/i;
 
 function detectPanIndia(text: string): RawMatch[] {
@@ -631,12 +632,21 @@ function detectNpis(text: string): RawMatch[] {
   return out;
 }
 
-const DEA_RE = /\b[A-Z]{2}\d{7}\b/g;
+/**
+ * DEA, PAN-India and MBI are uppercase-only by specification, but OCR routinely
+ * emits them in lowercase — especially from a scan or a PDF text layer.
+ *
+ * These detectors match case-insensitively and then validate an UPPERCASE copy,
+ * so a lowercase scan is caught while the validator keeps enforcing the real
+ * format. The reported offsets still refer to the original text, so the value
+ * masked is the one on the page.
+ */
+const DEA_RE = /\b[A-Za-z]{2}\d{7}\b/g;
 
 function detectDeas(text: string): RawMatch[] {
   const out: RawMatch[] = [];
   for (const m of text.matchAll(DEA_RE)) {
-    if (!isValidDea(m[0])) continue;
+    if (!isValidDea(m[0].toUpperCase())) continue;
     out.push({ category: "dea", confidence: 0.9, value: m[0], start: m.index, end: m.index + m[0].length });
   }
   return out;
@@ -644,7 +654,7 @@ function detectDeas(text: string): RawMatch[] {
 
 const MBI_LABEL_RE =
   /\b(?:mbi|medicare(?:\s+beneficiary)?(?:\s+(?:id|identifier|number))?|hicn)\s*[:#]?\s*(?=\S)/gi;
-const MBI_RUN_RE = /\b[A-Z0-9]{11}\b|\b[A-Z0-9]{4}-[A-Z0-9]{3}-[A-Z0-9]{4}\b/g;
+const MBI_RUN_RE = /\b[A-Za-z0-9]{11}\b|\b[A-Za-z0-9]{4}-[A-Za-z0-9]{3}-[A-Za-z0-9]{4}\b/g;
 
 function detectMbis(text: string): RawMatch[] {
   const out: RawMatch[] = [];
@@ -654,7 +664,7 @@ function detectMbis(text: string): RawMatch[] {
     const idMatch = rest.match(MBI_RUN_RE);
     if (!idMatch) continue;
     const rawId = idMatch[0];
-    if (!isValidMbi(rawId)) continue;
+    if (!isValidMbi(rawId.toUpperCase())) continue;
     const idStart = idMatch.index ?? 0;
     out.push({
       category: "mbi",
