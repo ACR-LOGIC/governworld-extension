@@ -21,12 +21,15 @@ import {
   submitLogic,
   getCachedCapabilities,
 } from "../api/index.js";
+import type { AuthTokens } from "../api/types.js";
 import {
   generateOAuthState,
   verifyOAuthState,
   buildAuthorizeUrl,
   exchangeCodeForTokens,
 } from "../api/auth.js";
+import { buildAccountView, parseAccountView, NO_ACCOUNT } from "../shared/account.js";
+import type { AccountView } from "../shared/account.js";
 import {
   loadCustomPatterns,
   saveCustomPattern,
@@ -1038,6 +1041,14 @@ interface StoredAccount {
   gatewayOrigin: string;
   linked: boolean;
   accountLabel?: string;
+  /**
+   * Organization identity from the last verified bootstrap.
+   *
+   * Cached non-secret data only. It is re-derived from the server on every
+   * connection and is never the basis for an authorization decision on its own —
+   * `saveAccount` re-checks the role before writing, and the API is authoritative.
+   */
+  account?: AccountView;
 }
 
 /** Account link status (metadata) + live-credential availability (session). */
@@ -1048,6 +1059,8 @@ interface AccountState {
   accountLabel?: string;
   /** A live credential is present in chrome.storage.session this browser session. */
   credentialAvailable: boolean;
+  /** Server-decided identity, or the disconnected view when there is none. */
+  account: AccountView;
 }
 
 async function readAccountMetadata(): Promise<StoredAccount | null> {
@@ -1070,6 +1083,10 @@ async function readAccount(): Promise<AccountState> {
     gatewayOrigin: metadata?.gatewayOrigin ?? null,
     accountLabel: metadata?.accountLabel,
     credentialAvailable: credential !== null,
+    // Re-validated on read. A cached view that fails validation — a shape from an
+    // older build, or hand-edited local storage — resolves to the disconnected
+    // view, so a tampered cache cannot present an admin identity.
+    account: parseAccountView(metadata?.account) ?? NO_ACCOUNT,
   };
 }
 
@@ -1083,6 +1100,7 @@ async function notifyAccountState(requestId: string, error?: { code: string; use
     linked: account.linked,
     credentialAvailable: account.credentialAvailable,
     ...(account.accountLabel !== undefined ? { accountLabel: account.accountLabel } : {}),
+    account: account.account,
     ...(error ? { error } : {}),
   });
 }
@@ -1125,6 +1143,22 @@ async function saveAccount(gatewayOrigin: string, apiKey: string, requestId: str
     await notifyAccountState(requestId, {
       code: "GATEWAY_ORIGIN_NOT_ALLOWED",
       userMessage: "Use an approved GovernWorld gateway origin.",
+    });
+    return;
+  }
+  // Enforced here as well as in the UI.
+  //
+  // Organization settings are a privileged surface, and a hidden form is not a
+  // control: the message that drives this save is still reachable from the popup,
+  // the sidepanel and any other extension context. The API rejects a non-admin
+  // write regardless, so this is defence in depth for the local write, which the
+  // API never sees.
+  const current = await readAccount();
+  if (current.account.connected && !current.account.canManage) {
+    await notifyAccountState(requestId, {
+      code: "ORG_SETTINGS_FORBIDDEN",
+      userMessage:
+        "You don't have access to this page, please reach out to your organization admins for more information. This is managed by your organization.",
     });
     return;
   }
@@ -1745,12 +1779,30 @@ async function handleOAuthCallback(code: string, state: string, requestId: strin
     });
     return;
   }
+  // The identity read once and used for both the session metadata and the cached
+  // account view, so the two can never disagree.
+  const userEmail = tokensUserEmail(result.tokens);
   await saveAuthSession(result.tokens, {
     connected: true,
+    ...(userEmail !== null ? { user_email: userEmail } : {}),
     tenant_id: bootstrap.tenant.tenant_id,
     tenant_name: bootstrap.tenant.tenant_name,
     connected_at: new Date().toISOString(),
   });
+  // Cache the identity so the popup can render account, organization, role and
+  // subscription on open without a second round trip. Re-derived here from the
+  // verified bootstrap, and re-validated on every read.
+  const view = buildAccountView({
+    connected: true,
+    userEmail,
+    tenant: bootstrap.tenant,
+    entitlements: bootstrap.entitlements,
+    capabilities: bootstrap.capabilities,
+  });
+  const metadata = await readAccountMetadata();
+  if (metadata) {
+    await chrome.storage.local.set({ [ACCOUNT_KEY]: { ...metadata, account: view } });
+  }
   notifyPopup({
     type: "POPUP_OAUTH_STATUS",
     requestId,
@@ -1760,6 +1812,31 @@ async function handleOAuthCallback(code: string, state: string, requestId: strin
     apiUrl: await getApiUrl(),
     capabilities: bootstrap.capabilities ?? [],
   });
+  await notifyAccountState(requestId);
+}
+
+/**
+ * Non-secret user identity carried alongside the access token.
+ *
+ * Read from the JWT `email` claim WITHOUT verifying the signature. That is safe
+ * here and only here: the value came over TLS from the gateway we just exchanged a
+ * code with, it is displayed, and `canManage` is derived from `tenant.roles` in the
+ * bootstrap body rather than from any claim. A forged claim could therefore
+ * mislabel whose account is on screen, never grant access.
+ */
+function tokensUserEmail(tokens: AuthTokens): string | null {
+  const parts = tokens.access_token.split(".");
+  if (parts.length !== 3) return null;
+  try {
+    const payload = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const decoded = atob(payload.padEnd(payload.length + ((4 - (payload.length % 4)) % 4), "="));
+    const claims: unknown = JSON.parse(decoded);
+    if (typeof claims !== "object" || claims === null) return null;
+    const email = (claims as Record<string, unknown>).email;
+    return typeof email === "string" && email.length > 0 && email.length <= 320 ? email : null;
+  } catch {
+    return null;
+  }
 }
 
 async function handleApiSyncPolicy(requestId: string): Promise<void> {

@@ -11,6 +11,8 @@ import { isPageImageKey, isPreviewKey } from "./docStore.js";
 import { parseCustomPattern } from "./customPatterns.js";
 import type { CustomPattern } from "./customPatterns.js";
 import type { FindingCategory, PopupState } from "./types.js";
+import type { AccountView } from "./account.js";
+import { parseAccountView } from "./account.js";
 import type { PatternTestResult, WizardAnalysis } from "./wizardAnalyzer.js";
 
 export type ValidationResult =
@@ -765,6 +767,15 @@ export function validateMessage(raw: unknown): ValidationResult {
         return { ok: false, error: "Invalid credentialAvailable" };
       }
       if (raw.accountLabel !== undefined && typeof raw.accountLabel !== "string") return { ok: false, error: "Invalid accountLabel" };
+      let account: AccountView | undefined;
+      if (raw.account !== undefined) {
+        const parsed = parseAccountView(raw.account);
+        // Reject rather than coerce. A malformed identity is dropped entirely so
+        // the popup renders the disconnected wall, which is the safe outcome; a
+        // coerced partial account could show a role that was never granted.
+        if (!parsed) return { ok: false, error: "Invalid account" };
+        account = parsed;
+      }
       let error: { code: string; userMessage: string } | undefined;
       if (raw.error !== undefined) {
         if (!isRecord(raw.error) || typeof raw.error.code !== "string" || typeof raw.error.userMessage !== "string") {
@@ -781,6 +792,7 @@ export function validateMessage(raw: unknown): ValidationResult {
           linked: raw.linked,
           ...(raw.credentialAvailable !== undefined ? { credentialAvailable: raw.credentialAvailable as boolean } : {}),
           ...(raw.accountLabel !== undefined ? { accountLabel: raw.accountLabel } : {}),
+          ...(account ? { account } : {}),
           ...(error ? { error } : {}),
         },
       };

@@ -4,7 +4,17 @@
  * Centralizes endpoints, installation identification, and transport security checks.
  */
 
-export const DEFAULT_PROD_API_URL = "https://api.governworld.com";
+/**
+ * Production gateway.
+ *
+ * This must be the same host as `ALLOWED_GATEWAY_HOSTS` in `shared/settings.ts`.
+ * They were out of sync — the default resolved to a host the allowlist rejects,
+ * so a user who connected and then stored the default origin was silently refused,
+ * and a self-hosted-looking deployment could be pointed at a host that was never
+ * allowed anyway. `tests/api-url-parity.test.ts` now asserts they match, so the
+ * two cannot drift apart again.
+ */
+export const DEFAULT_PROD_API_URL = "https://api.governworld.acrlogic.com";
 export const DEFAULT_DEV_API_URL = "http://127.0.0.1:8000";
 export const CURRENT_EXTENSION_VERSION = "0.1.1";
 

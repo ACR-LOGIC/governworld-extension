@@ -30,6 +30,7 @@ import {
 import { recordAudit } from "../shared/audit.js";
 import { BUNDLED_OCR_LANGUAGES } from "../shared/ocrLanguages.js";
 import { t, getCategoryLabel, getPresetLabel } from "../shared/i18n.js";
+import type { AccountView } from "../shared/account.js";
 import type {
   DocKind,
   Finding,
@@ -256,6 +257,9 @@ export function speakAnnouncement(text: string, settings?: Settings): void {
 
 export function applyUiLanguage(lang: LanguageCode): void {
   currentLang = lang;
+  // Kept in sync so a synchronous renderer (the account surface) reads the same
+  // language instead of falling back to English.
+  uiLanguage = lang;
   document.documentElement.lang = lang;
   document.querySelectorAll<HTMLElement>("[data-i18n]").forEach((element) => {
     const key = element.getAttribute("data-i18n");
@@ -931,6 +935,20 @@ function hideDocProgress(): void {
  */
 let docVerificationProblem = false;
 
+/**
+ * Last known UI language, so a synchronous render never has to await settings.
+ *
+ * `t()` already falls back to English for an unknown key, so the initial value is
+ * safe. `initPopup` sets the real value once storage resolves, and the account
+ * surface re-renders whenever a message arrives.
+ */
+let uiLanguage: LanguageCode = "en";
+
+/** Current UI language, or "en" before settings have loaded. */
+function accountLanguage(): LanguageCode {
+  return uiLanguage;
+}
+
 function renderDocStage(message: Extract<PopupFromWorker, { type: "POPUP_DOC_STATUS" }>): void {
   const progress = document.getElementById("doc-progress") as HTMLDivElement | null;
   const progressText = document.getElementById("doc-progress-text") as HTMLSpanElement | null;
@@ -1493,6 +1511,7 @@ export async function initPopup(): Promise<void> {
 
   const settings = await loadSettings();
   currentLang = settings.language;
+  uiLanguage = settings.language;
   applyUiLanguage(settings.language);
   applyAccessibilitySettings(settings);
   await refreshProtectionStatus();
@@ -2286,6 +2305,73 @@ export async function initPopup(): Promise<void> {
   const oauthConnectBtn = document.getElementById("oauth-connect-btn") as HTMLButtonElement | null;
   const oauthStatus = document.getElementById("oauth-status") as HTMLParagraphElement | null;
 
+  const accountIdentity = document.getElementById("account-identity");
+  const accountEmail = document.getElementById("account-email") as HTMLParagraphElement | null;
+  const accountOrg = document.getElementById("account-org") as HTMLParagraphElement | null;
+  const accountRole = document.getElementById("account-role") as HTMLParagraphElement | null;
+  const accountPlan = document.getElementById("account-plan") as HTMLParagraphElement | null;
+  const accountManagedNote = document.getElementById("account-managed-note");
+  const orgSettings = document.getElementById("org-settings");
+  const orgSettingsWall = document.getElementById("org-settings-wall");
+
+  const ROLE_LABEL_KEYS = {
+    owner: "account_role_owner",
+    admin: "account_role_admin",
+    member: "account_role_member",
+    viewer: "account_role_viewer",
+  } as const;
+  const TIER_LABEL_KEYS = {
+    free: "account_plan_free",
+    pro: "account_plan_pro",
+    enterprise: "account_plan_enterprise",
+  } as const;
+
+  /**
+   * Render the account surface for the current identity.
+   *
+   * Three states, chosen once here so every element agrees:
+   *   signed out  → nothing shown; the connect button is the only affordance
+   *   admin/owner → identity, subscription, and the editable settings form
+   *   member      → identity, subscription, and the wall
+   *
+   * `canManage` arrives already re-derived in `shared/account.ts` from the
+   * server-verified role. It is deliberately not recomputed here, and the worker
+   * refuses the save regardless — this only decides what is on screen.
+   */
+  function renderAccountView(view: AccountView | undefined | null): void {
+    // Language is read from the same source every other renderer uses. The account
+    // surface must not fall back to English just because it renders before
+    // `initPopup` has finished loading settings.
+    const language = accountLanguage();
+    const connected = view?.connected === true;
+
+    if (accountIdentity) accountIdentity.hidden = !connected;
+    if (accountEmail) accountEmail.textContent = connected ? (view?.userEmail ?? "—") : "";
+
+    if (accountOrg) {
+      // tenantName is server text, so it is assigned as textContent and never
+      // interpolated into markup.
+      accountOrg.textContent = connected ? (view?.tenantName ?? view?.tenantId ?? "—") : "";
+    }
+
+    if (accountRole) {
+      const role = view?.role ?? null;
+      accountRole.textContent = connected
+        ? t(language, role ? ROLE_LABEL_KEYS[role] : "account_role_unknown")
+        : "";
+    }
+
+    if (accountPlan) {
+      accountPlan.textContent = connected ? t(language, TIER_LABEL_KEYS[view?.tier ?? "free"]) : "";
+    }
+
+    const canManage = connected && view?.canManage === true;
+    if (orgSettings) orgSettings.hidden = !canManage;
+    if (orgSettingsWall) orgSettingsWall.hidden = !connected || canManage;
+    if (accountManagedNote) accountManagedNote.hidden = !canManage;
+  }
+  renderAccountView(null);
+
   oauthConnectBtn?.addEventListener("click", () => {
     if (oauthStatus) oauthStatus.textContent = "Opening GovernWorld sign-in…";
     void chrome.runtime.sendMessage({
@@ -2888,6 +2974,7 @@ export async function initPopup(): Promise<void> {
           accountStatus.textContent = message.error.userMessage;
           return;
         }
+        renderAccountView(message.account);
         if (message.linked) {
           if (originInput) originInput.value = message.gatewayOrigin ?? "";
           if (keyInput) keyInput.value = "";

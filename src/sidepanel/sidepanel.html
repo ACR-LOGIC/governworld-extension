@@ -358,6 +358,30 @@
       <div class="settings-pages">
         <div class="settings-page settings-page--active" id="settings-page-profile" data-settings-page="profile">
           <h3 data-i18n="profile_title">Profile</h3>
+
+          <!-- Signed-in identity. Populated from the server-verified bootstrap
+               result; every value here is display-only and non-secret. -->
+          <div id="account-identity" hidden>
+            <div class="form-row">
+              <label data-i18n="account_email_label">Account</label>
+              <p id="account-email" class="footnote"></p>
+            </div>
+            <div class="form-row">
+              <label data-i18n="account_org_label">Organization</label>
+              <p id="account-org" class="footnote"></p>
+            </div>
+            <div class="form-row">
+              <label data-i18n="account_role_label">Role</label>
+              <p id="account-role" class="footnote"></p>
+            </div>
+            <div class="form-row">
+              <label data-i18n="account_plan_label">Subscription</label>
+              <p id="account-plan" class="footnote"></p>
+            </div>
+            <p id="account-managed-note" class="footnote" hidden data-i18n="account_managed_note">You can view and change organization settings.</p>
+            <hr class="section-divider" />
+          </div>
+
           <div class="form-row">
             <label data-i18n="account_status_label">Account status</label>
             <p class="footnote" data-i18n="local_user">Local user — no account required</p>
@@ -368,18 +392,35 @@
             <p id="oauth-status" class="footnote" role="status" aria-live="polite"></p>
           </div>
           <hr class="section-divider" />
-          <div class="form-row">
-            <label data-i18n="gateway_origin_label">Gateway origin</label>
-            <input id="gateway-origin-input" type="url" inputmode="url" autocomplete="off" placeholder="https://api.example.com" />
+
+          <!-- Organization settings. Hidden entirely for members: a member sees
+               the wall below instead, so they are told the page exists and is
+               managed elsewhere rather than left wondering. The wall is
+               presentation only — the worker refuses the operation regardless. -->
+          <div id="org-settings" hidden>
+            <h4 data-i18n="org_settings_title">Organization Settings</h4>
+            <p class="footnote" data-i18n="org_settings_intro">These settings apply to everyone using GovernWorld in your organization.</p>
+            <div class="form-row">
+              <label data-i18n="gateway_origin_label">Gateway origin</label>
+              <input id="gateway-origin-input" type="url" inputmode="url" autocomplete="off" placeholder="https://api.example.com" />
+            </div>
+            <div class="form-row">
+              <label data-i18n="api_key_label">API key</label>
+              <input id="gateway-key-input" type="password" inputmode="text" autocomplete="off" placeholder="gw_live_…" />
+            </div>
+            <div class="form-row">
+              <button id="account-save-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="save_account_btn">Save account</button>
+              <button id="account-purchase-btn" class="btn btn--primary btn--sm" type="button" hidden data-i18n="buy_addon_btn">Buy extension add-on</button>
+            </div>
           </div>
-          <div class="form-row">
-            <label data-i18n="api_key_label">API key</label>
-            <input id="gateway-key-input" type="password" inputmode="text" autocomplete="off" placeholder="gw_live_…" />
+
+          <!-- Shown instead of #org-settings for signed-in users without the
+               admin role. Announced politely so a member who navigates here
+               hears why the page is empty. -->
+          <div id="org-settings-wall" hidden>
+            <p class="footnote" data-i18n="account_managed_wall" role="note"></p>
           </div>
-          <div class="form-row">
-            <button id="account-save-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="save_account_btn">Save account</button>
-            <button id="account-purchase-btn" class="btn btn--primary btn--sm" type="button" hidden data-i18n="buy_addon_btn">Buy extension add-on</button>
-          </div>
+
           <p id="account-status" class="footnote" role="status" aria-live="polite"></p>
         </div>
 

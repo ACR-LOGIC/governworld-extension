@@ -10,6 +10,7 @@ import type { RedactionVerifyMethod } from "../document-pipeline/verify.js";
 import type { CustomPattern, CommunityAccount, CommunityRule } from "./customPatterns";
 import type { PatternTestResult, WizardAnalysis } from "./wizardAnalyzer";
 import type { ImageCandidate } from "./messages";
+import type { AccountView } from "./account";
 
 export type FindingCategory =
   | "email"
@@ -395,6 +396,17 @@ export type PopupFromWorker =
        */
       credentialAvailable?: boolean;
       accountLabel?: string;
+      /**
+       * Server-decided organization identity: who is signed in, which org and
+       * role, the subscription tier, and whether that role may change
+       * organization settings.
+       *
+       * `canManage` is derived in `shared/account.ts` from the verified
+       * bootstrap roles, never from anything the user supplied. The popup uses it
+       * to choose between the settings form and the wall, and the worker
+       * re-checks it before writing — the UI decision is not the control.
+       */
+      account?: AccountView;
       error?: { code: string; userMessage: string };
     }
   | { type: "POPUP_ACCOUNT_PURCHASE_URL"; requestId: string; url: string }
