@@ -225,7 +225,16 @@ function normalizeVisualCaptureItem(entry: unknown): import("../shared/types.js"
   if (typeof entry.cssSelector !== "string" || entry.cssSelector.length > 1024) return null;
   if (typeof entry.elementTag !== "string" || entry.elementTag.length > 64) return null;
   if (!VISIBILITY_STATES.has(entry.visibility as string)) return null;
-  if (entry.resourceUrl !== undefined && (typeof entry.resourceUrl !== "string" || !isSafeImageSrc(entry.resourceUrl) && !/\.pdf($|\?|#)/i.test(entry.resourceUrl as string))) {
+  // A PDF resource may arrive as an http(s) URL that isSafeImageSrc rejects (it
+  // is not an image), so the scheme check is applied separately rather than by
+  // loosening the image rule. The previous `|| /\.pdf/` fallback also accepted
+  // `file:///.../x.pdf`, which put the scheme decision in the hands of whatever
+  // fetched it instead of here.
+  if (
+    entry.resourceUrl !== undefined &&
+    !isSafeImageSrc(entry.resourceUrl) &&
+    !(isSafeFetchUrl(entry.resourceUrl) && /\.pdf($|\?|#)/i.test(entry.resourceUrl))
+  ) {
     return null;
   }
   if (entry.dataUrl !== undefined) {
@@ -257,16 +266,35 @@ function normalizeVisualQueue(value: unknown): import("../shared/types.js").Visu
   return out.length > 0 ? out : undefined;
 }
 
+/**
+ * Scheme check for a URL the WORKER will fetch on a page's behalf.
+ *
+ * The pdf queue takes URLs straight from page DOM and the worker then fetches
+ * them, so accepting any parseable URL gave a page an SSRF primitive: it could
+ * make the browser issue requests to `file:`, `blob:` or any intranet address
+ * (`http://169.254.169.254/...`, `http://localhost:*`), and observe the
+ * difference in behaviour. Restricting to http(s) is what `isSafeImageSrc`
+ * already does for the visual queue; this is the same rule for this queue.
+ */
+function isSafeFetchUrl(value: unknown): value is string {
+  if (typeof value !== "string" || value.length === 0 || value.length > 4096) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" || url.protocol === "http:";
+  } catch {
+    return false;
+  }
+}
+
 function normalizePdfQueue(value: unknown): import("../shared/types.js").PdfExtractRequestItem[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const out: import("../shared/types.js").PdfExtractRequestItem[] = [];
   for (const entry of value) {
     if (out.length >= 8) break;
     if (!isRecord(entry)) continue;
-    if (typeof entry.url !== "string" || entry.url.length === 0 || entry.url.length > 4096) continue;
+    if (!isSafeFetchUrl(entry.url)) continue;
     if (typeof entry.cssSelector !== "string" || entry.cssSelector.length > 1024) continue;
     if (typeof entry.isTopLevel !== "boolean") continue;
-    try { new URL(entry.url); } catch { continue; }
     out.push({ url: entry.url, cssSelector: entry.cssSelector, isTopLevel: entry.isTopLevel });
   }
   return out.length > 0 ? out : undefined;

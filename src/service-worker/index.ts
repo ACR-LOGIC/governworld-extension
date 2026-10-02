@@ -3,7 +3,7 @@ import { validateMessage, type ImageCandidate } from "../shared/messages.js";
 import { loadSettings, saveSettings, isCloudAllowed, isAllowedGatewayOrigin, meetsThreshold } from "../shared/settings.js";
 import { recordAudit, exportSignedAuditLog } from "../shared/audit.js";
 import type { Settings } from "../shared/settings.js";
-import type { DocKind, PopupState, ScanMode, WorkerMessage, ExtensionMessage, Finding, PopupFromWorker, Rect, RedactionOptions, ScanSettingsMessage } from "../shared/types.js";
+import type { DocKind, PopupState, ScanMode, WorkerMessage, ExtensionMessage, Finding, FindingCategory, PopupFromWorker, Rect, RedactionOptions, ScanSettingsMessage } from "../shared/types.js";
 import { previewDocument, redactDocument, restoreLastSession, clearSession as clearDocSession, clearAllFiles, storeFile, deleteFile, hasStagedDocument } from "./documents.js";
 import { analyzeExamples, testPattern } from "../shared/wizardAnalyzer.js";
 import { captureImage, stageCapturedImage, ImageCaptureError } from "./captureImage.js";
@@ -1292,6 +1292,30 @@ const PURGE_WAIT_MS = 5_000;
  * best-effort housekeeping, so a later success clears the condition.
  */
 /**
+ * Turn on a detection category the user just opted into by writing a rule for it.
+ *
+ * `detect()` only runs custom patterns whose category is enabled, and `custom` is
+ * deliberately absent from DEFAULT_SETTINGS: it is not a detector, it is the
+ * bucket authored rules land in. So a rule saved from the wizard — whose default
+ * category IS `custom` — was stored, listed in the UI, and then silently never
+ * executed until the user went to Detection settings and ticked a box that is
+ * easy to miss and not mentioned anywhere the wizard is. The feature advertised
+ * by the wizard did nothing by default.
+ *
+ * Saving a rule IS the user saying "detect this", so the category is enabled
+ * here. Only ever adds; an enterprise-mandated category set is not overridden,
+ * and the setting stays user-editable afterwards.
+ */
+async function enableCategoryForPattern(category: FindingCategory): Promise<void> {
+  const settings = await loadSettings();
+  if (settings.enabledCategories.includes(category)) return;
+  await saveSettings({
+    ...settings,
+    enabledCategories: [...settings.enabledCategories, category],
+  });
+}
+
+/**
  * Best-effort housekeeping: drop staged documents at a lifecycle boundary.
  *
  * It skips outright when a document is staged. The purge empties the entire
@@ -1990,8 +2014,9 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
         notifyPopup({ type: "POPUP_CUSTOM_PATTERNS_STATE", requestId: msg.requestId, patterns });
         break;
       }
-      case "POPUP_CUSTOM_PATTERN_SAVE": {
+case "POPUP_CUSTOM_PATTERN_SAVE": {
         const patterns = await saveCustomPattern(msg.pattern);
+        await enableCategoryForPattern(msg.pattern.category);
         notifyPopup({ type: "POPUP_CUSTOM_PATTERNS_STATE", requestId: msg.requestId, patterns });
         break;
       }
