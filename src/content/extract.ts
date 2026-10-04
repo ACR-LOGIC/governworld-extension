@@ -189,6 +189,17 @@ export function extractVisibleText(
         processInputElement(el as HTMLInputElement | HTMLTextAreaElement);
       }
 
+      if (tag === "slot" && typeof (el as HTMLSlotElement).assignedNodes === "function") {
+        const assigned = (el as HTMLSlotElement).assignedNodes({ flatten: true });
+        if (assigned.length > 0) {
+          for (const assignedNode of assigned) {
+            if (remaining <= 0) break;
+            traverse(assignedNode);
+          }
+          return;
+        }
+      }
+
       // Access open or closed shadow roots (using Chromium extension API if available)
       const chromeApi = (globalThis as unknown as { chrome?: { dom?: { openOrClosedShadowRoot?: (e: Element) => ShadowRoot | null } } })?.chrome;
       const shadowRoot = chromeApi?.dom?.openOrClosedShadowRoot?.(el) ?? el.shadowRoot;

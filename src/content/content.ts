@@ -246,12 +246,20 @@ if (g.__gwRedactionContentLoaded !== true) {
       if (svgSegments.length > 0) {
         const svgText = svgSegments.map((s) => s.text).join("\n");
         const svgMatches = detect(svgText, settings.enabledCategories, customPatterns);
-        // SVG findings have no DOM-range rects since they are in an SVG coordinate
-        // space. We report them as attr-style report-only findings (selected:false)
-        // but with source "local-rules" so they appear in the findings list.
         const svgOffset = combined.length + 1; // beyond the DOM scan text
         svgMatches.forEach((match, i) => {
           const value = svgText.slice(match.start, match.end);
+          let accumulated = 0;
+          const matchedRects: Rect[] = [];
+          for (const s of svgSegments) {
+            const segLen = s.text.length;
+            if (match.start < accumulated + segLen && match.end > accumulated) {
+              if (s.boundingRect.width > 0 && s.boundingRect.height > 0) {
+                matchedRects.push({ ...s.boundingRect });
+              }
+            }
+            accumulated += segLen + 1;
+          }
           findings.push({
             id: `svg_${match.category}_${match.start}_${match.end}_${i}`,
             category: match.category,
@@ -261,7 +269,7 @@ if (g.__gwRedactionContentLoaded !== true) {
             nodeId: "svg",
             startOffset: svgOffset + match.start,
             endOffset: svgOffset + match.end,
-            rects: [],
+            rects: matchedRects,
             contextPreview: maskContext(svgText.slice(Math.max(0, match.start - 80), Math.min(svgText.length, match.end + 80))),
             selected: false, // SVG findings are report-only (no DOM highlight)
           } satisfies Finding);

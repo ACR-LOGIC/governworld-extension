@@ -143,12 +143,14 @@ export function buildCanonicalDocument(options: {
 function countShadowRoots(root: Document | Element | ShadowRoot): number {
   let count = 0;
   const doc = root instanceof Document ? root : root.ownerDocument ?? root;
+  const chromeApi = (globalThis as unknown as { chrome?: { dom?: { openOrClosedShadowRoot?: (e: Element) => ShadowRoot | null } } })?.chrome;
   const walk = (node: Node) => {
     if (node.nodeType === Node.ELEMENT_NODE) {
       const el = node as Element;
-      if (el.shadowRoot) {
+      const sr = chromeApi?.dom?.openOrClosedShadowRoot?.(el) ?? el.shadowRoot;
+      if (sr) {
         count++;
-        walk(el.shadowRoot);
+        walk(sr);
       }
     }
     for (let child = node.firstChild; child; child = child.nextSibling) {
@@ -228,12 +230,14 @@ interface ShadowRootInfo {
 function collectShadowRoots(root: Document | Element | ShadowRoot): ShadowRootInfo[] {
   const roots: ShadowRootInfo[] = [];
   const doc = root instanceof Document ? root : root.ownerDocument ?? root;
+  const chromeApi = (globalThis as unknown as { chrome?: { dom?: { openOrClosedShadowRoot?: (e: Element) => ShadowRoot | null } } })?.chrome;
   const walk = (node: Node) => {
     if (node.nodeType === Node.ELEMENT_NODE) {
       const el = node as Element;
-      if (el.shadowRoot) {
+      const sr = chromeApi?.dom?.openOrClosedShadowRoot?.(el) ?? el.shadowRoot;
+      if (sr) {
         roots.push({ id: `shadow_${roots.length}`, accessible: true });
-        walk(el.shadowRoot);
+        walk(sr);
       }
     }
     for (let child = node.firstChild; child; child = child.nextSibling) {
