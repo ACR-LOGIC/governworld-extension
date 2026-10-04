@@ -43,13 +43,6 @@ const EXCLUDED_TAGS = new Set([
 ]);
 
 const EXCLUDED_AUTOCOMPLETE = new Set([
-  "cc-number",
-  "cc-exp",
-  "cc-exp-month",
-  "cc-exp-year",
-  "cc-csc",
-  "cc-name",
-  "cc-type",
   "one-time-code",
 ]);
 
@@ -92,6 +85,20 @@ export function isExcludedElement(el: Element): boolean {
 }
 
 const TRIM_RE = /^[\s\u00a0\u200b]+|[\s\u00a0\u200b]+$/g;
+
+const NON_TEXT_INPUT_TYPES = new Set([
+  "password",
+  "submit",
+  "button",
+  "image",
+  "reset",
+  "file",
+  "checkbox",
+  "radio",
+  "color",
+  "range",
+  "hidden",
+]);
 
 /**
  * Walk visible text nodes, shadow roots, and inputs in the document and produce segments.
@@ -177,13 +184,16 @@ export function extractVisibleText(
       const tag = el.tagName.toLowerCase();
       if (
         tag === "textarea" ||
-        (tag === "input" && ["text", "search", "email", "tel", "url"].includes((el as HTMLInputElement).type))
+        (tag === "input" && !NON_TEXT_INPUT_TYPES.has((el as HTMLInputElement).type?.toLowerCase() || ""))
       ) {
         processInputElement(el as HTMLInputElement | HTMLTextAreaElement);
       }
 
-      if (el.shadowRoot) {
-        traverse(el.shadowRoot);
+      // Access open or closed shadow roots (using Chromium extension API if available)
+      const chromeApi = (globalThis as unknown as { chrome?: { dom?: { openOrClosedShadowRoot?: (e: Element) => ShadowRoot | null } } })?.chrome;
+      const shadowRoot = chromeApi?.dom?.openOrClosedShadowRoot?.(el) ?? el.shadowRoot;
+      if (shadowRoot) {
+        traverse(shadowRoot);
       }
     } else if (current.nodeType === Node.TEXT_NODE) {
       const parent = current.parentElement;

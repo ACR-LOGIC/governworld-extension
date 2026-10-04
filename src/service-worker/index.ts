@@ -162,6 +162,36 @@ async function writeSession(tabId: number, state: SessionState): Promise<void> {
 
 async function clearSession(tabId: number): Promise<void> {
   await chrome.storage.session.remove(sessionKey(tabId));
+  clearBadgeForTab(tabId);
+}
+
+export function updateBadgeForTab(tabId: number, count: number): void {
+  try {
+    if (chrome.action?.setBadgeText) {
+      void chrome.action.setBadgeText({
+        tabId,
+        text: count > 0 ? (count > 99 ? "99+" : String(count)) : "",
+      }).catch(() => undefined);
+    }
+    if (chrome.action?.setBadgeBackgroundColor) {
+      void chrome.action.setBadgeBackgroundColor({
+        tabId,
+        color: count > 0 ? "#E53E3E" : "#2563EB",
+      }).catch(() => undefined);
+    }
+  } catch {
+    // Best-effort badge update
+  }
+}
+
+export function clearBadgeForTab(tabId: number): void {
+  try {
+    if (chrome.action?.setBadgeText) {
+      void chrome.action.setBadgeText({ tabId, text: "" }).catch(() => undefined);
+    }
+  } catch {
+    // Best-effort badge clear
+  }
 }
 
 export function isInternalExtensionUrl(url?: string): boolean {
@@ -830,6 +860,7 @@ async function handleContentScanResult(message: Extract<WorkerMessage, { type: "
   });
   const session = await readSession(tabId);
   notifyPopup({ type: "POPUP_STATE", requestId: pending.requestId, state: buildPopupState(settings, session) });
+  updateBadgeForTab(tabId, findings.length);
   void maybeNotifyFindings(findings);
 
   // ── Async media dispatch (Layers 2–5) ─────────────────────────────────
@@ -1393,6 +1424,7 @@ chrome.runtime.onInstalled?.addListener(() => {
 // OAuth callback capture: when the provider redirects to chromiumapp.org,
 // extract the authorization code and state, then close the tab.
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === "loading") clearBadgeForTab(tabId);
   if (!tab.url) return;
   if (!tab.url.includes(".chromiumapp.org/")) return;
   const url = new URL(tab.url);
