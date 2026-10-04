@@ -1029,6 +1029,38 @@ body[data-reduced-motion="true"] *::after {
   flex: none;
 }
 
+.header-sidepanel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--accent-soft);
+  border: 1px solid rgba(34, 211, 238, 0.3);
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  font-family: var(--sans);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  min-height: 28px;
+}
+
+.header-sidepanel-btn:hover {
+  background: rgba(34, 211, 238, 0.2);
+  border-color: var(--accent);
+  color: #ffffff;
+  transform: translateY(-1px);
+}
+
+.header-sidepanel-icon {
+  flex: none;
+}
+
+.header-sidepanel-text {
+  white-space: nowrap;
+}
+
 .mode-badge {
   font-family: var(--mono);
   font-size: 9px;
