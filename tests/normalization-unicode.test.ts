@@ -11,7 +11,8 @@ describe("normalizeUnicodeWithMapping", () => {
     const result = normalizeUnicodeWithMapping("hello world");
     expect(result.normalized).toBe("hello world");
     expect(result.changed).toBe(false);
-    expect(result.mappings.length).toBe(11);
+    // Fast path: mappings are only populated when normalization changed something.
+    expect(result.mappings.length).toBe(0);
   });
 
   it("removes zero-width characters and records mapping", () => {
@@ -21,6 +22,16 @@ describe("normalizeUnicodeWithMapping", () => {
     expect(result.mappings.length).toBe(4);
     expect(result.mappings[0].originalIndex).toBe(0);
     expect(result.mappings[1].originalIndex).toBe(2);
+  });
+
+  it("folds foreign digits to ASCII 1:1", () => {
+    const result = normalizeUnicodeWithMapping("\uFF12\uFF11\uFF19-\u0660\u0669-\u06F0\u06F9");
+    expect(result.normalized).toBe("219-09-09");
+    expect(result.changed).toBe(true);
+    // 1:1 folding: every normalized offset maps to the same original offset.
+    for (const m of result.mappings) {
+      expect(m.originalIndex).toBe(m.normalizedIndex);
+    }
   });
 
   it("replaces non-breaking spaces with regular spaces", () => {
@@ -71,7 +82,8 @@ describe("mapNormalizedToOriginalOffset", () => {
   });
 
   it("handles out-of-bounds offsets", () => {
-    const { mappings } = normalizeUnicodeWithMapping("hello");
+    // Slow path (trailing zero-width char) so mappings are populated.
+    const { mappings } = normalizeUnicodeWithMapping("hello​");
     expect(mapNormalizedToOriginalOffset(mappings, -1)).toBe(0);
     expect(mapNormalizedToOriginalOffset(mappings, 99)).toBe(4);
   });

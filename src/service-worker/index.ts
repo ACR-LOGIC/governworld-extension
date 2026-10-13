@@ -103,7 +103,7 @@ interface SessionState {
   sessionId: string;
   mode: ScanMode;
   findings: Finding[];
-  stats: { visibleChars: number; truncated: boolean; imageCandidates?: ImageCandidate[] };
+  stats: { visibleChars: number; truncated: boolean; findingsTruncated?: boolean; totalFindings?: number; imageCandidates?: ImageCandidate[] };
   scannedAt: number;
   scanning: boolean;
   /** Stack of previously-applied finding-id sets for undo. Newest last. */
@@ -324,7 +324,9 @@ function buildPopupState(
     scanning: session?.scanning ?? false,
     findings: session?.findings ?? [],
     scanned: session !== null,
-    truncated: session?.stats.truncated ?? false,
+    truncated: (session?.stats.truncated ?? false) || (session?.stats.findingsTruncated ?? false),
+    findingsTruncated: session?.stats.findingsTruncated,
+    totalFindings: session?.stats.totalFindings,
     visibleChars: session?.stats.visibleChars ?? 0,
     // Only meaningful when the scan read nothing: the page's document-sized
     // images, which the popup offers to send through the Document Studio.

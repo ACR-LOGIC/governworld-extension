@@ -27,6 +27,10 @@ import {
  */
 
 import type { CustomPattern } from "../shared/customPatterns.js";
+import {
+  normalizeUnicodeWithMapping,
+  mapNormalizedToOriginalOffset,
+} from "./normalization/unicode.js";
 import { isSafeRegex } from "../shared/wizardAnalyzer.js";
 
 export interface RawMatch {
@@ -263,6 +267,21 @@ function detectPhones(text: string): RawMatch[] {
     if (area[0] !== "2" && area[0] !== "3" && area[0] !== "4" && area[0] !== "5" && area[0] !== "6" && area[0] !== "7" && area[0] !== "8" && area[0] !== "9") continue;
     if (area[0] === "9" && area[1] === "0" && area[2] === "0") continue;
     if (exchange === "555" && digits.slice(6) === "0100") continue;
+    // A bare 10-digit run bound to an invoice/order/reference label is an
+    // identifier, not a phone number ("Invoice 9876543210"). Formatted numbers
+    // keep their phone reading: identifiers are not written as (210) 555-0107.
+    // The cue list is phone-specific and broader than the NPI non-provider
+    // list: bare "order"/"invoice" already mark a reference number.
+    const isBareRun = !/[^+\d]/.test(value);
+    if (isBareRun) {
+      const before = text.slice(Math.max(0, m.index - 48), m.index);
+      if (
+        isNonProviderBound(before) ||
+        /\b(?:invoice|order|reference|tracking|serial|confirmation|receipt|purchase\s+order|p\.?o\.?)\b/i.test(before.slice(-32))
+      ) {
+        continue;
+      }
+    }
     out.push({ category: "phone", confidence: 0.88, value, start: m.index, end: m.index + value.length });
   }
   return out;
@@ -878,7 +897,11 @@ function detectCards(text: string): RawMatch[] {
 // appear in the extracted text (e.g. "Patient name\nJane Doe"), or (b) a
 // mid-line label followed by a colon (e.g. "Patient name: Jane Doe").
 const NAME_LABEL_RE =
-  /(?<=^|\n)\b(?:patient(?:\s+name)?|member(?:\s+name)?|full\s+name|name)\s*[:.]?\s*(?=\S)|(?<![\w])\b(?:patient(?:\s+name)?|member(?:\s+name)?|full\s+name|name)\s*[:.]\s*(?=\S)/gi;
+  // A line-start label without a separator is a heading word, not a label
+  // ("Patient Intake Note" is not "Patient: <name>"). The separator is required;
+  // the name must also sit on the label's own line, since letting NAME_RE skip
+  // ahead across newlines turned later headings ("Full Name:") into "names".
+  /(?<=^|\n)\b(?:patient(?:\s+name)?|member(?:\s+name)?|full\s+name|name)\s*[:.]\s*(?=\S)|(?<![\w])\b(?:patient(?:\s+name)?|member(?:\s+name)?|full\s+name|name)\s*[:.]\s*(?=\S)/gi;
 const NAME_RE = /\b[A-Z][a-zA-Z.'-]*(?:[ \t]+[A-Z][a-zA-Z.'-]*){1,2}\b/;
 
 function detectNames(text: string): RawMatch[] {
@@ -886,7 +909,8 @@ function detectNames(text: string): RawMatch[] {
   for (const m of text.matchAll(NAME_LABEL_RE)) {
     const valueStart = m.index + m[0].length;
     const rest = text.slice(valueStart, Math.min(text.length, valueStart + 60));
-    const nameMatch = rest.match(NAME_RE);
+    const lineEnd = rest.search(/[\r\n]/);
+    const nameMatch = (lineEnd === -1 ? rest : rest.slice(0, lineEnd)).match(NAME_RE);
     if (!nameMatch) continue;
     const value = nameMatch[0];
     const nameStart = nameMatch.index ?? 0;
@@ -1012,19 +1036,35 @@ export function detect(
   enabledCategories: FindingCategory[],
   customPatterns?: CustomPattern[]
 ): RawMatch[] {
+  // Normalize once for every detector: strip zero-width obfuscation and fold
+  // foreign/compatibility digits to ASCII, so "219\u200b-09-9999" and
+  // full-width digit runs cannot evade detection. Matches are mapped back to
+  // original offsets so masks land on the real text. When nothing needed
+  // normalizing, this is a zero-cost passthrough of the previous behavior.
+  const norm = normalizeUnicodeWithMapping(text);
+  const searchText = norm.normalized;
   const all: RawMatch[] = [];
   for (const category of enabledCategories) {
     const detector = DETECTORS[category];
     if (!detector) continue;
-    for (const match of detector(text)) {
+    for (const match of detector(searchText)) {
       if (match.end <= match.start) continue;
       all.push(match);
     }
   }
   if (customPatterns && customPatterns.length > 0) {
     const activeCustomPatterns = customPatterns.filter((pattern) => enabledCategories.includes(pattern.category));
-    const customMatches = runCustomPatterns(text, activeCustomPatterns);
+    const customMatches = runCustomPatterns(searchText, activeCustomPatterns);
     all.push(...customMatches);
   }
-  return resolveOverlaps(all);
+  const resolved = resolveOverlaps(all);
+  if (!norm.changed) return resolved;
+  return resolved.map((m) => {
+    const start = mapNormalizedToOriginalOffset(norm.mappings, m.start);
+    // Exclusive end: map the last normalized char, then step past it. A naive
+    // map of m.end lands on a stripped char's slot and truncates the value.
+    const end = mapNormalizedToOriginalOffset(norm.mappings, Math.max(m.start, m.end - 1)) + 1;
+    const safeEnd = Math.max(end, start + 1);
+    return { ...m, start, end: safeEnd, value: text.slice(start, safeEnd) };
+  });
 }

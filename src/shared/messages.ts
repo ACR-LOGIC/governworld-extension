@@ -302,10 +302,12 @@ function normalizePdfQueue(value: unknown): import("../shared/types.js").PdfExtr
   return out.length > 0 ? out : undefined;
 }
 
-function normalizeScanStats(value: unknown): { visibleChars: number; attrChars?: number; truncated: boolean; startedAt?: number; finishedAt?: number; imageCandidates?: ImageCandidate[] } | null {
+function normalizeScanStats(value: unknown): { visibleChars: number; attrChars?: number; truncated: boolean; findingsTruncated?: boolean; totalFindings?: number; startedAt?: number; finishedAt?: number; imageCandidates?: ImageCandidate[] } | null {
   if (!isRecord(value) || typeof value.visibleChars !== "number" || !Number.isSafeInteger(value.visibleChars) || value.visibleChars < 0) return null;
   if (value.attrChars !== undefined && (typeof value.attrChars !== "number" || !Number.isSafeInteger(value.attrChars) || value.attrChars < 0)) return null;
   if (typeof value.truncated !== "boolean") return null;
+  if (value.findingsTruncated !== undefined && typeof value.findingsTruncated !== "boolean") return null;
+  if (value.totalFindings !== undefined && (typeof value.totalFindings !== "number" || !Number.isSafeInteger(value.totalFindings) || value.totalFindings < 0)) return null;
   if (value.startedAt !== undefined && (typeof value.startedAt !== "number" || !Number.isFinite(value.startedAt))) return null;
   if (value.finishedAt !== undefined && (typeof value.finishedAt !== "number" || !Number.isFinite(value.finishedAt))) return null;
   const imageCandidates = value.imageCandidates === undefined ? undefined : normalizeImageCandidates(value.imageCandidates);
@@ -327,6 +329,8 @@ function normalizeScanStats(value: unknown): { visibleChars: number; attrChars?:
     visibleChars: value.visibleChars,
     ...(value.attrChars !== undefined ? { attrChars: value.attrChars } : {}),
     truncated: value.truncated,
+    ...(value.findingsTruncated !== undefined ? { findingsTruncated: value.findingsTruncated } : {}),
+    ...(value.totalFindings !== undefined ? { totalFindings: value.totalFindings } : {}),
     ...(value.startedAt !== undefined ? { startedAt: value.startedAt } : {}),
     ...(value.finishedAt !== undefined ? { finishedAt: value.finishedAt } : {}),
     ...(imageCandidates ? { imageCandidates } : {}),
@@ -423,6 +427,8 @@ function isScanSettings(value: unknown): value is { enabledCategories: FindingCa
 
 function normalizePopupState(value: unknown): PopupState | null {
   if (!isRecord(value) || (value.mode !== "local" && value.mode !== "cloud") || typeof value.scanning !== "boolean" || typeof value.scanned !== "boolean" || typeof value.truncated !== "boolean" || typeof value.visibleChars !== "number" || !Number.isSafeInteger(value.visibleChars) || value.visibleChars < 0) return null;
+  if (value.findingsTruncated !== undefined && typeof value.findingsTruncated !== "boolean") return null;
+  if (value.totalFindings !== undefined && (typeof value.totalFindings !== "number" || !Number.isSafeInteger(value.totalFindings) || value.totalFindings < 0)) return null;
   const findings = normalizeFindingArray(value.findings);
   if (!findings || typeof value.consentRequired !== "boolean") return null;
   if (value.sessionId !== undefined && (typeof value.sessionId !== "string" || value.sessionId.length > 128)) return null;
@@ -438,6 +444,8 @@ function normalizePopupState(value: unknown): PopupState | null {
     findings,
     scanned: value.scanned,
     truncated: value.truncated,
+    ...(value.findingsTruncated !== undefined ? { findingsTruncated: value.findingsTruncated } : {}),
+    ...(value.totalFindings !== undefined ? { totalFindings: value.totalFindings } : {}),
     visibleChars: value.visibleChars,
     ...(imageCandidates ? { imageCandidates } : {}),
     ...(error ? { error } : {}),

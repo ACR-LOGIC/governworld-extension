@@ -133,6 +133,12 @@ export interface ScanStats {
   /** Characters of accessibility-attribute text also analyzed. */
   attrChars?: number;
   truncated: boolean;
+  /**
+   * The findings list was capped to fit the runtime message limit.
+   * totalFindings is the true match count; the popup reports partial results.
+   */
+  findingsTruncated?: boolean;
+  totalFindings?: number;
   startedAt?: number;
   finishedAt?: number;
   /**
@@ -277,6 +283,9 @@ export interface PopupState {
   findings: Finding[];
   scanned: boolean;
   truncated: boolean;
+  /** True when the findings list was capped for transport; see ScanStats. */
+  findingsTruncated?: boolean;
+  totalFindings?: number;
   visibleChars: number;
   /**
    * Document-sized images on the page, reported only when a scan read no text.

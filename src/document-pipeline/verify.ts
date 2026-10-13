@@ -28,6 +28,17 @@ export const REDACTION_WHITE_LUMINANCE = 215;
 export const REDACTION_MIN_DARK_FRACTION = 0.85;
 export const REDACTION_MIN_STAMP_FRACTION = 0.70;
 
+/**
+ * Strict coverage required for the *interior* of a redaction box (the unpadded
+ * rect shrunk past anti-aliased edges). applyBoxes paints solid fill, so the
+ * interior of a correctly applied box is uniformly covered; anything below this
+ * means content is showing through, even when the padded-box average still
+ * clears REDACTION_MIN_DARK_FRACTION. Stamp style is exempt — its interior
+ * intentionally carries the stamp text.
+ */
+export const REDACTION_MIN_INTERIOR_DARK_FRACTION = 0.99;
+const INTERIOR_INSET_PX = 2;
+
 export type RedactionVerifyMethod = "pixel" | "page-pixels";
 
 export interface RedactionVerification {
@@ -67,6 +78,11 @@ function paddedBounds(rect: Rect, padding: number, width: number, height: number
  * Only the boxed regions are read back, never the whole bitmap: a 24-megapixel
  * page is ~96MB of RGBA and reading all of it to check a few hundred boxes would
  * be both slow and a good way to get the tab killed.
+ *
+ * Two checks run per rect. The padded-box check (85%) tolerates anti-aliased
+ * edges and catches gross misplacement. The interior check (99% over the
+ * unpadded rect shrunk past the edges) catches the dangerous middle case: a box
+ * that is mostly painted yet leaves a legible strip of content visible.
  */
 export function verifyCanvasRegions(
   canvas: HTMLCanvasElement,
@@ -85,6 +101,23 @@ export function verifyCanvasRegions(
   const isStamp = options?.style === "stamp" || Boolean(options?.stampText);
   const minFraction = isStamp ? REDACTION_MIN_STAMP_FRACTION : REDACTION_MIN_DARK_FRACTION;
 
+  const coveredFraction = (data: Uint8ClampedArray): number => {
+    const pixels = data.length / 4;
+    if (pixels === 0) return 0;
+    let covered = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const luminance = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+      if (isWhiteout) {
+        if (luminance > REDACTION_WHITE_LUMINANCE || (data[i] >= 240 && data[i + 1] >= 240 && data[i + 2] >= 240)) {
+          covered += 1;
+        }
+      } else {
+        if (luminance < REDACTION_DARK_LUMINANCE) covered += 1;
+      }
+    }
+    return covered / pixels;
+  };
+
   for (const rect of rects) {
     const box = paddedBounds(rect, padding, canvas.width, canvas.height);
     if (box.width === 0 || box.height === 0) {
@@ -98,27 +131,40 @@ export function verifyCanvasRegions(
       failures.push(`${label}: could not read region at ${rect.x},${rect.y}`);
       continue;
     }
-    let covered = 0;
-    const pixels = data.length / 4;
-    for (let i = 0; i < data.length; i += 4) {
-      const luminance = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
-      if (isWhiteout) {
-        if (luminance > REDACTION_WHITE_LUMINANCE || (data[i] >= 240 && data[i + 1] >= 240 && data[i + 2] >= 240)) {
-          covered += 1;
-        }
-      } else {
-        if (luminance < REDACTION_DARK_LUMINANCE) covered += 1;
-      }
-    }
-    const fraction = pixels === 0 ? 0 : covered / pixels;
+    const fraction = coveredFraction(data);
     checked += 1;
-    if (fraction >= minFraction) {
-      dark += 1;
-    } else {
+    if (fraction < minFraction) {
       failures.push(
         `${label}: region at ${rect.x},${rect.y} is only ${(fraction * 100).toFixed(1)}% covered`
       );
+      continue;
     }
+    // Interior strict check (blackout/whiteout only): the painted fill is solid,
+    // so a sub-99% interior means content is showing through the box.
+    if (!isStamp) {
+      const ix = Math.max(0, Math.ceil(rect.x + INTERIOR_INSET_PX));
+      const iy = Math.max(0, Math.ceil(rect.y + INTERIOR_INSET_PX));
+      const iright = Math.min(canvas.width, Math.floor(rect.x + rect.width - INTERIOR_INSET_PX));
+      const ibottom = Math.min(canvas.height, Math.floor(rect.y + rect.height - INTERIOR_INSET_PX));
+      const iwidth = Math.max(0, iright - ix);
+      const iheight = Math.max(0, ibottom - iy);
+      if (iwidth > 0 && iheight > 0) {
+        try {
+          const interiorData = ctx.getImageData(ix, iy, iwidth, iheight).data;
+          const interiorFraction = coveredFraction(interiorData);
+          if (interiorFraction < REDACTION_MIN_INTERIOR_DARK_FRACTION) {
+            failures.push(
+              `${label}: interior of region at ${rect.x},${rect.y} is only ${(interiorFraction * 100).toFixed(1)}% covered — content may be visible`
+            );
+            continue;
+          }
+        } catch (error) {
+          failures.push(`${label}: could not read interior of region at ${rect.x},${rect.y}`);
+          continue;
+        }
+      }
+    }
+    dark += 1;
   }
   return { checked, dark, failures };
 }
