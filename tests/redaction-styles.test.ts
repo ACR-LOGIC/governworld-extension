@@ -251,6 +251,37 @@ describe("Post-Redaction Verification for Custom Styles", () => {
     expect(result.failures).toHaveLength(1);
     expect(result.failures[0]).toContain("is only 0.0% covered");
   });
+
+  it("fails when a legible strip remains visible inside an 85%-covered box", () => {
+    const box: Rect = { x: 20, y: 20, width: 60, height: 30 };
+    applyBoxes(canvas as unknown as HTMLCanvasElement, [box], { style: "blackout", padding: 2 });
+    // Simulate a rendering fault: a 4px horizontal strip left unpainted across
+    // the middle. Padded-box coverage is 88.2% (clears the 85% bar) but the
+    // interior is only 84.6% covered — the old check alone would pass this.
+    const setPx = (x: number, y: number, v: number) => {
+      const idx = (y * canvas.width + x) * 4;
+      canvas.pixelData[idx] = v;
+      canvas.pixelData[idx + 1] = v;
+      canvas.pixelData[idx + 2] = v;
+    };
+    for (let y = 33; y < 37; y++) {
+      for (let x = 18; x < 82; x++) setPx(x, y, 240);
+    }
+    const result = verifyCanvasRegions(canvas as unknown as HTMLCanvasElement, [box], 2, "test", { style: "blackout" });
+    expect(result.checked).toBe(1);
+    expect(result.dark).toBe(0);
+    expect(result.failures).toHaveLength(1);
+    expect(result.failures[0]).toContain("interior");
+  });
+
+  it("does not false-fail tiny boxes where no interior exists", () => {
+    const box: Rect = { x: 50, y: 50, width: 3, height: 3 };
+    applyBoxes(canvas as unknown as HTMLCanvasElement, [box], { style: "blackout", padding: 2 });
+    const result = verifyCanvasRegions(canvas as unknown as HTMLCanvasElement, [box], 2, "test", { style: "blackout" });
+    expect(result.checked).toBe(1);
+    expect(result.dark).toBe(1);
+    expect(result.failures).toHaveLength(0);
+  });
 });
 
 describe("Message contract & normalization for RedactionOptions", () => {

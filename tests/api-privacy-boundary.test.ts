@@ -10,24 +10,21 @@ import { submitLogic, validateSubmissionPayload } from "../src/api/submissions.j
 import { reportAuditEvent } from "../src/api/events.js";
 
 describe("API Privacy Boundary & Zero-Sensitive-Egress Invariants", () => {
-  const SENSITIVE_PATTERNS = [
-    /\b\d{3}-\d{2}-\d{4}\b/, // SSN
-    /\b4[0-9]{12}(?:[0-9]{3})?\b/, // Visa
-    /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/, // Email
-    /patient|diagnosis|prescription|medication|ssn|credit\s*card/i,
-  ];
+  // Concrete synthetic canaries that must never appear in any outbound payload.
+  // 219-09-9999 is a never-issued SSN, 4111111111111111 is the documented test
+  // card, and .test domains are RFC 2606 fixtures. Checking literal values
+  // (rather than regexes) keeps rule-pattern syntax such as "^EMP-[0-9]{6}$"
+  // in submissions from false-positive matching.
+  const SSN_CANARY = "219-09-9999";
+  const CARD_CANARY = "4111111111111111";
+  const EMAIL_CANARY = "canary.person@example.test";
+  const SENSITIVE_TERM_CANARY = /patient|diagnosis|prescription|medication/i;
 
   function assertNoSensitiveContent(payloadStr: string): void {
-    for (const pattern of SENSITIVE_PATTERNS) {
-      // If regex pattern syntax appears as the literal word in a regex rule, skip;
-      // but assert that raw PII instances (real emails, real SSNs, real card numbers) never appear.
-      if (pattern.source.includes("\\d{3}")) {
-        expect(payloadStr).not.toMatch(/123-45-6789/);
-      }
-      if (pattern.source.includes("Visa")) {
-        expect(payloadStr).not.toMatch(/4111111111111111/);
-      }
-    }
+    expect(payloadStr).not.toContain(SSN_CANARY);
+    expect(payloadStr).not.toContain(CARD_CANARY);
+    expect(payloadStr).not.toContain(EMAIL_CANARY);
+    expect(payloadStr).not.toMatch(SENSITIVE_TERM_CANARY);
   }
 
   beforeEach(() => {
@@ -85,6 +82,7 @@ describe("API Privacy Boundary & Zero-Sensitive-Egress Invariants", () => {
 
     expect(capturedBody).toBeDefined();
     expect(capturedBody).toBe("{}"); // Empty body on bootstrap POST
+    assertNoSensitiveContent(capturedBody!);
   });
 
   it("logic submissions transmit only regex specifications and category metadata, never raw examples", async () => {
@@ -124,6 +122,7 @@ describe("API Privacy Boundary & Zero-Sensitive-Egress Invariants", () => {
     expect(parsed.raw_examples).toBeUndefined();
     expect(parsed.document_bytes).toBeUndefined();
     expect(parsed.ocr_text).toBeUndefined();
+    assertNoSensitiveContent(capturedBody!);
   });
 
   it("audit events contain only clean diagnostic metadata and zero raw PHI/PII or OCR text", async () => {

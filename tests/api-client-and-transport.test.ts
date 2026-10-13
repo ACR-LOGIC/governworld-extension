@@ -112,4 +112,90 @@ describe("API Client & Transport Security", () => {
       expect(res.error.user_message).toContain("local protection continues normally");
     }
   });
+
+  it("times out a stalled response body, not just a stalled connection", async () => {
+    // Headers arrive promptly; the body never does. The timeout must still fire
+    // and report TIMEOUT rather than hanging forever.
+    vi.mocked(fetch).mockImplementation(async (_url, init) => {
+      const signal = init?.signal as AbortSignal | undefined;
+      const neverJson = new Promise<unknown>((_resolve, reject) => {
+        signal?.addEventListener("abort", () => {
+          const err = new Error("The operation was aborted.");
+          err.name = "AbortError";
+          reject(err);
+        });
+      });
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => "application/json" },
+        json: () => neverJson,
+        text: () => Promise.resolve(""),
+      } as unknown as Response;
+    });
+
+    const client = new GovernWorldApiClient("https://api.governworld.com");
+    const res = await client.get("/api/v1/extension/health", { timeoutMs: 50 });
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error.code).toBe("TIMEOUT");
+      expect(res.error.user_message).toContain("timed out");
+    }
+  });
+
+  it("sanitizes a backend user_message that looks like a diagnostic dump", async () => {
+    vi.mocked(fetch).mockImplementation(async () =>
+      new Response(
+        JSON.stringify({
+          user_message: "panic: runtime error\nstack trace:\nSELECT * FROM users WHERE id=1",
+        }),
+        { status: 500, headers: { "Content-Type": "application/json" } }
+      )
+    );
+
+    const client = new GovernWorldApiClient("https://api.governworld.com");
+    const res = await client.get("/api/v1/extension/health");
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error.user_message).not.toContain("SELECT");
+      expect(res.error.user_message).not.toContain("stack trace");
+      expect(res.error.user_message).toContain("temporarily unavailable");
+    }
+  });
+
+  it("rejects an overlong backend user_message", async () => {
+    vi.mocked(fetch).mockImplementation(async () =>
+      new Response(JSON.stringify({ user_message: "x".repeat(500) }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+
+    const client = new GovernWorldApiClient("https://api.governworld.com");
+    const res = await client.get("/api/v1/extension/health");
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error.user_message).toContain("temporarily unavailable");
+    }
+  });
+
+  it("still honors a short, safe backend user_message", async () => {
+    vi.mocked(fetch).mockImplementation(async () =>
+      new Response(JSON.stringify({ user_message: "Your trial has expired." }), {
+        status: 402,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+
+    const client = new GovernWorldApiClient("https://api.governworld.com");
+    const res = await client.get("/api/v1/extension/health");
+
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error.user_message).toBe("Your trial has expired.");
+    }
+  });
 });

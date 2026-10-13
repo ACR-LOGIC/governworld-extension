@@ -110,8 +110,39 @@ if (g.__gwRedactionContentLoaded !== true) {
     return rects;
   }
 
-  function buildFindings(
-    rawMatches: ReturnType<typeof detect>,
+  /**
+   * Findings travel to the service worker inside SCAN_RESULT, which — like every
+   * runtime message — is dropped whole past MAX_MESSAGE_BYTES (64 KB). A dense
+   * page (a long table, a log dump) can easily produce hundreds of findings and
+   * would otherwise vanish into a "Scan timed out" with no honest signal. Cap the
+   * list by serialized byte budget so the result always arrives, and report the
+   * true count so the UI can say the results are partial.
+   */
+  const MAX_SCAN_FINDINGS_BYTES = 48 * 1024;
+
+  function capFindingsForTransport(findings: Finding[]): {
+    findings: Finding[];
+    totalFindings: number;
+    findingsTruncated: boolean;
+  } {
+    const totalFindings = findings.length;
+    let capped = findings;
+    if (findings.length > 1) {
+      const probe = JSON.stringify(findings);
+      if (probe.length > MAX_SCAN_FINDINGS_BYTES) {
+        const perFinding = probe.length / findings.length;
+        const keep = Math.max(1, Math.floor(MAX_SCAN_FINDINGS_BYTES / perFinding));
+        capped = findings.slice(0, keep);
+        // Per-finding sizes vary, so confirm the slice actually fits.
+        while (capped.length > 1 && JSON.stringify(capped).length > MAX_SCAN_FINDINGS_BYTES) {
+          capped = capped.slice(0, Math.max(1, Math.floor(capped.length / 2)));
+        }
+      }
+    }
+    return { findings: capped, totalFindings, findingsTruncated: capped.length < totalFindings };
+  }
+
+  function buildFindings(    rawMatches: ReturnType<typeof detect>,
     enabledCategories: string[],
     customPatterns: any[] = []
   ): Finding[] {
@@ -378,6 +409,10 @@ if (g.__gwRedactionContentLoaded !== true) {
       rects: f.rects.map((r) => ({ ...r })),
     }));
 
+    // Bound the result to the runtime message limit; the true count travels
+    // alongside so the UI can report partial results honestly.
+    const capped = capFindingsForTransport(result);
+
     // Collect image candidates for the popup's "Scan images" offer.
     // Previously only fired on zero-text pages; now fires always so the popup
     // always knows what images are present regardless of DOM text content.
@@ -388,11 +423,13 @@ if (g.__gwRedactionContentLoaded !== true) {
         type: "SCAN_RESULT",
         requestId,
         sessionId: sessionId as string,
-        findings: result,
+        findings: capped.findings,
         stats: {
           visibleChars: combined.length,
           attrChars,
           truncated: canonical.truncated,
+          findingsTruncated: capped.findingsTruncated,
+          totalFindings: capped.totalFindings,
           ...(imageCandidates ? { imageCandidates } : {}),
           ...(visualQueue ? { visualQueue } : {}),
           ...(pdfQueue ? { pdfQueue } : {}),

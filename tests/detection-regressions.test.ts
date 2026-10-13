@@ -448,3 +448,58 @@ describe("validator corrections", () => {
     expect(accepted).toBe(false);
   });
 });
+
+describe("Evasion resistance: normalization is wired into detection", () => {
+  it("detects an SSN split by zero-width characters", () => {
+    // ZWSP (U+200B) inside the value — the classic copy/paste evasion.
+    const zwspText = "SSN: 219\u200b-09-9999";
+    const matches = values(zwspText, "ssn");
+    expect(matches.length).toBeGreaterThanOrEqual(1);
+    // Offsets map back to the original text: the masked span covers the value.
+    const full = run(zwspText).find((m) => m.category === "ssn")!;
+    expect(zwspText.slice(full.start, full.end)).toContain("219");
+    expect(full.end - full.start).toBeGreaterThanOrEqual(11);
+  });
+
+  it("detects full-width digit identifiers", () => {
+    // Full-width "219-09-9999" (fictional shape).
+    const text = "SSN: \uFF12\uFF11\uFF19-\uFF10\uFF19-\uFF19\uFF19\uFF19\uFF19";
+    const matches = values(text, "ssn");
+    expect(matches.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("detects Arabic-Indic digit identifiers", () => {
+    // Arabic-Indic "219-09-9999".
+    const text = "SSN: \u0662\u0661\u0669-\u0660\u0669-\u0669\u0669\u0669\u0669";
+    const matches = values(text, "ssn");
+    expect(matches.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("does not flag a bare 10-digit run bound to an invoice label as a phone", () => {
+    expect(values("Invoice 9876543210 due", "phone")).toHaveLength(0);
+    expect(values("Order 9876543210 shipped", "phone")).toHaveLength(0);
+    expect(values("Reference 9876543210", "phone")).toHaveLength(0);
+  });
+
+  it("still flags formatted phone numbers even near invoice labels", () => {
+    expect(values("Invoice contact (210) 555-0107", "phone")).toHaveLength(1);
+    expect(values("Call 210-555-0107 about invoice 9876543210", "phone")).toHaveLength(1);
+  });
+
+  it("still flags genuine bare phone numbers with no label binding", () => {
+    expect(values("Call me at 2105550107", "phone")).toHaveLength(1);
+  });
+
+  it("does not capture heading text as a possible name", () => {
+    const text = "Patient Intake Note\n\nPatient Information\n\nFull Name: Jane Synth";
+    const names = values(text, "possible_name");
+    expect(names).toContain("Jane Synth");
+    expect(names).not.toContain("Intake Note");
+    expect(names).not.toContain("Full Name");
+  });
+
+  it("still captures names on labeled lines", () => {
+    expect(values("Patient Name: Jane Q Public", "possible_name")).toContain("Jane Q Public");
+    expect(values("Name: Jane Synth", "possible_name")).toContain("Jane Synth");
+  });
+});

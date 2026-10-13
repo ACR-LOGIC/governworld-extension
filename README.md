@@ -6,7 +6,7 @@
 [![Local-First](https://img.shields.io/badge/Architecture-Local--First-brightgreen.svg)](#local-first-architecture--privacy-guarantees)
 [![Browser Support](https://img.shields.io/badge/Browser-Chrome%20%7C%20Edge-blue.svg)](#1-shipped-and-verified--chrome-and-edge)
 [![Support on Buy Me A Coffee](https://img.shields.io/badge/Support-Buy%20Me%20A%20Coffee-ff813f?logo=buy-me-a-coffee&logoColor=white)](https://buymeacoffee.com/governworld)
-[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?logo=github)(https://github.com/sponsors/ACR-LOGIC)
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?logo=github)](https://github.com/sponsors/ACR-LOGIC)
 
 The **GovernWorld Extension** is a fully functional, local-first browser protection tool that brings GovernWorld's high-assurance detection and redaction engine directly into your web browser. It empowers users to detect, mask, and redact sensitive Personally Identifiable Information (PII), Protected Health Information (PHI), financial data, credentials, and custom patterns directly on web pages and in uploaded documents (PDF, DOCX, images). The page text and document content you scan **never leave your device** - the local pipeline has no network path at all. Optional account-linking and community features, described below, do contact GovernWorld servers, and are disabled by default.
 
@@ -101,7 +101,7 @@ GovernWorld is engineered to conform to the **W3C WebExtensions Manifest V3 spec
 Before loading into any browser, build the production bundle:
 ```bash
 git clone https://github.com/ACR-LOGIC/governworld-extension.git
-cd governworld-chrome-extension
+cd governworld-extension
 npm install
 npm run build
 ```
@@ -439,7 +439,7 @@ The extension is **fully functional in standalone local mode**.
 ```bash
 # Clone repository
 git clone https://github.com/ACR-LOGIC/governworld-extension.git
-cd governworld-chrome-extension
+cd governworld-extension
 
 # Install dependencies
 npm install

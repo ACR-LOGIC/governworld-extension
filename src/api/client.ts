@@ -15,6 +15,20 @@ export interface RequestOptions {
   idempotencyKey?: string;
 }
 
+/**
+ * A backend-supplied message is only safe to show when it is short, single-purpose
+ * prose — not a diagnostic dump. Rejects anything that looks like internal leakage
+ * (SQL, stack traces, cloud internals) or is long enough to be a pasted log.
+ */
+const UNSAFE_MESSAGE_TERMS =
+  /sql|postgres|azure|select|from|where|insert|update|delete|table|column|stack|traceback|exception|diagnostic/i;
+const MAX_SERVER_MESSAGE_LENGTH = 300;
+
+function isSafeServerMessage(value: string): boolean {
+  if (value.length === 0 || value.length > MAX_SERVER_MESSAGE_LENGTH) return false;
+  return !UNSAFE_MESSAGE_TERMS.test(value);
+}
+
 export class GovernWorldApiClient {
   private customBaseUrl?: string;
 
@@ -61,14 +75,21 @@ export class GovernWorldApiClient {
       userMessage = "Unable to reach GovernWorld API. Local on-device protection continues normally.";
     }
 
-    // Extract safe message if provided by backend in standard format
+    // Extract safe message if provided by backend in standard format.
+    // Backend strings are untrusted: a misbehaving server could otherwise smuggle
+    // stack traces, SQL fragments, or other diagnostics into the UI. The same
+    // suspicious-term filter applies to both fields, and overlong messages fall
+    // back to the code-based local text.
     if (
       typeof responseBody === "object" &&
       responseBody !== null &&
       "user_message" in responseBody &&
       typeof (responseBody as Record<string, unknown>).user_message === "string"
     ) {
-      userMessage = (responseBody as Record<string, unknown>).user_message as string;
+      const candidate = (responseBody as Record<string, unknown>).user_message as string;
+      if (isSafeServerMessage(candidate)) {
+        userMessage = candidate;
+      }
     } else if (
       typeof responseBody === "object" &&
       responseBody !== null &&
@@ -77,7 +98,7 @@ export class GovernWorldApiClient {
     ) {
       const rawError = (responseBody as Record<string, unknown>).error as string;
       // Filter out internal leakages
-      if (!/sql|postgres|azure|select|from|where|insert|update|delete|table|column|stack/i.test(rawError)) {
+      if (isSafeServerMessage(rawError)) {
         userMessage = rawError;
       }
     }
@@ -151,19 +172,30 @@ export class GovernWorldApiClient {
         signal: controller.signal,
       });
 
-      clearTimeout(timeoutTimer);
-
+      // The timeout stays armed through body consumption: headers can arrive
+      // promptly while the body stalls, and clearing it here would leave the
+      // request unbounded. An abort during the read surfaces as AbortError below.
       let responseData: unknown = null;
       const contentType = response.headers.get("content-type") || "";
       if (contentType.includes("application/json")) {
         try {
           responseData = await response.json();
-        } catch {
+        } catch (bodyError) {
+          // A timeout abort must propagate as TIMEOUT, not masquerade as an
+          // empty successful body.
+          if ((bodyError as Error)?.name === "AbortError") throw bodyError;
           responseData = null;
         }
       } else {
-        responseData = await response.text();
+        try {
+          responseData = await response.text();
+        } catch (bodyError) {
+          if ((bodyError as Error)?.name === "AbortError") throw bodyError;
+          responseData = null;
+        }
       }
+
+      clearTimeout(timeoutTimer);
 
       if (!response.ok) {
         return {
