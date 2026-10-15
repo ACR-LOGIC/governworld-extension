@@ -125,6 +125,12 @@ export interface OffscreenPreviewResponse {
   jobId: string;
   ok: true;
   pages: DocumentPage[];
+  /**
+   * True when a Word document exceeded the character cap and was cut short.
+   * The worker forwards this to the UI so a partial read is disclosed instead
+   * of being reported as the whole document.
+   */
+  truncated?: boolean;
 }
 
 export interface OffscreenPreviewError {

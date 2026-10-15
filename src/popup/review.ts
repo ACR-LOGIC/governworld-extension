@@ -34,6 +34,8 @@ interface ReviewSession {
   /** The document's true length and where this pass started. */
   totalPages: number;
   pageOffset: number;
+  /** True when a Word document was cut at the character cap. */
+  truncated: boolean;
   /** True when the bytes came from a screen capture rather than the original file. */
   degraded: boolean;
   source: "original" | "capture";
@@ -62,6 +64,7 @@ const dom = {
   docPages: el<HTMLElement>("doc-pages"),
   notice: el<HTMLDivElement>("source-notice"),
   windowNotice: el<HTMLDivElement>("window-notice"),
+  textLimitNotice: el<HTMLDivElement>("text-limit-notice"),
   findings: el<HTMLUListElement>("findings"),
   findingsCount: el<HTMLElement>("findings-count"),
   selectAll: el<HTMLButtonElement>("select-all"),
@@ -370,6 +373,7 @@ function loadSessionFromStorage(value: unknown): ReviewSession | null {
         ? v.totalPages
         : pages.length + pageOffset,
     pageOffset,
+    truncated: v.truncated === true,
     degraded: v.degraded === true,
     source: v.source === "capture" ? "capture" : "original",
   };
@@ -437,6 +441,18 @@ async function hydrateFromSession(): Promise<void> {
     } else {
       dom.windowNotice.hidden = true;
       dom.windowNotice.textContent = "";
+    }
+  }
+
+  // Disclose a Word document cut at the reading cap. The pages past the cut
+  // were never laid out, so nothing here implies they were read.
+  if (dom.textLimitNotice) {
+    if (session.truncated) {
+      dom.textLimitNotice.hidden = false;
+      dom.textLimitNotice.textContent = `This Word document is longer than the reading limit (200,000 characters). Only the text up to that limit was read and redacted; the rest was not scanned.`;
+    } else {
+      dom.textLimitNotice.hidden = true;
+      dom.textLimitNotice.textContent = "";
     }
   }
 

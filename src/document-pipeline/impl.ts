@@ -136,21 +136,21 @@ async function loadPages(
   input: PipelineInput,
   maxPages: number,
   pageOffset = 0
-): Promise<{ pages: LoadedPage[]; flattenToPdf: boolean }> {
+): Promise<{ pages: LoadedPage[]; flattenToPdf: boolean; truncated: boolean }> {
   if (input.kind === "pdf") {
     // Indices come back absolute (page 20 is page 20), so a windowed pass lines
     // up with the boxes and store keys the preview produced.
     const rendered = await renderPdfPages(input.bytes, maxPages, undefined, pageOffset);
-    return { pages: rendered, flattenToPdf: true };
+    return { pages: rendered, flattenToPdf: true, truncated: false };
   }
   if (input.kind === "docx") {
-    const rendered = await loadDocxPages(input.bytes);
+    const { pages: all, truncated } = await loadDocxPages(input.bytes);
     // The layout already carries absolute indices, so a slice is the window.
-    const from = Math.min(Math.max(0, Math.floor(Number.isFinite(pageOffset) ? pageOffset : 0)), Math.max(0, rendered.length - 1));
-    return { pages: rendered.slice(from, from + maxPages), flattenToPdf: true };
+    const from = Math.min(Math.max(0, Math.floor(Number.isFinite(pageOffset) ? pageOffset : 0)), Math.max(0, all.length - 1));
+    return { pages: all.slice(from, from + maxPages), flattenToPdf: true, truncated };
   }
   const page = await loadImagePage(input.bytes);
-  return { pages: [page], flattenToPdf: false };
+  return { pages: [page], flattenToPdf: false, truncated: false };
 }
 
 /**
@@ -180,8 +180,18 @@ async function readPages(pages: LoadedPage[], ocrLanguage: string): Promise<OcrP
   return out;
 }
 
-export async function runDocumentPreview(input: PreviewInput): Promise<DocumentPage[]> {
-  const { pages } = await loadPages(input, input.maxPages, input.pageOffset ?? 0);
+/**
+ * The result of a preview: the pages to review, plus whether the document was
+ * cut short by a limit the user needs to be told about.
+ */
+export interface PreviewOutput {
+  pages: DocumentPage[];
+  /** True when a Word document exceeded the character cap and was cut. */
+  truncated: boolean;
+}
+
+export async function runDocumentPreview(input: PreviewInput): Promise<PreviewOutput> {
+  const { pages, truncated } = await loadPages(input, input.maxPages, input.pageOffset ?? 0);
   const ocrResults = await readPages(pages, input.ocrLanguage ?? "eng");
   const findings = findingsFromOcrPages(ocrResults, input.enabledCategories, input.customPatterns);
   const grouped = new Map<number, DocumentPage>();
@@ -209,7 +219,7 @@ export async function runDocumentPreview(input: PreviewInput): Promise<DocumentP
     const page = grouped.get(pageIndex);
     if (page) page.findings.push(f);
   }
-  return [...grouped.values()];
+  return { pages: [...grouped.values()], truncated };
 }
 
 /**
@@ -295,8 +305,7 @@ export async function runDocumentRedact(
    */
   pageOffset = 0
 ): Promise<RedactOutput> {
-  const { pages, flattenToPdf } = await loadPages(input, maxPages, pageOffset);
-  const boxMap = new Map<number, Rect[]>();
+  const { pages, flattenToPdf } = await loadPages(input, maxPages, pageOffset);  const boxMap = new Map<number, Rect[]>();
   for (const b of boxes) boxMap.set(b.pageIndex, b.rects);
 
   // Verify the page bitmaps as they are painted. For flattened output these are

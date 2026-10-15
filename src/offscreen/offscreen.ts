@@ -59,7 +59,7 @@ port.onMessage.addListener((raw: unknown) => {
         return;
       }
       if (op === "preview") {
-        const pages = await runDocumentPreview({
+        const { pages, truncated } = await runDocumentPreview({
           kind: raw.kind,
           bytes,
           name: raw.name,
@@ -71,7 +71,7 @@ port.onMessage.addListener((raw: unknown) => {
           customPatterns: raw.customPatterns,
           previewKeyPrefix: raw.previewKeyPrefix,
         });
-        port.postMessage({ channel: OFFSCREEN_CHANNEL, op: "preview", jobId, ok: true, pages });
+        port.postMessage({ channel: OFFSCREEN_CHANNEL, op: "preview", jobId, ok: true, pages, truncated });
         return;
       }
       const out = await runDocumentRedact(

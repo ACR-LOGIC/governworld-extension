@@ -106,6 +106,16 @@ export interface RedactedDocumentResult {
   printRef?: RedactedDocRef | null;
 }
 
+export interface PreviewResult {
+  pages: DocumentPage[];
+  /**
+   * True when the document was cut short by a limit the user must be told
+   * about - currently the Word character cap. A partial read that is reported
+   * as a complete one is the failure mode this product exists to prevent.
+   */
+  truncated: boolean;
+}
+
 export interface DocumentPipeline {
   /**
    * Count the document's pages without rendering or detecting anything.
@@ -119,7 +129,7 @@ export interface DocumentPipeline {
    * Render pages + run local OCR/detectors, returning reviewable findings.
    * Must reject encrypted/malformed inputs without exposing their contents.
    */
-  preview(input: DocumentInput): Promise<DocumentPage[]>;
+  preview(input: DocumentInput): Promise<PreviewResult>;
   /**
    * Produce a flattened redacted copy using the provided boxes.
    * The original bytes are never mutated.
@@ -135,7 +145,7 @@ export class UnavailableDocumentPipeline implements DocumentPipeline {
   async count(): Promise<number> {
     throw new Error("Document redaction is not available in this build yet.");
   }
-  async preview(): Promise<DocumentPage[]> {
+  async preview(): Promise<PreviewResult> {
     throw new Error("Document redaction is not available in this build yet.");
   }
   async redact(): Promise<RedactedDocumentResult> {

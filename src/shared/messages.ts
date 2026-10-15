@@ -706,7 +706,8 @@ export function validateMessage(raw: unknown): ValidationResult {
       // old `error` object went missing.
       if (raw.totalPages !== undefined && !isTotalPages(raw.totalPages)) return { ok: false, error: "Invalid totalPages" };
       if (raw.pageOffset !== undefined && !isPageOffset(raw.pageOffset)) return { ok: false, error: "Invalid pageOffset" };
-      return { ok: true, message: { type, requestId, docId: raw.docId, name: raw.name, fileKey: raw.fileKey, mimeType: raw.mimeType, kind: raw.kind, pages: raw.pages, ...(raw.totalPages !== undefined ? { totalPages: raw.totalPages } : {}), ...(raw.pageOffset !== undefined ? { pageOffset: raw.pageOffset } : {}) } };
+      if (raw.truncated !== undefined && typeof raw.truncated !== "boolean") return { ok: false, error: "Invalid truncated" };
+      return { ok: true, message: { type, requestId, docId: raw.docId, name: raw.name, fileKey: raw.fileKey, mimeType: raw.mimeType, kind: raw.kind, pages: raw.pages, ...(raw.totalPages !== undefined ? { totalPages: raw.totalPages } : {}), ...(raw.pageOffset !== undefined ? { pageOffset: raw.pageOffset } : {}), ...(raw.truncated !== undefined ? { truncated: raw.truncated } : {}) } };
     }
     case "POPUP_DOC_DONE": {
       if (!isName(raw.outputName)) return { ok: false, error: "Invalid outputName" };

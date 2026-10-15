@@ -30,7 +30,7 @@ import {
 import { recordAudit } from "../shared/audit.js";
 import { BUNDLED_OCR_LANGUAGES } from "../shared/ocrLanguages.js";
 import { t, getCategoryLabel, getPresetLabel } from "../shared/i18n.js";
-import { MAX_DOC_PAGES, MAX_DOC_BYTES, MAX_DOC_BYTES_LABEL, resolvePageWindow, pageWindowLabel } from "../shared/docLimits.js";
+import { MAX_DOC_PAGES, MAX_DOC_BYTES, MAX_DOC_BYTES_LABEL, MAX_DOCX_CHARS, resolvePageWindow, pageWindowLabel } from "../shared/docLimits.js";
 import type { AccountView } from "../shared/account.js";
 import type {
   DocKind,
@@ -887,6 +887,8 @@ interface DocUiState {
    */
   totalPages?: number;
   pageOffset?: number;
+  /** True when a Word document was cut at the character cap. */
+  truncated?: boolean;
   /**
    * True when the bytes came from a screen capture rather than the original
    * file, so OCR quality is bounded by the on-screen size. Carried into the
@@ -971,6 +973,7 @@ async function openFullScreenReview(
     // window facts the popup has, or it would imply a partial pass was whole.
     totalPages: doc.totalPages ?? doc.pages.length,
     pageOffset: doc.pageOffset ?? 0,
+    truncated: doc.truncated === true,
     degraded,
     source,
   };
@@ -1213,6 +1216,30 @@ function hideWindowWarning(): void {
   if (text) text.textContent = "";
 }
 
+/**
+ * Disclose that a Word document was cut at the character cap.
+ *
+ * A Word file has no pages of its own: mammoth returns one text blob and the
+ * cap slices it. Everything past the cut is never laid out, never read and
+ * never redacted, and the page count that remains is the count of the part that
+ * was read. Without this the user is told a shorter document than the one they
+ * opened - the same false completeness the page cap had.
+ */
+function renderTextLimitWarning(truncated: boolean): void {
+  const banner = document.getElementById("doc-text-limit-warning") as HTMLElement | null;
+  const text = document.getElementById("doc-text-limit-warning-text") as HTMLElement | null;
+  if (!banner || !text) return;
+  if (!truncated) {
+    banner.hidden = true;
+    text.textContent = "";
+    return;
+  }
+  banner.hidden = false;
+  text.textContent = t(currentLang, "doc_text_limit_warning", {
+    chars: MAX_DOCX_CHARS.toLocaleString(),
+  });
+}
+
 const overlayRedrawers: (() => void)[] = [];
 
 export function redrawAllOverlays(): void {
@@ -1378,6 +1405,7 @@ function renderDoc(state: DocUiState): void {
   // document read as a complete scan.
   if (docPageCount) docPageCount.textContent = pageCountLabel(state);
   renderWindowWarning(state.totalPages ?? state.pages.length, state.pageOffset ?? 0, state.pages.length);
+  renderTextLimitWarning(state.truncated === true);
   if (workspace) workspace.hidden = false;
 
   if (thumbs) {
@@ -1502,7 +1530,13 @@ function renderDoc(state: DocUiState): void {
         }
 
         const customFinding: Finding = {
-          id: requestId(),
+          // The `custom:` prefix is a contract, not decoration. The worker
+          // validates every selected id against the session and only tolerates
+          // one it does not recognise when it starts with `custom:` or
+          // `user:`, so a bare UUID here was rejected at redaction time with
+          // "The selected findings are no longer available." - after the user
+          // had already drawn the box and seen it in the findings list.
+          id: `custom:${requestId()}`,
           category: "custom",
           confidence: 1.0,
           source: "local-rules",
@@ -1566,6 +1600,10 @@ function clearDocUi(): void {
   // A window warning for a document that is no longer loaded would claim
   // something about nothing.
   hideWindowWarning();
+  const textLimitBanner = document.getElementById("doc-text-limit-warning") as HTMLElement | null;
+  const textLimitText = document.getElementById("doc-text-limit-warning-text") as HTMLElement | null;
+  if (textLimitBanner) textLimitBanner.hidden = true;
+  if (textLimitText) textLimitText.textContent = "";
 }
 
 /** Wire tab navigation and contextual guidance links. */
@@ -3134,6 +3172,7 @@ export async function initPopup(): Promise<void> {
       // document used to pass for the whole thing.
       doc.totalPages = message.totalPages ?? message.pages.length;
       doc.pageOffset = message.pageOffset ?? 0;
+      doc.truncated = message.truncated === true;
       renderDoc(doc);
       const found = message.pages.reduce((n, p) => n + p.findings.length, 0);
       // The preview is finished, so the progress row must stay down. Calling

@@ -19,6 +19,18 @@ export const MAX_DOC_PAGES = 20;
 /** Hard cap on document file size, in bytes. */
 export const MAX_DOC_BYTES = 20 * 1024 * 1024;
 
+/**
+ * Hard cap on how much of a Word document's text is read.
+ *
+ * Word files have no pages of their own - the bytes are one document.xml - so
+ * the only bound on the work a huge document can cause is a character limit.
+ * It used to be applied silently: a document past the cap produced fewer pages
+ * and the studio reported that count as the document, which is the same false
+ * completeness the page cap had. The value is disclosed to the user whenever it
+ * actually bites, via `doc_text_limit_warning`.
+ */
+export const MAX_DOCX_CHARS = 200_000;
+
 /** Human-readable form of {@link MAX_DOC_BYTES}, for user-facing copy. */
 export const MAX_DOC_BYTES_LABEL = "20 MB";
 

@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 import mammoth from "mammoth";
 import type { OcrToken } from "./ocr.js";
+import { MAX_DOCX_CHARS } from "../shared/docLimits.js";
 
 /**
  * DOCX-page loading. Extracts raw text with mammoth, then lays it out on a
@@ -35,7 +36,6 @@ const PAGE_HEIGHT_PX = Math.floor(11 * DPI); // 1650
 const MARGIN_PX = Math.floor(1 * DPI);
 const FONT = `${Math.floor(0.14 * DPI)}px "Segoe UI", system-ui, sans-serif`;
 const LINE_HEIGHT = Math.floor(0.2 * DPI);
-const MAX_DOCX_CHARS = 200_000;
 const MAX_DOCX_UNCOMPRESSED_BYTES = 50 * 1024 * 1024;
 const MAX_DOCX_ENTRIES = 1_000;
 const MAX_DOCX_RATIO = 100;
@@ -122,14 +122,26 @@ export function layoutDocxPages(text: string, ctx: CanvasRenderingContext2D): st
  * Extract the document's raw text, bounded by the same archive limits and
  * character cap the renderer uses. Shared so a page count and a render can
  * never disagree about what the document contains.
+ *
+ * `truncated` reports that the cap bit. Without it the pipeline silently
+ * returns a shorter document than the user opened, and the studio then calls
+ * the capped page count "the document" - the same false completeness the page
+ * cap had. The fact has to travel to the UI so it can say what was NOT read.
  */
-export async function extractDocxText(bytes: ArrayBuffer): Promise<string> {
+export async function extractDocxText(bytes: ArrayBuffer): Promise<{ text: string; truncated: boolean }> {
   assertSafeDocxArchive(bytes);
   const input = { buffer: new Uint8Array(bytes.slice(0)) };
   const { value } = await mammoth.extractRawText(
     input as unknown as Parameters<typeof mammoth.extractRawText>[0]
   );
-  return (value ?? "").slice(0, MAX_DOCX_CHARS);
+  const raw = value ?? "";
+  const text = raw.slice(0, MAX_DOCX_CHARS);
+  // "Was anything dropped?" rather than "is it over the cap?": mammoth appends
+  // its own paragraph separators to what it hands back, so a document exactly
+  // at the limit can be a byte or two over it with nothing lost. Claiming a cut
+  // that did not happen is the false alarm this whole disclosure exists to
+  // avoid.
+  return { text, truncated: text.length < raw.length };
 }
 
 /** A throwaway measuring context for text width; the DOCX layout needs one. */
@@ -156,17 +168,18 @@ function measuringContext(): CanvasRenderingContext2D {
  * the rendered set come from one layout implementation.
  */
 export async function countDocxPages(bytes: ArrayBuffer): Promise<number> {
-  const text = await extractDocxText(bytes);
+  const { text } = await extractDocxText(bytes);
   const pages = layoutDocxPages(text, measuringContext());
   return pages.length >= 1 ? pages.length : 1;
 }
 
-export async function loadDocxPages(bytes: ArrayBuffer): Promise<DocxPage[]> {
-  const text = await extractDocxText(bytes);
+export async function loadDocxPages(bytes: ArrayBuffer): Promise<{ pages: DocxPage[]; truncated: boolean }> {
+  const { text, truncated } = await extractDocxText(bytes);
   const ctx = measuringContext();
   const pages = layoutDocxPages(text, ctx);
   const fontPx = Number.parseFloat(FONT);
-  return pages.map((pageLines, index) => {
+  return {
+    pages: pages.map((pageLines, index) => {
     const pageCanvas = document.createElement("canvas");
     pageCanvas.width = PAGE_WIDTH_PX;
     pageCanvas.height = PAGE_HEIGHT_PX;
@@ -208,5 +221,7 @@ export async function loadDocxPages(bytes: ArrayBuffer): Promise<DocxPage[]> {
       hasTextLayer: tokens.length > 0,
       tokens,
     };
-  });
+  }),
+    truncated,
+  };
 }

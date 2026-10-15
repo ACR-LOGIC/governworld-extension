@@ -153,6 +153,29 @@ describe("document limits are disclosed, not silently applied", () => {
     const offscreenSrc = readFileSync(join(extRoot, "src/offscreen/offscreen.ts"), "utf8");
     expect(offscreenSrc).toContain("raw.pageOffset ?? 0");
   });
+
+  it("discloses a Word document cut at the character cap", () => {
+    // Past the cap, mammoth's text is sliced: the pages that follow are never
+    // laid out, never read, never redacted - and the remaining page count was
+    // being reported as the document. The same false completeness the page cap
+    // had, so it gets the same persistent disclosure on both surfaces.
+    expect(markup).toContain('id="doc-text-limit-warning"');
+    expect(markup).toContain('id="doc-text-limit-warning-text"');
+    const fn = popupSrc.slice(popupSrc.indexOf("function renderTextLimitWarning"));
+    expect(fn).toContain("doc_text_limit_warning");
+    const reviewSrc = readFileSync(join(extRoot, "src/popup/review.ts"), "utf8");
+    expect(reviewSrc).toContain("truncated");
+    expect(reviewSrc).toContain("textLimitNotice");
+  });
+
+  it("prefixes a box drawn in the popup rail so the worker accepts it", () => {
+    // The worker only tolerates an unrecognised id that starts with "custom:"
+    // or "user:". A bare UUID was rejected at redaction time with "The selected
+    // findings are no longer available." - after the user had drawn the box and
+    // seen it listed.
+    const drawn = popupSrc.slice(popupSrc.indexOf("const customFinding: Finding"));
+    expect(drawn.slice(0, 700)).toMatch(/id:\s*`custom:/);
+  });
 });
 
 describe("popup initialisation cannot fail silently", () => {

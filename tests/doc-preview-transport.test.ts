@@ -72,6 +72,30 @@ describe("document page previews are referenced, not inlined", () => {
     }
   });
 
+  it("carries the Word character-cap disclosure through validation", () => {
+    // The cap cut a document and the studio has to be able to say so. A field
+    // the validator accepts and the reconstruction drops is a field the UI
+    // never sees, so the flag is asserted on the parsed message.
+    const result = validateMessage({ ...docState({}), truncated: true });
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.message.type !== "POPUP_DOC_STATE") return;
+    expect(result.message.truncated).toBe(true);
+  });
+
+  it("treats an absent character-cap disclosure as no truncation", () => {
+    // Optional because a session persisted by an older build has no such flag.
+    const result = validateMessage(docState({}));
+    expect(result.ok).toBe(true);
+    if (!result.ok || result.message.type !== "POPUP_DOC_STATE") return;
+    expect(result.message.truncated).toBeUndefined();
+  });
+
+  it("rejects a character-cap flag that is not a boolean", () => {
+    for (const bad of ["yes", 1, null]) {
+      expect(validateMessage({ ...docState({}), truncated: bad }).ok, String(bad)).toBe(false);
+    }
+  });
+
   it("keeps a windowed multi-page document state under the message size limit", () => {
     // The window facts are two numbers on the message, not per-page payload, so
     // the 20-page budget is unchanged by them.
