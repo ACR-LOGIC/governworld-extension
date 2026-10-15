@@ -18,6 +18,8 @@ export type AuditAction =
   | "page_scan_completed"
   | "masks_applied"
   | "masks_removed"
+  | "selection_redacted"
+  | "selection_masked"
   | "doc_previewed"
   | "doc_redacted"
   | "doc_cleared"
@@ -25,6 +27,34 @@ export type AuditAction =
   | "preset_applied"
   | "preset_overridden"
   | "account_linked";
+
+/**
+ * The authoritative action list.
+ *
+ * It is a single source of truth on purpose: the union above and the runtime
+ * guard in `isAuditEvent` used to be two hand-maintained lists of the same
+ * values. Adding an action to one but not the other produced an event that
+ * typechecked and was then silently dropped by the validator, so the action
+ * looked audited and was not.
+ */
+export const AUDIT_ACTIONS: readonly AuditAction[] = [
+  "page_scan_completed",
+  "masks_applied",
+  "masks_removed",
+  "selection_redacted",
+  "selection_masked",
+  "doc_previewed",
+  "doc_redacted",
+  "doc_cleared",
+  "session_cleared",
+  "preset_applied",
+  "preset_overridden",
+  "account_linked",
+];
+
+export function isAuditAction(value: unknown): value is AuditAction {
+  return typeof value === "string" && (AUDIT_ACTIONS as readonly string[]).includes(value);
+}
 
 export interface AuditEvent {
   /** ISO-8601 timestamp. */
@@ -55,19 +85,7 @@ function isCounts(value: unknown): value is Record<string, number> {
 export function isAuditEvent(value: unknown): value is AuditEvent {
   if (!isRecord(value)) return false;
   if (typeof value.ts !== "string" || value.ts.length === 0) return false;
-  const actions: AuditAction[] = [
-    "page_scan_completed",
-    "masks_applied",
-    "masks_removed",
-    "doc_previewed",
-    "doc_redacted",
-    "doc_cleared",
-    "session_cleared",
-    "preset_applied",
-    "preset_overridden",
-    "account_linked",
-  ];
-  if (!actions.includes(value.action as AuditAction)) return false;
+  if (!isAuditAction(value.action)) return false;
   if (value.outcome !== "ok" && value.outcome !== "denied" && value.outcome !== "error") return false;
   if (value.host !== undefined && (typeof value.host !== "string" || value.host.length === 0 || value.host.length > 253)) return false;
   if (value.counts !== undefined && !isCounts(value.counts)) return false;

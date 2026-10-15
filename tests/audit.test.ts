@@ -2,9 +2,11 @@
 import { describe, it, expect } from "vitest";
 import {
   isAuditEvent,
+  isAuditAction,
   canonicalEventLine,
   toAuditJsonl,
   trimEvents,
+  AUDIT_ACTIONS,
   AUDIT_MAX_EVENTS,
   type AuditEvent,
 } from "../src/shared/audit.js";
@@ -71,6 +73,26 @@ describe("canonical serialization", () => {
     const line = canonicalEventLine({ ...base, action: "preset_overridden", presetId: "hipaa", enabledCategories: ["ssn", "email"] });
     expect(line).toContain('"presetId":"hipaa"');
     expect(line.indexOf('"presetId"')).toBeLessThan(line.indexOf('"enabledCategories"'));
+  });
+
+  it("accepts the context-menu redaction actions", () => {
+    // A right-click redaction writes content to the clipboard, so it is an
+    // audited operation like any other. These actions were added after the
+    // context-menu path shipped without a record.
+    expect(isAuditEvent({ ...base, action: "selection_redacted", counts: { email: 2 }, outcome: "ok" })).toBe(true);
+    expect(isAuditEvent({ ...base, action: "selection_masked", outcome: "error" })).toBe(true);
+  });
+
+  it("keeps the action union and the validator in step", () => {
+    // These were two hand-maintained lists of the same values. An action added
+    // to one but not the other typechecked and was then dropped by the
+    // validator, so the operation looked audited and was not.
+    for (const action of AUDIT_ACTIONS) {
+      expect(isAuditEvent({ ...base, action, outcome: "ok" }), `${action} is rejected by the validator`).toBe(true);
+      expect(isAuditAction(action)).toBe(true);
+    }
+    expect(new Set(AUDIT_ACTIONS).size, "AUDIT_ACTIONS has duplicates").toBe(AUDIT_ACTIONS.length);
+    expect(isAuditAction("selection_redacted_unknown")).toBe(false);
   });
 
   it("joins jsonl with newlines only", () => {

@@ -3,7 +3,7 @@ import { validateMessage, type ImageCandidate } from "../shared/messages.js";
 import { loadSettings, saveSettings, isCloudAllowed, isAllowedGatewayOrigin, meetsThreshold } from "../shared/settings.js";
 import { recordAudit, exportSignedAuditLog } from "../shared/audit.js";
 import type { Settings } from "../shared/settings.js";
-import type { DocKind, PopupState, ScanMode, WorkerMessage, ExtensionMessage, Finding, FindingCategory, PopupFromWorker, Rect, RedactionOptions, ScanSettingsMessage } from "../shared/types.js";
+import type { DocKind, PopupState, ScanMode, WorkerMessage, ExtensionMessage, Finding, FindingCategory, PopupFromWorker, Rect, RedactionOptions, ScanSettingsMessage, ScanCoverageStatus } from "../shared/types.js";
 import { previewDocument, redactDocument, restoreLastSession, clearSession as clearDocSession, clearAllFiles, storeFile, deleteFile, hasStagedDocument } from "./documents.js";
 import { analyzeExamples, testPattern } from "../shared/wizardAnalyzer.js";
 import { captureImage, stageCapturedImage, ImageCaptureError } from "./captureImage.js";
@@ -67,6 +67,8 @@ async function buildEffectiveScanSettingsMessage(settings: Settings): Promise<Sc
 
 const SESSION_KEY_PREFIX = "scan:";
 const SCAN_TIMEOUT_MS = 60_000;
+/** How long a transient outcome marker stays on the badge. */
+const TAB_STATUS_MS = 4_000;
 const FETCH_TIMEOUT_MS = 10_000;
 
 function buildScanSettingsMessage(
@@ -103,7 +105,21 @@ interface SessionState {
   sessionId: string;
   mode: ScanMode;
   findings: Finding[];
-  stats: { visibleChars: number; truncated: boolean; findingsTruncated?: boolean; totalFindings?: number; imageCandidates?: ImageCandidate[] };
+  /**
+   * Carries the honest scan verdict across the worker lifetime. It is stored
+   * rather than recomputed because the worker is terminated between the scan
+   * and the popup opening, and a coverage panel that fell back to "unknown" on
+   * every reopen would be worse than useless.
+   */
+  stats: {
+    visibleChars: number;
+    truncated: boolean;
+    findingsTruncated?: boolean;
+    totalFindings?: number;
+    imageCandidates?: ImageCandidate[];
+    coverageStatus?: ScanCoverageStatus;
+    deferredMediaCount?: number;
+  };
   scannedAt: number;
   scanning: boolean;
   /** Stack of previously-applied finding-id sets for undo. Newest last. */
@@ -143,10 +159,32 @@ function isSessionState(value: unknown): value is SessionState {
     v.stats !== null &&
     typeof v.stats.visibleChars === "number" &&
     typeof v.stats.truncated === "boolean" &&
+    (v.stats.findingsTruncated === undefined || typeof v.stats.findingsTruncated === "boolean") &&
+    (v.stats.totalFindings === undefined ||
+      (typeof v.stats.totalFindings === "number" &&
+        Number.isSafeInteger(v.stats.totalFindings) &&
+        v.stats.totalFindings >= 0)) &&
+    // A stored verdict from an older build, or one written by a future build
+    // with a different enum, must not be surfaced as-is. Dropping it makes the
+    // panel show "not completed", which is the safe direction.
+    (v.stats.coverageStatus === undefined || SCAN_COVERAGE_STATUS_VALUES.has(v.stats.coverageStatus)) &&
+    (v.stats.deferredMediaCount === undefined ||
+      (typeof v.stats.deferredMediaCount === "number" &&
+        Number.isSafeInteger(v.stats.deferredMediaCount) &&
+        v.stats.deferredMediaCount >= 0)) &&
     typeof v.scannedAt === "number" &&
     typeof v.scanning === "boolean"
   );
 }
+
+const SCAN_COVERAGE_STATUS_VALUES: ReadonlySet<string> = new Set<ScanCoverageStatus>([
+  "FULLY_SCANNED",
+  "PARTIALLY_SCANNED",
+  "UNSUPPORTED_CONTENT_PRESENT",
+  "BLOCKED_BY_BROWSER_SECURITY",
+  "NO_SENSITIVE_DATA_DETECTED",
+  "SCAN_FAILED",
+]);
 
 async function readSession(tabId: number): Promise<SessionState | null> {
   const key = sessionKey(tabId);
@@ -192,6 +230,173 @@ export function clearBadgeForTab(tabId: number): void {
   } catch {
     // Best-effort badge clear
   }
+}
+
+/** Transient per-tab badge markers for actions that have no open UI. */
+type TabStatus = "ok" | "failed";
+
+const TAB_STATUS_PREFIX = "action-status:";
+const tabStatusTimers = new Map<number, ReturnType<typeof setTimeout>>();
+
+function tabStatusKey(tabId: number): string {
+  return `${TAB_STATUS_PREFIX}${tabId}`;
+}
+
+/**
+ * The marker deadline lives in storage.session, not just in a timer, because
+ * MV3 terminates an idle worker at will. A timer alone would leave a `!` stuck
+ * on the toolbar for the rest of the browser session if the worker happened to
+ * be reclaimed in the four seconds the marker was meant to last — replacing one
+ * kind of dishonesty with another. The deadline is read back at worker start so
+ * an abandoned marker is put right even then.
+ */
+async function persistTabStatus(tabId: number, expiresAt: number): Promise<void> {
+  try {
+    await chrome.storage.session.set({ [tabStatusKey(tabId)]: expiresAt });
+  } catch {
+    // The in-memory timer still restores the badge; storage is the belt.
+  }
+}
+
+/**
+ * Report the outcome of an action the user started from somewhere with no
+ * surface to show it on — a right-click menu item, a keyboard shortcut.
+ *
+ * A context-menu click never has the popup open, and a successful action is
+ * self-evident: masks appear on the page, the redacted text lands on the
+ * clipboard. A FAILURE is not self-evident at all. The worker used to discard
+ * the content script's reply entirely, so "no text selected" and the genuine
+ * work of redacting a selection were indistinguishable — the menu item that
+ * cannot possibly succeed (it is registered for the `page` context) sat there
+ * doing nothing, silently, forever.
+ *
+ * The badge is the only always-available per-tab surface: it needs no
+ * permission, is not gated on a setting, and clears itself on navigation. The
+ * finding count it normally shows is restored when the marker expires, so the
+ * two never disagree for longer than the marker is meant to be read.
+ */
+function flashTabStatus(tabId: number, status: TabStatus): void {
+  const text = status === "ok" ? "\u2713" : "!";
+  const color = status === "ok" ? "#2563EB" : "#E53E3E";
+  try {
+    void chrome.action?.setBadgeText?.({ tabId, text }).catch(() => undefined);
+    void chrome.action?.setBadgeBackgroundColor?.({ tabId, color }).catch(() => undefined);
+  } catch {
+    // Best-effort
+  }
+  const existing = tabStatusTimers.get(tabId);
+  if (existing) clearTimeout(existing);
+  const expiresAt = Date.now() + TAB_STATUS_MS;
+  void persistTabStatus(tabId, expiresAt);
+  tabStatusTimers.set(
+    tabId,
+    setTimeout(() => {
+      tabStatusTimers.delete(tabId);
+      void restoreFindingBadge(tabId);
+    }, TAB_STATUS_MS)
+  );
+}
+
+/**
+ * Put right any status marker whose worker was reclaimed before its timer
+ * fired. Runs at worker start, next to the site-protection reconciliation.
+ */
+export async function reconcileTabStatuses(): Promise<void> {
+  try {
+    const stored = await chrome.storage.session.get(null);
+    const now = Date.now();
+    const expired: number[] = [];
+    const expiredKeys: string[] = [];
+    const garbageKeys: string[] = [];
+    for (const [key, value] of Object.entries(stored)) {
+      if (!key.startsWith(TAB_STATUS_PREFIX)) continue;
+      const tabId = Number(key.slice(TAB_STATUS_PREFIX.length));
+      if (!Number.isSafeInteger(tabId) || tabId < 0) {
+        // Not something we wrote. Left alone rather than deleted: this worker
+        // is not the only writer of chrome.storage.session.
+        garbageKeys.push(key);
+        continue;
+      }
+      // A marker whose deadline has passed needs its badge put right. A marker
+      // whose deadline has NOT passed is still legitimately on screen — the
+      // failure it reports has not been read yet — so it is kept and its timer
+      // rescheduled. Clearing it here would drop the only record that the badge
+      // is showing a failure, leaving a "!" nothing can ever clear.
+      if (typeof value !== "number" || !Number.isFinite(value) || value <= now) {
+        expired.push(tabId);
+        expiredKeys.push(key);
+      }
+    }
+    void garbageKeys;
+    if (expiredKeys.length === 0) return;
+    await chrome.storage.session.remove(expiredKeys);
+    for (const tabId of expired) await restoreFindingBadge(tabId);
+  } catch {
+    // Housekeeping is best-effort: a failure must never block the worker.
+  }
+}
+
+/** Put the finding count back after a transient status marker expires. */
+async function restoreFindingBadge(tabId: number): Promise<void> {
+  const session = await readSession(tabId);
+  if (session) updateBadgeForTab(tabId, session.findings.length);
+  else clearBadgeForTab(tabId);
+}
+
+/**
+ * Tell the user an action failed, out loud when they have asked to be told.
+ *
+ * The badge marker is the floor: it always happens. A notification is additive
+ * and stays behind the same gates as every other notification this extension
+ * sends (the setting AND the optional permission), because a failure notice is
+ * not worth overriding a user's stated preference for.
+ */
+async function reportActionFailure(tabId: number, userMessage: string): Promise<void> {
+  flashTabStatus(tabId, "failed");
+  console.warn(`[governworld] ${userMessage}`);
+  try {
+    const settings = await loadSettings();
+    if (!settings.notificationsEnabled) return;
+    if (!(await notificationsGranted())) return;
+    await chrome.notifications.create({
+      type: "basic",
+      iconUrl: chrome.runtime.getURL("icons/icon-128.png"),
+      title: "GovernWorld \u2014 action not completed",
+      message: userMessage,
+      priority: 0,
+    });
+  } catch {
+    // A failed notice must never escalate into a failed action.
+  }
+}
+
+/** True when the content script confirmed the action rather than refusing it. */
+function actionOk(response: unknown): boolean {
+  return typeof response === "object" && response !== null && (response as { ok?: unknown }).ok === true;
+}
+
+/** The content script's error string, when it refused. Never page content. */
+function actionError(response: unknown): string | undefined {
+  if (actionOk(response)) return undefined;
+  const error = (response as { error?: unknown } | null)?.error;
+  return typeof error === "string" && error.length > 0 && error.length <= 200 ? error : undefined;
+}
+
+/**
+ * Category counts from a content-script reply, for a metadata-only audit
+ * record. Storage is a trust boundary, so the shape is re-validated rather than
+ * trusted: a malformed counts object is dropped, never coerced.
+ */
+function actionCounts(response: unknown): Record<string, number> | undefined {
+  const counts = (response as { counts?: unknown } | null)?.counts;
+  if (typeof counts !== "object" || counts === null) return undefined;
+  const clean: Record<string, number> = {};
+  for (const [key, value] of Object.entries(counts as Record<string, unknown>)) {
+    if (typeof key !== "string" || key.length === 0 || key.length > 64) continue;
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) continue;
+    clean[key] = value;
+  }
+  return Object.keys(clean).length > 0 ? clean : undefined;
 }
 
 export function isInternalExtensionUrl(url?: string): boolean {
@@ -334,6 +539,11 @@ function buildPopupState(
     error,
     consentRequired: settings.mode === "cloud" && !isCloudAllowed(settings),
     sessionId: session?.sessionId,
+    // Carried so the coverage panel reports the real outcome. Without these the
+    // panel's five tick marks are static markup asserting a clean bill of
+    // health the scan never gave.
+    coverageStatus: session?.stats.coverageStatus,
+    deferredMediaCount: session?.stats.deferredMediaCount,
   };
 }
 
@@ -390,7 +600,7 @@ async function handlePopupScan(mode: ScanMode, requestId: string): Promise<void>
   }, SCAN_TIMEOUT_MS);
   pendingScans.set(tab.id, { requestId, sessionId, timer });
 
-  await writeSession(tab.id, { sessionId, mode, findings: [], stats: { visibleChars: 0, truncated: false }, scannedAt: Date.now(), scanning: true });
+  await writeSession(tab.id, { sessionId, mode, findings: [], stats: { visibleChars: 0, truncated: false, findingsTruncated: false, totalFindings: 0, imageCandidates: undefined, coverageStatus: undefined, deferredMediaCount: 0 }, scannedAt: Date.now(), scanning: true });
 
   const message: WorkerMessage = {
     type: "SCAN_PAGE",
@@ -402,18 +612,19 @@ async function handlePopupScan(mode: ScanMode, requestId: string): Promise<void>
   await sendToTab(tab.id, message);
 }
 
-async function handlePopupApplyMasks(findingIds: string[], requestId: string): Promise<void> {
+/** True when the action ran; false when the popup was told it could not. */
+async function handlePopupApplyMasks(findingIds: string[], requestId: string): Promise<boolean> {
   const tab = await getActiveTab();
   const settings = await loadSettings();
   const session = tab?.id ? await readSession(tab.id) : null;
   if (!tab?.id || !session) {
     notifyPopup({ type: "POPUP_STATE", requestId, state: buildPopupState(settings, session, { code: "NO_SESSION", userMessage: "Run a scan first." }) });
-    return;
+    return false;
   }
   const response = await sendToTab(tab.id, { type: "APPLY_MASKS", requestId, sessionId: session.sessionId, findingIds });
   if (!maskCommandOk(response)) {
     notifyPopup({ type: "POPUP_STATE", requestId, state: buildPopupState(settings, session, { code: "STALE_SESSION", userMessage: "This scan session is no longer active. Run a scan again." }) });
-    return;
+    return false;
   }
   const idSet = new Set(findingIds);
   const withHistory = pushMaskHistory(session, findingIds);
@@ -426,6 +637,7 @@ async function handlePopupApplyMasks(findingIds: string[], requestId: string): P
     outcome: "ok",
   });
   notifyPopup({ type: "POPUP_STATE", requestId, state: buildPopupState(settings, updated) });
+  return true;
 }
 
 async function handlePopupUndoMasks(requestId: string): Promise<void> {
@@ -449,23 +661,25 @@ async function handlePopupUndoMasks(requestId: string): Promise<void> {
   notifyPopup({ type: "POPUP_STATE", requestId, state: buildPopupState(settings, updated) });
 }
 
-async function handlePopupRemoveMasks(requestId: string): Promise<void> {
+/** True when the action ran; false when the popup was told it could not. */
+async function handlePopupRemoveMasks(requestId: string): Promise<boolean> {
   const tab = await getActiveTab();
   const settings = await loadSettings();
   const session = tab?.id ? await readSession(tab.id) : null;
   if (!tab?.id || !session) {
     notifyPopup({ type: "POPUP_STATE", requestId, state: buildPopupState(settings, session, { code: "NO_SESSION", userMessage: "Run a scan first." }) });
-    return;
+    return false;
   }
   const removeResponse = await sendToTab(tab.id, { type: "REMOVE_MASKS", requestId, sessionId: session.sessionId });
   if (!maskCommandOk(removeResponse)) {
     notifyPopup({ type: "POPUP_STATE", requestId, state: buildPopupState(settings, session, { code: "STALE_SESSION", userMessage: "This scan session is no longer active. Run a scan again." }) });
-    return;
+    return false;
   }
   const updated: SessionState = { ...session, findings: session.findings.map((f) => ({ ...f, selected: false })) };
   await writeSession(tab.id, updated);
   void recordAudit({ ts: new Date().toISOString(), action: "masks_removed", outcome: "ok" });
   notifyPopup({ type: "POPUP_STATE", requestId, state: buildPopupState(settings, updated) });
+  return true;
 }
 
 async function handlePopupCopyRedacted(findingIds: string[], requestId: string): Promise<void> {
@@ -1451,10 +1665,24 @@ chrome.commands.onCommand.addListener((command) => {
     if (command === "toggle-masks") {
       const tab = await getActiveTab();
       const session = tab?.id ? await readSession(tab.id) : null;
-      if (!tab?.id || !session) return;
+      // The shortcut has no popup to report into: notifyPopup would post a
+      // message nobody is listening for and the keypress would look inert. The
+      // refusal has to reach the badge, because "Alt+Shift+M did nothing" and
+      // "there is no scan on this tab" are otherwise the same event.
+      if (!tab?.id || !session) {
+        if (tab?.id) {
+          await reportActionFailure(tab.id, "No scan on this tab yet. Run a scan first.");
+        } else {
+          console.warn("[governworld] toggle-masks: no scannable tab to act on");
+        }
+        return;
+      }
       const anySelected = session.findings.some((f) => f.selected);
-      if (anySelected) await handlePopupRemoveMasks(requestId);
-      else await handlePopupApplyMasks(session.findings.map((f) => f.id), requestId);
+      const ran = anySelected
+        ? await handlePopupRemoveMasks(requestId)
+        : await handlePopupApplyMasks(session.findings.map((f) => f.id), requestId);
+      if (ran && tab.id) flashTabStatus(tab.id, "ok");
+      else if (tab.id) await reportActionFailure(tab.id, "This scan session is no longer active. Run a scan again.");
       return;
     }
     if (command === "open-side-panel") {
@@ -1484,7 +1712,13 @@ async function syncContextMenus(): Promise<void> {
       if (settings.contextMenusEnabled) {
         chrome.contextMenus.create({ id: "scan_page", title: "Scan page for sensitive data", contexts: ["page", "selection"] });
         chrome.contextMenus.create({ id: "redact_selection", title: "Redact selection to clipboard", contexts: ["selection"] });
-        chrome.contextMenus.create({ id: "mask_selection", title: "Mask selected text / element", contexts: ["selection", "page"] });
+        // Selection context ONLY. It was also registered for "page", where the
+        // content script cannot possibly succeed — it reads
+        // window.getSelection() and refuses a collapsed range — so the entry
+        // appeared on every ordinary right-click and did nothing, silently. The
+        // title said "element"; this handler masks a text selection and nothing
+        // else, so the claim was false as well as the context.
+        chrome.contextMenus.create({ id: "mask_selection", title: "Mask selected text", contexts: ["selection"] });
       }
       resolve();
     });
@@ -1528,6 +1762,10 @@ if (chrome.permissions?.onRemoved) {
 // pending always-on request must be armed, even if no settings event fires.
 void syncSiteProtection();
 
+// A status marker written by a worker that was then reclaimed would otherwise
+// stay on the toolbar indefinitely: its setTimeout died with the worker.
+void reconcileTabStatuses();
+
 if (chrome.contextMenus?.onClicked) {
   chrome.contextMenus.onClicked.addListener((info, tab) => {
     void (async () => {
@@ -1541,6 +1779,8 @@ if (chrome.contextMenus?.onClicked) {
 
       const settings = await loadSettings();
       const effectiveScanSettings = await buildEffectiveScanSettingsMessage(settings);
+      const host = tabHost(await chrome.tabs.get(tabId).catch(() => undefined));
+
       if (info.menuItemId === "redact_selection") {
         const msg: WorkerMessage = {
           type: "CONTEXT_REDACT_SELECTION",
@@ -1548,7 +1788,27 @@ if (chrome.contextMenus?.onClicked) {
           selectionText: info.selectionText,
           settings: effectiveScanSettings,
         };
-        await sendToTab(tabId, msg);
+        // The reply used to be dropped on the floor. "No text selected" and a
+        // genuine redaction were indistinguishable to the user, so the entry
+        // could fail forever without anyone noticing. It is also a REDACTION:
+        // it writes redacted content to the clipboard, which is exactly the
+        // operation the audit invariant exists to record.
+        const response = await sendToTab(tabId, msg);
+        const error = actionError(response);
+        const counts = actionCounts(response);
+        void recordAudit({
+          ts: new Date().toISOString(),
+          action: "selection_redacted",
+          ...(host ? { host } : {}),
+          ...(counts ? { counts } : {}),
+          outcome: error ? "error" : "ok",
+        });
+        if (error) {
+          await reportActionFailure(tabId, `Redact selection: ${error}`);
+        } else {
+          flashTabStatus(tabId, "ok");
+          console.info(`[governworld] Redacted selection copied to the clipboard (${Object.values(counts ?? {}).reduce((a, b) => a + b, 0)} values masked)`);
+        }
       } else if (info.menuItemId === "mask_selection") {
         const msg: WorkerMessage = {
           type: "CONTEXT_MASK_SELECTION",
@@ -1556,9 +1816,23 @@ if (chrome.contextMenus?.onClicked) {
           selectionText: info.selectionText,
           settings: effectiveScanSettings,
         };
-        await sendToTab(tabId, msg);
+        const response = await sendToTab(tabId, msg);
+        const error = actionError(response);
+        void recordAudit({
+          ts: new Date().toISOString(),
+          action: "selection_masked",
+          ...(host ? { host } : {}),
+          outcome: error ? "error" : "ok",
+        });
+        if (error) {
+          await reportActionFailure(tabId, `Mask selection: ${error}`);
+        } else {
+          flashTabStatus(tabId, "ok");
+        }
       }
-    })().catch(() => undefined);
+    })().catch((error) => {
+      console.warn("[governworld] Context menu action failed:", error);
+    });
   });
 }
 

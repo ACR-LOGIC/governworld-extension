@@ -1466,9 +1466,28 @@ body[data-reduced-motion="true"] *::after {
   flex: none;
 }
 
-.coverage-icon--ok {
-  background: var(--ok-soft);
+.coverage-status {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/* Tone is an attribute, not a class: the verdict is chosen at runtime, and a
+   runtime-composed class name (`status--${tone}`) is invisible to the markup,
+   to the dead-CSS pruner and to the DOM contract test. */
+.coverage-status[data-tone="ok"] {
   color: var(--ok);
+}
+
+/* Anything short of a clean scan is amber, never green. A page with content we
+   could not read must not read as a page that passed. */
+.coverage-status[data-tone="warn"] {
+  color: var(--warning);
+}
+
+.coverage-status[data-tone="error"] {
+  color: var(--danger);
 }
 
 /* ---------- Settings sub-navigation ---------- */

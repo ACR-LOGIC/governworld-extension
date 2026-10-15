@@ -297,6 +297,13 @@ export interface PopupState {
   error?: { code: string; userMessage: string };
   consentRequired: boolean;
   sessionId?: string;
+  /**
+   * Honest classification of the completed scan, carried so the coverage panel
+   * reports what was actually inspected. Absent when no scan has completed.
+   */
+  coverageStatus?: ScanCoverageStatus;
+  /** Visual regions found beyond the per-pass budget that were not queued. */
+  deferredMediaCount?: number;
 }
 
 /** One processed document page for the review UI (thumbnails only, no raw text). */

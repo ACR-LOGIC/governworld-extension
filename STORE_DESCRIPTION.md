@@ -93,7 +93,7 @@ scan. The extension does not change behavior based on which website is open.
 - `sidePanel` — show the side panel for scanning, document redaction,
   notifications, and account/license management.
 - `contextMenus` — add "Scan page for sensitive data", "Redact selection to
-  clipboard", and "Mask selected text / element" to the right-click menu, so
+  clipboard", and "Mask selected text" to the right-click menu, so
   the same on-demand actions can be started from there. Each entry runs only
   when you click it, and the entries can be switched off in settings.
 - `notifications` (optional, requested at runtime) — scan-findings notice only

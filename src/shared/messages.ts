@@ -438,6 +438,20 @@ function normalizePopupState(value: unknown): PopupState | null {
     if (!isRecord(value.error) || typeof value.error.code !== "string" || typeof value.error.userMessage !== "string" || value.error.code.length > 100 || value.error.userMessage.length > 500) return null;
     error = { code: value.error.code, userMessage: value.error.userMessage };
   }
+  // The honest scan classification, carried through so the coverage panel can
+  // report what was inspected rather than asserting a clean bill of health. A
+  // value outside the enum is dropped (the panel falls back to "unknown"),
+  // never coerced.
+  const coverageStatus =
+    typeof value.coverageStatus === "string" && SCAN_COVERAGE_STATUSES.has(value.coverageStatus)
+      ? (value.coverageStatus as import("../shared/types.js").ScanCoverageStatus)
+      : undefined;
+  const deferredMediaCount =
+    typeof value.deferredMediaCount === "number" &&
+    Number.isSafeInteger(value.deferredMediaCount) &&
+    value.deferredMediaCount >= 0
+      ? value.deferredMediaCount
+      : undefined;
   return {
     mode: value.mode,
     scanning: value.scanning,
@@ -451,6 +465,8 @@ function normalizePopupState(value: unknown): PopupState | null {
     ...(error ? { error } : {}),
     consentRequired: value.consentRequired,
     ...(value.sessionId !== undefined ? { sessionId: value.sessionId } : {}),
+    ...(coverageStatus ? { coverageStatus } : {}),
+    ...(deferredMediaCount !== undefined ? { deferredMediaCount } : {}),
   };
 }
 

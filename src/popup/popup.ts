@@ -697,6 +697,78 @@ function renderState(state: PopupState): void {
   const cloudRadio = document.getElementById("mode-cloud") as HTMLInputElement | null;
   if (localRadio && localRadio.checked !== (state.mode === "local")) localRadio.checked = state.mode === "local";
   if (cloudRadio && cloudRadio.checked !== (state.mode === "cloud")) cloudRadio.checked = state.mode === "cloud";
+
+  renderCoverage(state);
+}
+
+/**
+ * Report what the scan actually inspected.
+ *
+ * The panel previously shipped five hardcoded green ticks that no code ever
+ * updated: a page with a cross-origin frame, a DRM video or a truncated DOM
+ * showed the same "everything covered" panel as a fully clean scan. The worker
+ * computes an honest `coverageStatus`; this is where it becomes visible.
+ *
+ * Only `FULLY_SCANNED` and `NO_SENSITIVE_DATA_DETECTED` are green. Everything
+ * else is amber or red, because "we could not read some of this" and "this is
+ * clean" are different claims and only one of them is safe to imply.
+ */
+function renderCoverage(state: PopupState): void {
+  const el = document.getElementById("coverage-status");
+  const deferred = document.getElementById("coverage-deferred");
+
+  if (deferred) {
+    const count = state.deferredMediaCount ?? 0;
+    deferred.hidden = count <= 0;
+    if (count > 0) deferred.textContent = t(currentLang, "coverage_deferred", { count: String(count) });
+  }
+
+  if (!el) return;
+
+  // No completed scan, or a scan still running: there is no verdict to show.
+  if (!state.scanned || state.scanning || state.error) {
+    el.hidden = true;
+    el.textContent = "";
+    el.removeAttribute("data-tone");
+    return;
+  }
+
+  el.hidden = false;
+  const verdict = coverageVerdict(state);
+  el.textContent = verdict.text;
+  el.setAttribute("data-tone", verdict.tone);
+}
+
+type CoverageTone = "ok" | "warn" | "error";
+
+function coverageVerdict(state: PopupState): { text: string; tone: CoverageTone } {
+  // Truncation is an independent signal of incompleteness and is checked before
+  // any status: findings past the character cap were never looked for, so no
+  // worker verdict can make a truncated scan read as clean.
+  if (state.truncated) {
+    return { text: t(currentLang, "coverage_status_partial"), tone: "warn" };
+  }
+
+  switch (state.coverageStatus) {
+    case "FULLY_SCANNED":
+      return { text: t(currentLang, "coverage_status_full"), tone: "ok" };
+    case "NO_SENSITIVE_DATA_DETECTED":
+      // Only reachable when every discovered region was inspected, so this is
+      // a genuine all-clear and may read as one.
+      return { text: t(currentLang, "coverage_status_clean"), tone: "ok" };
+    case "PARTIALLY_SCANNED":
+      return { text: t(currentLang, "coverage_status_partial"), tone: "warn" };
+    case "UNSUPPORTED_CONTENT_PRESENT":
+      return { text: t(currentLang, "coverage_status_unsupported"), tone: "warn" };
+    case "BLOCKED_BY_BROWSER_SECURITY":
+      return { text: t(currentLang, "coverage_status_blocked"), tone: "error" };
+    case "SCAN_FAILED":
+      return { text: t(currentLang, "coverage_status_failed"), tone: "error" };
+    default:
+      // No verdict reached us: a session from an older build, or a value the
+      // worker's storage guard rejected. Say so rather than assuming clean.
+      return { text: t(currentLang, "coverage_status_unknown"), tone: "warn" };
+  }
 }
 
 async function sendMessage(message: PopupMessage): Promise<unknown> {

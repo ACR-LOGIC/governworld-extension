@@ -22,11 +22,21 @@
   "optional_permissions": ["notifications"],
   "optional_host_permissions": ["http://*/*", "https://*/*"],
   "commands": {
+    "_execute_action": {
+      "suggested_key": { "default": "Alt+Shift+E", "mac": "Command+Shift+E" },
+      "description": "Open the GovernWorld popup"
+    },
     "scan-page": {
+      "suggested_key": { "default": "Alt+Shift+S", "mac": "Command+Shift+S" },
       "description": "Scan the current page for sensitive data"
     },
     "toggle-masks": {
+      "suggested_key": { "default": "Alt+Shift+M", "mac": "Command+Shift+M" },
       "description": "Apply or remove page masks"
+    },
+    "open-side-panel": {
+      "suggested_key": { "default": "Alt+Shift+P", "mac": "Command+Shift+P" },
+      "description": "Open the GovernWorld side panel"
     }
   },
   "sidebar_action": {

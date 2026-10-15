@@ -341,21 +341,53 @@ try {
     await fixture.bringToFront();
     await clickInPage(popup, "#apply-masks-btn");
     await popup.waitForTimeout(2500);
-    // Masks render inside the content script's shadow root, so the host element is
-    // all a light-DOM query can see; count masks through the shadow root.
-    const overlay = await fixture.evaluate(() => {
-      const host = document.querySelector("div[data-gw-scan-overlay]");
-      return {
-        host: Boolean(host),
-        masks: host?.shadowRoot ? host.shadowRoot.querySelectorAll("[data-kind]").length : 0,
-        kinds: host?.shadowRoot ? [...new Set([...host.shadowRoot.querySelectorAll("[data-kind]")].map((e) => e.getAttribute("data-kind")))] : [],
-      };
-    });
+    // Masks render inside the content script's shadow root, which commit 0668685
+    // closed on purpose: with an open root, page JavaScript could read every mask
+    // rect and its category straight out of `host.shadowRoot` - a map of exactly
+    // where the PII is, handed to a third-party script without the user agreeing.
+    //
+    // A closed root is exactly what `fixture.evaluate()` sees: `host.shadowRoot`
+    // is null, so the old count was always 0 and this step reported a failure for
+    // a working extension. Reading it requires the extension's own privilege, so
+    // the query goes through the worker into an ISOLATED content script where
+    // `chrome.dom.openOrClosedShadowRoot` is available. See
+    // tests/overlay-visibility.test.ts for the guard on this decision.
+    const overlay = await worker.evaluate(async (origin) => {
+      const tabs = await chrome.tabs.query({});
+      // Target the fixture by URL, not by "active": clicking into the popup makes
+      // the popup the focused tab, and the worker's own resolver would then look
+      // for a scan session belonging to the popup.
+      const tab = tabs.find((t) => (t.url || "").startsWith(origin));
+      if (!tab || typeof tab.id !== "number") {
+        return { error: "fixture tab not found", urls: tabs.map((t) => t.url) };
+      }
+      const [res] = await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        func: () => {
+          const host = document.querySelector("div[data-gw-scan-overlay]");
+          if (!host) return { host: false, masks: 0, kinds: [], mode: null };
+          const root =
+            typeof chrome !== "undefined" && chrome.dom?.openOrClosedShadowRoot
+              ? chrome.dom.openOrClosedShadowRoot(host)
+              : host.shadowRoot;
+          if (!root) return { host: true, masks: 0, kinds: [], mode: null };
+          const painted = [...root.querySelectorAll("[data-kind]")];
+          return {
+            host: true,
+            masks: painted.length,
+            kinds: [...new Set(painted.map((e) => e.getAttribute("data-kind")))],
+            mode: root.mode,
+          };
+        },
+      });
+      return res?.result ?? { error: "no result from executeScript" };
+    }, ORIGIN);
+    if (overlay.error) throw new Error(`could not inspect the overlay: ${JSON.stringify(overlay)}`);
     maskedCount = overlay.masks;
     const s = await popup.evaluate(() => document.getElementById("status")?.textContent?.trim() ?? "");
-    console.log(`  host=${overlay.host} masks=${overlay.masks} kinds=${overlay.kinds.join(",")} status="${s}"`);
+    console.log(`  host=${overlay.host} mode=${overlay.mode} masks=${overlay.masks} kinds=${overlay.kinds.join(",")} status="${s}"`);
     if (/Run a scan first/.test(s)) throw new Error("worker had no scan session for the fixture tab");
-    if (!overlay.masks) throw new Error(`no mask elements were rendered into the page (host=${overlay.host})`);
+    if (!overlay.masks) throw new Error(`no mask elements were rendered into the page (host=${overlay.host} mode=${overlay.mode})`);
     await shot(fixture, "fixture-after-masks", `${overlay.masks} visual mask(s) over the page`);
   });
 

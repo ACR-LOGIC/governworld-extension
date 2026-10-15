@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 import type { CanonicalDocument, CanonicalSegment, CanonicalBoundary, CoverageInfo, BoundaryInfo } from "./types.js";
 import { extractVisibleText, buildScanText, type TextSegment } from "../extract.js";
+import { getAccessibleShadowRoot } from "./shadow.js";
+import { updateCoverageWithBoundaries } from "./coverage.js";
 
 let boundaryCounter = 0;
 
@@ -21,10 +23,6 @@ export function buildCanonicalDocument(options: {
   const sourceKind = options.sourceKind ?? "web-dom";
 
   const boundaries: CanonicalBoundary[] = [];
-  let shadowRootCount = 0;
-  let iframeCount = 0;
-  let tableCount = 0;
-  let inaccessibleBoundaries = 0;
 
   const { segments: rawSegments, truncated } = extractVisibleText(
     options.root,
@@ -43,61 +41,45 @@ export function buildCanonicalDocument(options: {
     }
   }
 
-  shadowRootCount = countShadowRoots(options.root);
-  iframeCount = countIframes(options.root);
-  tableCount = countTables(options.root);
-
-  for (const iframe of collectIframes(options.root)) {
-    if (iframe.accessible) {
-      boundaries.push({
-        kind: "iframe",
-        status: "complete",
-        nodeId: generateBoundaryId(),
-        frameId: iframe.id,
-      });
-    } else {
-      boundaries.push({
-        kind: "cross-origin-frame",
-        status: "inaccessible",
-        nodeId: generateBoundaryId(),
-        frameId: iframe.id,
-      });
-      inaccessibleBoundaries++;
-    }
+  // Boundary inventory only. This function extracts ONE document; it does not
+  // descend into frames. traverseIframes owns frame extraction and reports its
+  // own boundaries, so recording an "iframe/complete" boundary here would claim
+  // coverage no code path in this function delivered.
+  const shadowRoots = collectShadowRoots(options.root);
+  for (const shadow of shadowRoots) {
+    boundaries.push({
+      // A root reached through chrome.dom.openOrClosedShadowRoot is closed, and
+      // saying otherwise hides the fact that reading it needed a privilege.
+      kind: shadow.mode === "closed" ? "closed-shadow-root" : "shadow-root",
+      status: "complete",
+      nodeId: generateBoundaryId(),
+      shadowRootId: shadow.id,
+    });
   }
 
-  for (const shadow of collectShadowRoots(options.root)) {
-    if (shadow.accessible) {
-      boundaries.push({
-        kind: "shadow-root",
-        status: "complete",
-        nodeId: generateBoundaryId(),
-        shadowRootId: shadow.id,
-      });
-    } else {
-      boundaries.push({
-        kind: "closed-shadow-root",
-        status: "inaccessible",
-        nodeId: generateBoundaryId(),
-        shadowRootId: shadow.id,
-      });
-      inaccessibleBoundaries++;
-    }
-  }
+  const iframeCount = countIframes(options.root);
+  const shadowRootCount = shadowRoots.length;
+  const tableCount = countTables(options.root);
 
-  const hasInaccessible = inaccessibleBoundaries > 0;
-
-  const coverage: CoverageInfo = {
-    dom: "complete",
-    shadowDom: shadowRootCount === 0 ? "complete" : hasInaccessible ? "partial" : "complete",
-    sameOriginFrames: iframeCount === 0 ? "complete" : "complete",
-    crossOriginFrames: hasInaccessible ? "inaccessible" : "complete",
-    dynamicContent: "monitored",
-    virtualizedContent: "dom-visible-only",
-    totalBoundaries: boundaries.length,
-    inaccessibleBoundaries,
-    complete: !hasInaccessible && !truncated,
-  };
+  // Frames present, zero read: this function reads one document, so every
+  // frame it found is still unread. The caller upgrades this once
+  // traverseIframes has reported what it actually extracted.
+  const coverage: CoverageInfo = updateCoverageWithBoundaries(
+    {
+      dom: "complete",
+      shadowDom: "complete",
+      sameOriginFrames: "complete",
+      crossOriginFrames: "complete",
+      dynamicContent: "monitored",
+      virtualizedContent: "dom-visible-only",
+      totalBoundaries: 0,
+      inaccessibleBoundaries: 0,
+      complete: true,
+    },
+    boundaries,
+    { present: iframeCount, read: 0 },
+    truncated
+  );
 
   const canonicalSegments: CanonicalSegment[] = rawSegments.map((seg, i) => {
     const segStart = segmentStarts[i] ?? 0;
@@ -143,11 +125,9 @@ export function buildCanonicalDocument(options: {
 function countShadowRoots(root: Document | Element | ShadowRoot): number {
   let count = 0;
   const doc = root instanceof Document ? root : root.ownerDocument ?? root;
-  const chromeApi = (globalThis as unknown as { chrome?: { dom?: { openOrClosedShadowRoot?: (e: Element) => ShadowRoot | null } } })?.chrome;
   const walk = (node: Node) => {
     if (node.nodeType === Node.ELEMENT_NODE) {
-      const el = node as Element;
-      const sr = chromeApi?.dom?.openOrClosedShadowRoot?.(el) ?? el.shadowRoot;
+      const sr = getAccessibleShadowRoot(node as Element);
       if (sr) {
         count++;
         walk(sr);
@@ -161,89 +141,73 @@ function countShadowRoots(root: Document | Element | ShadowRoot): number {
   return count;
 }
 
+/**
+ * Counts frames at every depth, through shadow roots included — the same
+ * reach traverseIframes has, so the count and the coverage it produces cannot
+ * disagree about whether the page has frames.
+ */
 function countIframes(root: Document | Element | ShadowRoot): number {
   let count = 0;
   const doc = root instanceof Document ? root : root.ownerDocument ?? root;
-  const walk = (node: Node) => {
+  const walk = (node: Node, depth: number) => {
+    if (depth > 10) return;
     if (node.nodeType === Node.ELEMENT_NODE) {
       const el = node as Element;
-      if (el.tagName === "IFRAME") count++;
+      if (el.tagName === "IFRAME" || el.tagName === "FRAME") count++;
+      const sr = getAccessibleShadowRoot(el);
+      if (sr) walk(sr, depth + 1);
     }
     for (let child = node.firstChild; child; child = child.nextSibling) {
-      walk(child);
+      walk(child, depth + 1);
     }
   };
-  walk(doc);
+  walk(doc, 0);
   return count;
 }
 
 function countTables(root: Document | Element | ShadowRoot): number {
   let count = 0;
   const doc = root instanceof Document ? root : root.ownerDocument ?? root;
-  const walk = (node: Node) => {
+  const walk = (node: Node, depth: number) => {
+    if (depth > 10) return;
     if (node.nodeType === Node.ELEMENT_NODE) {
       const el = node as Element;
       if (el.tagName === "TABLE") count++;
+      const sr = getAccessibleShadowRoot(el);
+      if (sr) walk(sr, depth + 1);
     }
     for (let child = node.firstChild; child; child = child.nextSibling) {
-      walk(child);
+      walk(child, depth + 1);
     }
   };
-  walk(doc);
+  walk(doc, 0);
   return count;
-}
-
-interface IframeInfo {
-  id: string;
-  accessible: boolean;
-}
-
-function collectIframes(root: Document | Element | ShadowRoot): IframeInfo[] {
-  const iframes: IframeInfo[] = [];
-  const doc = root instanceof Document ? root : root.ownerDocument ?? root;
-  const walk = (node: Node) => {
-    if (node.nodeType === Node.ELEMENT_NODE) {
-      const el = node as Element;
-      if (el.tagName === "IFRAME") {
-        let accessible = false;
-        try {
-          accessible = !!(el as HTMLIFrameElement).contentDocument;
-        } catch {
-          accessible = false;
-        }
-        iframes.push({ id: `iframe_${iframes.length}`, accessible });
-      }
-    }
-    for (let child = node.firstChild; child; child = child.nextSibling) {
-      walk(child);
-    }
-  };
-  walk(doc);
-  return iframes;
 }
 
 interface ShadowRootInfo {
   id: string;
-  accessible: boolean;
+  mode: ShadowRootMode;
 }
 
 function collectShadowRoots(root: Document | Element | ShadowRoot): ShadowRootInfo[] {
   const roots: ShadowRootInfo[] = [];
   const doc = root instanceof Document ? root : root.ownerDocument ?? root;
-  const chromeApi = (globalThis as unknown as { chrome?: { dom?: { openOrClosedShadowRoot?: (e: Element) => ShadowRoot | null } } })?.chrome;
-  const walk = (node: Node) => {
+  const walk = (node: Node, depth: number) => {
+    if (depth > 10) return;
     if (node.nodeType === Node.ELEMENT_NODE) {
-      const el = node as Element;
-      const sr = chromeApi?.dom?.openOrClosedShadowRoot?.(el) ?? el.shadowRoot;
+      const sr = getAccessibleShadowRoot(node as Element);
       if (sr) {
-        roots.push({ id: `shadow_${roots.length}`, accessible: true });
-        walk(sr);
+        // `mode` is the honest label: a root we reached only through
+        // chrome.dom.openOrClosedShadowRoot is "closed", and reporting it as
+        // open hides the fact that reading it needed an extension privilege.
+        roots.push({ id: `shadow_${roots.length}`, mode: sr.mode });
+        walk(sr, depth + 1);
       }
     }
     for (let child = node.firstChild; child; child = child.nextSibling) {
-      walk(child);
+      walk(child, depth + 1);
     }
   };
-  walk(doc);
+  walk(doc, 0);
   return roots;
 }

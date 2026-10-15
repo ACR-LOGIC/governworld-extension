@@ -29,7 +29,7 @@ describe("updateCoverageWithBoundaries", () => {
       { kind: "shadow-root", status: "complete", nodeId: "sr_0" },
       { kind: "iframe", status: "complete", nodeId: "if_0" },
     ];
-    const updated = updateCoverageWithBoundaries(initial, boundaries);
+    const updated = updateCoverageWithBoundaries(initial, boundaries, { present: 1, read: 1 });
     expect(updated.complete).toBe(true);
     expect(updated.inaccessibleBoundaries).toBe(0);
     expect(updated.totalBoundaries).toBe(2);
@@ -41,7 +41,7 @@ describe("updateCoverageWithBoundaries", () => {
       { kind: "shadow-root", status: "complete", nodeId: "sr_0" },
       { kind: "closed-shadow-root", status: "inaccessible", nodeId: "sr_1" },
     ];
-    const updated = updateCoverageWithBoundaries(initial, boundaries);
+    const updated = updateCoverageWithBoundaries(initial, boundaries, { present: 0, read: 0 });
     expect(updated.complete).toBe(false);
     expect(updated.shadowDom).toBe("partial");
     expect(updated.inaccessibleBoundaries).toBe(1);
@@ -52,8 +52,43 @@ describe("updateCoverageWithBoundaries", () => {
     const boundaries: CanonicalBoundary[] = [
       { kind: "cross-origin-frame", status: "inaccessible", nodeId: "if_0" },
     ];
-    const updated = updateCoverageWithBoundaries(initial, boundaries);
+    const updated = updateCoverageWithBoundaries(initial, boundaries, { present: 1, read: 0 });
     expect(updated.crossOriginFrames).toBe("inaccessible");
+    expect(updated.sameOriginFrames).toBe("partial");
+    expect(updated.complete).toBe(false);
+  });
+
+  it("is complete when the page has no frames at all", () => {
+    const initial = createInitialCoverage();
+    const updated = updateCoverageWithBoundaries(initial, [], { present: 0, read: 0 });
+    expect(updated.sameOriginFrames).toBe("complete");
+    expect(updated.complete).toBe(true);
+  });
+
+  it("refuses complete when frames exist that no boundary reported", () => {
+    // The exact shape that shipped: a frame the inventory counted, that no
+    // extraction path read, and coverage that still said "complete".
+    const initial = createInitialCoverage();
+    const updated = updateCoverageWithBoundaries(initial, [], { present: 3, read: 0 });
+    expect(updated.sameOriginFrames).toBe("partial");
+    expect(updated.complete).toBe(false);
+  });
+
+  it("refuses complete when the caller reports truncation", () => {
+    const initial = createInitialCoverage();
+    const updated = updateCoverageWithBoundaries(initial, [], { present: 0, read: 0 }, true);
+    expect(updated.complete).toBe(false);
+    expect(updated.sameOriginFrames).toBe("complete");
+  });
+
+  it("does not let a read frame hide a truncated shadow root", () => {
+    const initial = createInitialCoverage();
+    const boundaries: CanonicalBoundary[] = [
+      { kind: "iframe", status: "complete", nodeId: "if_0" },
+      { kind: "cross-origin-frame", status: "inaccessible", nodeId: "if_1" },
+    ];
+    const updated = updateCoverageWithBoundaries(initial, boundaries, { present: 2, read: 1 });
+    expect(updated.sameOriginFrames).toBe("partial");
     expect(updated.complete).toBe(false);
   });
 });
@@ -86,7 +121,7 @@ describe("formatCoverageSummary", () => {
     const boundaries: CanonicalBoundary[] = [
       { kind: "cross-origin-frame", status: "inaccessible", nodeId: "if_0" },
     ];
-    const updated = updateCoverageWithBoundaries(initial, boundaries);
+    const updated = updateCoverageWithBoundaries(initial, boundaries, { present: 1, read: 0 });
     const summary = formatCoverageSummary(updated);
     expect(summary).toContain("1 inaccessible boundary");
   });

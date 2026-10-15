@@ -40,8 +40,38 @@ describe("resolveScanCoverageStatus", () => {
       findingsCount: 0,
       unresolvedRegions: [],
       deferredMediaCount: 0,
+      visibleChars: 4200,
     });
     expect(status).toBe("NO_SENSITIVE_DATA_DETECTED");
+  });
+
+  it("never reports clean when the scan read zero characters", () => {
+    // A page whose content is pixels - a letterhead scan, a rendered PDF, a
+    // screenshot - yields 0 characters and 0 findings. Calling that
+    // "no sensitive data detected" is a clean bill of health for a document
+    // nobody read, and the popup renders it green.
+    const status = resolveScanCoverageStatus({
+      findingsCount: 0,
+      unresolvedRegions: [],
+      deferredMediaCount: 0,
+      visibleChars: 0,
+    });
+    expect(status).toBe("PARTIALLY_SCANNED");
+    expect(status).not.toBe("NO_SENSITIVE_DATA_DETECTED");
+    expect(status).not.toBe("FULLY_SCANNED");
+  });
+
+  it("does not let a blocked region be downgraded by the zero-text rule", () => {
+    const region: UnscannableRegion = {
+      sourceType: "iframe",
+      cssSelector: "iframe",
+      visibility: "VISIBLE_IN_VIEWPORT",
+      reason: "cross-origin-isolation",
+      detail: "Cross-origin frame",
+    };
+    expect(
+      resolveScanCoverageStatus({ findingsCount: 0, unresolvedRegions: [region], deferredMediaCount: 0, visibleChars: 0 })
+    ).toBe("BLOCKED_BY_BROWSER_SECURITY");
   });
 
   it("returns FULLY_SCANNED when scan is complete and there are findings", () => {

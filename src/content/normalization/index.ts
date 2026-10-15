@@ -12,6 +12,7 @@ export type {
   NormalizationResult,
 } from "./types.js";
 export { buildCanonicalDocument } from "./canonical.js";
+export { getAccessibleShadowRoot } from "./shadow.js";
 export {
   createInitialCoverage,
   updateCoverageWithBoundaries,

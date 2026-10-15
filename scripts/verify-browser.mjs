@@ -160,7 +160,13 @@ try {
       hasExportPack: Boolean(document.getElementById("export-pack-btn")),
       // textContent, not innerText: the Detection sub-page is correctly hidden until
       // the user navigates to it, and innerText omits non-rendered subtrees.
-      hasDisclosure: /thresholds are applied automatically/i.test(document.body.textContent),
+      // The assertion is on the *meaning*, not a fixed sentence: commit 0668685
+      // removed the "thresholds are applied automatically" claim because presets
+      // choose categories, not thresholds. Matching the old wording here would
+      // fail forever on copy that is now correct.
+      hasDisclosure: /nothing is silently discarded|nada é descartado em silêncio/i.test(
+        document.body.textContent
+      ),
       rangeInputs: document.querySelectorAll('input[type="range"]').length,
     }));
 

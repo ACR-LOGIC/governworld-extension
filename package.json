@@ -37,6 +37,7 @@
     "icons": "node scripts/make-icons.mjs",
     "verify:print": "node scripts/verify-print-pipeline.mjs",
     "test:no-text": "node scripts/verify-no-text-reporting.mjs",
+    "test:invocation": "node scripts/verify-invocation-feedback.mjs",
     "test:review": "node scripts/verify-review-surface.mjs"
   },
   "dependencies": {

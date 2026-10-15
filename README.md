@@ -51,6 +51,7 @@ The **GovernWorld Extension** is a fully functional, local-first browser protect
    - Scan visible web page text on demand with a single click or keyboard shortcut (`Alt+Shift+S`).
    - Highlight detected sensitive entities and apply non-destructive visual overlays directly in the DOM.
    - Copy securely redacted plain text with sensitive values replaced by solid block placeholders `[REDACTED]`.
+   - Keyboard shortcuts: `Alt+Shift+E` opens the popup, `Alt+Shift+S` scans the page, `Alt+Shift+M` applies or removes masks, `Alt+Shift+P` opens the side panel. All four are rebindable at `chrome://extensions/shortcuts`.
 
 2. **"Paste & Prompt" Shield (on-demand, active on tabs you have activated):**
    - Intercepts paste events in real time on LLM interfaces (**ChatGPT**, **Claude**, **Gemini**, **Slack**, web forms).
@@ -363,8 +364,12 @@ requested and why, and `BROWSER_SUPPORT.md` for per-browser coverage.
 
 GovernWorld integrates directly into the browser right-click context menu:
 - **Redact selection to clipboard:** Copies highlighted text with sensitive data masked.
-- **Mask selected text / element:** Immediately overlays visual privacy masks on the page.
+- **Mask selected text:** Immediately overlays visual privacy masks on the selected text.
 - **Scan whole page:** Triggers instant on-device scan (<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>).
+
+Both selection entries appear only when there is a selection to act on. The tab
+icon shows a tick when an action completed and `!` when it did not, so a
+right-click is never indistinguishable from a no-op.
 
 ---
 

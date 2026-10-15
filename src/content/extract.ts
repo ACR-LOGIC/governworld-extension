@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 import type { Finding } from "../shared/types.js";
+import { getAccessibleShadowRoot } from "./normalization/shadow.js";
 
 /**
  * Visible-text extraction for the top-level document.
@@ -200,9 +201,8 @@ export function extractVisibleText(
         }
       }
 
-      // Access open or closed shadow roots (using Chromium extension API if available)
-      const chromeApi = (globalThis as unknown as { chrome?: { dom?: { openOrClosedShadowRoot?: (e: Element) => ShadowRoot | null } } })?.chrome;
-      const shadowRoot = chromeApi?.dom?.openOrClosedShadowRoot?.(el) ?? el.shadowRoot;
+      // Open and closed shadow roots alike, via the shared accessor.
+      const shadowRoot = getAccessibleShadowRoot(el);
       if (shadowRoot) {
         traverse(shadowRoot);
       }

@@ -180,6 +180,92 @@ describe("buildCanonicalDocument - iframes", () => {
       expect(boundaries.length).toBeGreaterThanOrEqual(0);
     }
   });
+
+  it("reaches a frame nested inside another frame", () => {
+    document.body.innerHTML = `<iframe id="outer"></iframe>`;
+    const outer = document.getElementById("outer") as HTMLIFrameElement;
+    const outerDoc = outer.contentDocument;
+    if (!outerDoc) return;
+    outerDoc.body.innerHTML = `<iframe id="inner"></iframe>`;
+    const inner = outerDoc.getElementById("inner") as HTMLIFrameElement;
+    const innerDoc = inner?.contentDocument;
+    if (!innerDoc) return;
+    innerDoc.body.innerHTML = "<p>deep@test.com</p>";
+
+    const nodeIds = new Map<string, Node>();
+    const { frameDocuments } = traverseIframes(document, { nodeIds });
+
+    const all = frameDocuments.map((d) => d.combined).join("\n");
+    expect(all).toContain("deep@test.com");
+  });
+
+  it("reaches a frame hosted inside a shadow root", () => {
+    const host = document.createElement("div");
+    const shadow = host.attachShadow({ mode: "open" });
+    document.body.appendChild(host);
+    shadow.innerHTML = `<iframe id="shadow-frame"></iframe>`;
+    const shadowDoc = (shadow.getElementById("shadow-frame") as HTMLIFrameElement)?.contentDocument;
+    if (!shadowDoc) return;
+    shadowDoc.body.innerHTML = "<p>shadowframe@test.com</p>";
+
+    const nodeIds = new Map<string, Node>();
+    const { frameDocuments } = traverseIframes(document, { nodeIds });
+
+    const all = frameDocuments.map((d) => d.combined).join("\n");
+    expect(all).toContain("shadowframe@test.com");
+  });
+
+  it("gives every frame segment a unique node id and a registered DOM node", () => {
+    document.body.innerHTML = `<iframe id="a"></iframe><iframe id="b"></iframe>`;
+    const a = (document.getElementById("a") as HTMLIFrameElement)?.contentDocument;
+    const b = (document.getElementById("b") as HTMLIFrameElement)?.contentDocument;
+    if (!a || !b) return;
+    a.body.innerHTML = "<p>one@test.com</p>";
+    b.body.innerHTML = "<p>two@test.com</p>";
+
+    const nodeIds = new Map<string, Node>();
+    const { frameDocuments } = traverseIframes(document, { nodeIds });
+
+    const seen = new Set<string>();
+    for (const doc of frameDocuments) {
+      for (const seg of doc.segments) {
+        expect(seen.has(seg.nodeId)).toBe(false);
+        seen.add(seg.nodeId);
+        expect(nodeIds.has(seg.nodeId)).toBe(true);
+      }
+    }
+  });
+});
+
+describe("frame coverage honesty", () => {
+  it("does not claim complete coverage on a document that has frames", () => {
+    document.body.innerHTML = `<div>visible@test.com</div><iframe id="f"></iframe>`;
+    const nodeIds = new Map<string, Node>();
+    const canonical = buildCanonicalDocument({ root: document, nodeIds });
+    expect(canonical.metadata.iframeCount).toBe(1);
+    expect(canonical.coverage.sameOriginFrames).not.toBe("complete");
+    expect(canonical.coverage.complete).toBe(false);
+  });
+
+  it("records no iframe boundary it did not read", () => {
+    document.body.innerHTML = `<iframe id="f"></iframe>`;
+    const nodeIds = new Map<string, Node>();
+    const canonical = buildCanonicalDocument({ root: document, nodeIds });
+    expect(canonical.boundaries.some((b) => b.kind === "iframe")).toBe(false);
+  });
+
+  it("reports a closed shadow root as closed, not open", () => {
+    const host = document.createElement("div");
+    host.attachShadow({ mode: "closed" });
+    document.body.appendChild(host);
+    const nodeIds = new Map<string, Node>();
+    const canonical = buildCanonicalDocument({ root: document, nodeIds });
+    // Without chrome.dom the closed root is invisible; the point is that we
+    // never claim to have read one we did not.
+    const closed = canonical.boundaries.filter((b) => b.kind === "closed-shadow-root");
+    for (const b of closed) expect(b.status).toBe("complete");
+    expect(closed.every((b) => b.status !== "inaccessible")).toBe(true);
+  });
 });
 
 describe("buildCanonicalDocument - Unicode", () => {

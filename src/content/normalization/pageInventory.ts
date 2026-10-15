@@ -8,13 +8,16 @@
  *      canvases, videos, PDFs, shadow roots, iframes)?
  *   2. Given what we managed to inspect, what is the honest ScanCoverageStatus?
  *
- * It deliberately imports nothing from other content-script modules so it can
- * be used in unit tests without a DOM environment beyond what jsdom provides.
+ * It deliberately imports no DOM-dependent content-script module so it can be
+ * used in unit tests without a DOM environment beyond what jsdom provides.
  *
- * chrome.dom.openOrClosedShadowRoot is declared with a weak ambient type so
- * the module compiles in both the extension context (where it exists) and in
- * unit tests (where it does not).
+ * Shadow-root access lives in shadow.ts, which is also dependency-free and is
+ * the single implementation for the whole extension.
  */
+
+import { getAccessibleShadowRoot } from "./shadow.js";
+
+export { getAccessibleShadowRoot } from "./shadow.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -75,41 +78,6 @@ export interface PageInventory {
   audios: number;
   pdfs: { embedded: number; isTopLevelPdfViewer: boolean };
   unscannableRegions: UnscannableRegion[];
-}
-
-// ---------------------------------------------------------------------------
-// chrome.dom ambient declaration (extension-only API)
-// ---------------------------------------------------------------------------
-
-declare global {
-  interface Chrome {
-    dom?: {
-      openOrClosedShadowRoot?: (element: Element) => ShadowRoot | null;
-    };
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Shadow DOM access
-// ---------------------------------------------------------------------------
-
-/**
- * Returns the shadow root for an element, accessing closed shadow roots via
- * the Chromium extension API chrome.dom.openOrClosedShadowRoot when available.
- * Falls back to element.shadowRoot (open roots only) in other environments.
- */
-export function getAccessibleShadowRoot(element: Element): ShadowRoot | null {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const chromeApi = (globalThis as any).chrome as Chrome | undefined;
-    if (chromeApi?.dom?.openOrClosedShadowRoot) {
-      const root = chromeApi.dom.openOrClosedShadowRoot(element);
-      if (root) return root;
-    }
-  } catch {
-    // Outside Chromium content script context (e.g. unit tests) — fall through.
-  }
-  return element.shadowRoot ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -443,8 +411,10 @@ export function resolveScanCoverageStatus(params: {
   unresolvedRegions: UnscannableRegion[];
   deferredMediaCount: number;
   hadRuntimeError?: boolean;
+  /** Characters of readable text the extraction pass actually obtained. */
+  visibleChars?: number;
 }): ScanCoverageStatus {
-  const { findingsCount, unresolvedRegions, deferredMediaCount, hadRuntimeError } = params;
+  const { findingsCount, unresolvedRegions, deferredMediaCount, hadRuntimeError, visibleChars } = params;
 
   if (hadRuntimeError) return "SCAN_FAILED";
 
@@ -466,6 +436,13 @@ export function resolveScanCoverageStatus(params: {
   if (deferredMediaCount > 0 || unresolvedRegions.length > 0) {
     return "PARTIALLY_SCANNED";
   }
+
+  // Zero findings is only meaningful if something was actually read. A page
+  // whose content is pixels - a letterhead scan, a rendered PDF, a screenshot -
+  // yields 0 characters and 0 findings, and reporting that as
+  // "NO_SENSITIVE_DATA_DETECTED" is the single most misleading verdict this
+  // extension can produce: a clean bill of health for a document nobody read.
+  if (visibleChars !== undefined && visibleChars <= 0) return "PARTIALLY_SCANNED";
 
   if (findingsCount === 0) return "NO_SENSITIVE_DATA_DETECTED";
   return "FULLY_SCANNED";

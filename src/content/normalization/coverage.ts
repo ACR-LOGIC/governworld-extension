@@ -15,27 +15,61 @@ export function createInitialCoverage(): CoverageInfo {
   };
 }
 
+export interface FrameReadReport {
+  /** Frames found anywhere in the tree, at any depth, through shadow roots. */
+  present: number;
+  /** Frames whose document this pass actually extracted. */
+  read: number;
+}
+
+/**
+ * The single implementation of boundary-driven coverage. Every caller derives
+ * frame and shadow status from here rather than assembling its own object, so
+ * "complete" cannot mean two different things in two places.
+ *
+ * `frames` is required because a boundary list alone cannot tell "this page has
+ * no frames" from "this page has frames and this pass read none of them" — the
+ * second is the case that produced a clean bill of health for a document
+ * nobody read. `extraIncomplete` refuses completeness for a reason no boundary
+ * expresses, such as truncated text.
+ */
 export function updateCoverageWithBoundaries(
   coverage: CoverageInfo,
-  boundaries: CanonicalBoundary[]
+  boundaries: CanonicalBoundary[],
+  frames: FrameReadReport,
+  extraIncomplete = false
 ): CoverageInfo {
   let inaccessible = 0;
+  let inaccessibleShadow = 0;
+  let inaccessibleCrossOrigin = 0;
   let hasShadow = false;
   let hasCrossOrigin = false;
 
   for (const b of boundaries) {
-    if (b.status === "inaccessible") inaccessible++;
-    if (b.kind === "shadow-root" || b.kind === "closed-shadow-root") hasShadow = true;
-    if (b.kind === "cross-origin-frame") hasCrossOrigin = true;
+    const blocked = b.status !== "complete";
+    if (blocked) inaccessible++;
+    if (b.kind === "shadow-root" || b.kind === "closed-shadow-root") {
+      hasShadow = true;
+      if (blocked) inaccessibleShadow++;
+    }
+    if (b.kind === "cross-origin-frame") {
+      hasCrossOrigin = true;
+      if (blocked) inaccessibleCrossOrigin++;
+    }
   }
+
+  const framesRead = boundaries.filter((b) => b.kind === "iframe" && b.status === "complete").length;
+  const framesUnread = frames.present - framesRead;
 
   return {
     ...coverage,
-    shadowDom: !hasShadow ? "complete" : inaccessible > 0 ? "partial" : "complete",
-    crossOriginFrames: !hasCrossOrigin ? "complete" : inaccessible > 0 ? "inaccessible" : "complete",
+    shadowDom: !hasShadow ? "complete" : inaccessibleShadow > 0 ? "partial" : "complete",
+    // No frames is trivially complete. Frames present but unread are partial.
+    sameOriginFrames: framesUnread > 0 ? "partial" : "complete",
+    crossOriginFrames: inaccessibleCrossOrigin > 0 ? "inaccessible" : "complete",
     totalBoundaries: boundaries.length,
     inaccessibleBoundaries: inaccessible,
-    complete: inaccessible === 0,
+    complete: inaccessible === 0 && framesUnread === 0 && !extraIncomplete,
   };
 }
 

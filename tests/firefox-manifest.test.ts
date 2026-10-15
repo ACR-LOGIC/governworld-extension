@@ -57,6 +57,24 @@ describe("the Firefox source manifest", () => {
     }
   });
 
+  it("binds its commands to keys, matching the Chromium package", () => {
+    // Firefox's `commands` supports suggested_key, and a command with no
+    // suggested_key is user-assignable only per MDN — so Firefox used to ship
+    // with no working shortcuts at all, on a platform that runs them.
+    const ffCommands = (ff as { commands?: Record<string, { suggested_key?: { default?: string; mac?: string } }> })
+      .commands;
+    const chromiumCommands = (v3 as { commands?: Record<string, { suggested_key?: { default?: string; mac?: string } }> })
+      .commands;
+    expect(ffCommands).toBeDefined();
+    for (const name of Object.keys(chromiumCommands ?? {})) {
+      expect(ffCommands?.[name]?.suggested_key?.default, `${name} has no Firefox default binding`).toBeTruthy();
+      expect(ffCommands?.[name]?.suggested_key?.mac, `${name} has no Firefox mac binding`).toBeTruthy();
+      expect(ffCommands?.[name]?.suggested_key?.default, `${name} differs between packages`).toBe(
+        chromiumCommands?.[name]?.suggested_key?.default,
+      );
+    }
+  });
+
   it("is packaged deliberately by the Firefox build, never by the Chromium build", () => {
     expect(readFileSync("scripts/build-firefox.mjs", "utf8")).toMatch(/manifest\.firefox\.json/);
     expect(readFileSync("build.mjs", "utf8"), "Chromium build must not reference Firefox").not.toMatch(

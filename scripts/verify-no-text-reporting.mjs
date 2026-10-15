@@ -80,6 +80,22 @@ const readStatus = () =>
     };
   });
 
+/**
+ * The coverage verdict. It used to be five hardcoded green ticks in the markup
+ * that no code ever changed, so a page with a cross-origin frame, a DRM video
+ * or no readable text at all displayed the same all-clear panel as a clean
+ * scan. This reads what the panel actually says now.
+ */
+const readCoverage = () =>
+  popup.evaluate(() => {
+    const c = document.getElementById("coverage-status");
+    return {
+      hidden: c?.hidden ?? true,
+      text: (c?.textContent || "").trim().replace(/\s+/g, " "),
+      tone: c?.getAttribute("data-tone") ?? null,
+    };
+  });
+
 async function scan(url) {
   await page.goto(url);
   await page.waitForTimeout(600);
@@ -106,13 +122,32 @@ const imageScan = await scan(`http://127.0.0.1:${port}/letter.png`);
 console.log(`     "${imageScan.text}"`);
 check("does not claim success", !/completed securely/i.test(imageScan.text), imageScan.text);
 check("is flagged as an error", imageScan.isError);
-check("explains the image case and points to OCR", /OCR/i.test(imageScan.text));
+check("explains the image case and points at OCR", /OCR/i.test(imageScan.text));
+
+// Nothing was read, so nothing can be called clean. "No sensitive data detected"
+// is the worst possible thing to show here.
+const imageCoverage = await readCoverage();
+console.log(`     coverage: "${imageCoverage.text}" (tone=${imageCoverage.tone})`);
+check(
+  "coverage panel does not read green on a page it read nothing from",
+  !(imageCoverage.tone === "ok" && /no sensitive data/i.test(imageCoverage.text)),
+  `tone=${imageCoverage.tone} text="${imageCoverage.text}"`
+);
 
 console.log("\n2. An ordinary page with real text");
 const textScan = await scan(`http://127.0.0.1:${port}/text.html`);
 console.log(`     "${textScan.text}"`);
 check("still reports success", /completed securely/i.test(textScan.text), textScan.text);
 check("is not flagged as an error", !textScan.isError);
+
+const textCoverage = await readCoverage();
+console.log(`     coverage: "${textCoverage.text}" (tone=${textCoverage.tone})`);
+check("coverage panel shows a verdict after a completed scan", !textCoverage.hidden);
+check(
+  "a fully readable page may read as fully scanned",
+  textCoverage.tone === "ok",
+  `tone=${textCoverage.tone} text="${textCoverage.text}"`
+);
 
 await context.close();
 server.close();

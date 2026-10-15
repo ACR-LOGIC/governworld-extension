@@ -26,6 +26,10 @@
     "managed_schema": "schema/policy.json"
   },
   "commands": {
+    "_execute_action": {
+      "suggested_key": { "default": "Alt+Shift+E", "mac": "Command+Shift+E" },
+      "description": "Open the GovernWorld popup"
+    },
     "scan-page": {
       "suggested_key": { "default": "Alt+Shift+S", "mac": "Command+Shift+S" },
       "description": "Scan the current page for sensitive data"

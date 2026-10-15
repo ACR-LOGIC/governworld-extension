@@ -12,7 +12,7 @@ import { validateMessage } from "../shared/messages.js";
 import type { Finding, FindingCategory, Rect, WorkerMessage } from "../shared/types.js";
 import { buildCanonicalDocument } from "./normalization/canonical.js";
 import { observeMutations, getAffectedNodeIds, type MutationObserverHandle, type MutationBatch } from "./normalization/mutation.js";
-import { formatCoverageSummary, setDynamicContentMonitored } from "./normalization/coverage.js";
+import { setDynamicContentMonitored, updateCoverageWithBoundaries } from "./normalization/coverage.js";
 import { traverseIframes } from "./normalization/iframe.js";
 import { extractTableStructures, annotateSegmentsWithTableStructure } from "./normalization/table.js";
 import { discoverPageInventory, resolveScanCoverageStatus } from "./normalization/pageInventory.js";
@@ -223,29 +223,48 @@ if (g.__gwRedactionContentLoaded !== true) {
 
     const tables = extractTableStructures(document);
     if (tables.length > 0) {
-      canonical.segments = annotateSegmentsWithTableStructure(canonical.segments, tables);
+      canonical.segments = annotateSegmentsWithTableStructure(canonical.segments, nodeIds);
       canonical.metadata.tableCount = tables.length;
     }
 
+    // Frame text is appended after the top document's, so the scan string
+    // contains every frame. Each frame contributes an independently offset
+    // segment list; the shift is applied here, once, against the combined
+    // string that is actually built below.
     const iframeResult = traverseIframes(document, {
       maxVisibleChars: settings.maxVisibleChars,
       maxNodeChars: settings.maxNodeChars,
       nodeIds,
     });
-    if (iframeResult.frameDocuments.length > 0) {
-      for (const frameDoc of iframeResult.frameDocuments) {
-        canonical.segments.push(...frameDoc.segments);
-        canonical.combined += "\n" + frameDoc.combined;
-        canonical.segmentStarts.push(...frameDoc.segmentStarts.map((s) => s + canonical.combined.length - frameDoc.combined.length));
-      }
-      canonical.boundaries.push(...iframeResult.boundaries);
-      canonical.coverage = {
-        ...canonical.coverage,
-        sameOriginFrames: "complete",
-        totalBoundaries: canonical.boundaries.length,
-        inaccessibleBoundaries: canonical.coverage.inaccessibleBoundaries + iframeResult.boundaries.filter((b) => b.status === "inaccessible").length,
-      };
+    for (const frameDoc of iframeResult.frameDocuments) {
+      const shift = canonical.combined.length > 0 ? canonical.combined.length + 1 : 0;
+      canonical.segments.push(
+        ...frameDoc.segments.map((seg) => ({
+          ...seg,
+          combinedStartOffset: seg.combinedStartOffset + shift,
+          combinedEndOffset: seg.combinedEndOffset + shift,
+        }))
+      );
+      canonical.combined += (canonical.combined.length > 0 ? "\n" : "") + frameDoc.combined;
+      canonical.segmentStarts.push(...frameDoc.segmentStarts.map((s) => s + shift));
     }
+    canonical.boundaries.push(...iframeResult.boundaries);
+
+    // Coverage is derived from what the traversal actually read, through the
+    // same function buildCanonicalDocument used. A frame we could not open is
+    // not "complete", and saying so is what stops a cross-origin frame full of
+    // PII from being reported as clean.
+    canonical.coverage = updateCoverageWithBoundaries(
+      canonical.coverage,
+      canonical.boundaries,
+      {
+        // framesSeen is authoritative: it counts frames the inventory may have
+        // missed, and it includes cross-origin ones that can never be read.
+        present: iframeResult.framesSeen,
+        read: iframeResult.frameDocuments.length,
+      },
+      canonical.truncated
+    );
 
     canonical.coverage = setDynamicContentMonitored(canonical.coverage);
 
@@ -398,6 +417,7 @@ if (g.__gwRedactionContentLoaded !== true) {
           findingsCount: findings.filter((f) => f.source !== "attr" && f.selected).length,
           unresolvedRegions: remainingUnresolved,
           deferredMediaCount,
+          visibleChars: combined.length,
         });
       }
     } catch {
@@ -581,7 +601,14 @@ if (g.__gwRedactionContentLoaded !== true) {
             if (navigator.clipboard?.writeText) {
               await navigator.clipboard.writeText(redacted);
             }
-            sendResponse({ ok: true, redactedText: redacted });
+            // Counts only. The redacted text is the product of this action — it
+            // belongs on the clipboard, which is where the user asked for it —
+            // and returning it to the worker only put page-derived content on a
+            // second boundary for no consumer. The worker needs the counts to
+            // write a metadata-only audit record.
+            const counts: Record<string, number> = {};
+            for (const m of matches) counts[m.category] = (counts[m.category] ?? 0) + 1;
+            sendResponse({ ok: true, counts });
             break;
           }
           case "CONTEXT_MASK_SELECTION": {

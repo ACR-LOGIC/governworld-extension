@@ -91,6 +91,15 @@ describe("Cross-Browser Compatibility Gates (Chrome, Firefox, Edge, Safari, Brav
       expect(manifest.commands["scan-page"]?.suggested_key?.mac).toBe("Command+Shift+S");
       expect(manifest.commands["toggle-masks"]?.suggested_key?.mac).toBe("Command+Shift+M");
       expect(manifest.commands["open-side-panel"]?.suggested_key?.mac).toBe("Command+Shift+P");
+      expect(manifest.commands["_execute_action"]?.suggested_key?.mac).toBe("Command+Shift+E");
+    });
+
+    it("binds every command on the Chromium side too", () => {
+      // A mac-only binding leaves Windows and Linux users with nothing unless
+      // they rebind every command by hand at chrome://extensions/shortcuts.
+      for (const name of ["scan-page", "toggle-masks", "open-side-panel", "_execute_action"]) {
+        expect(manifest.commands[name]?.suggested_key?.default, `${name}`).toBeTruthy();
+      }
     });
   });
 

@@ -284,28 +284,30 @@
       </div>
       <div class="coverage-section">
         <h3 data-i18n="coverage_title">Coverage</h3>
+        <p id="coverage-status" class="coverage-status" role="status" aria-live="polite" hidden></p>
         <div class="coverage-grid">
           <div class="coverage-item">
-            <span class="coverage-icon coverage-icon--ok" aria-hidden="true">✓</span>
+            <span class="coverage-icon" aria-hidden="true">·</span>
             <span data-i18n="coverage_page">Page content</span>
           </div>
           <div class="coverage-item">
-            <span class="coverage-icon coverage-icon--ok" aria-hidden="true">✓</span>
+            <span class="coverage-icon" aria-hidden="true">·</span>
             <span data-i18n="coverage_visible">Visible text</span>
           </div>
           <div class="coverage-item">
-            <span class="coverage-icon coverage-icon--ok" aria-hidden="true">✓</span>
+            <span class="coverage-icon" aria-hidden="true">·</span>
             <span data-i18n="coverage_images">Images</span>
           </div>
           <div class="coverage-item">
-            <span class="coverage-icon coverage-icon--ok" aria-hidden="true">✓</span>
+            <span class="coverage-icon" aria-hidden="true">·</span>
             <span data-i18n="coverage_docs">Documents</span>
           </div>
           <div class="coverage-item">
-            <span class="coverage-icon coverage-icon--ok" aria-hidden="true">✓</span>
+            <span class="coverage-icon" aria-hidden="true">·</span>
             <span data-i18n="coverage_ocr">OCR</span>
           </div>
         </div>
+        <p id="coverage-deferred" class="footnote" hidden></p>
         <p class="footnote" data-i18n="coverage_note">Some content may be inaccessible to the extension. View coverage details.</p>
         <button id="coverage-details-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="coverage_details">View Details</button>
       </div>
