@@ -214,6 +214,16 @@
         </div>
 
         <!--
+          Discloses that a Word document was longer than the reading cap and was
+          cut. The character limit is the Word equivalent of the page cap: past
+          it, mammoth's text is sliced and the pages that follow are never laid
+          out, never OCR'd and never redacted - silently, until this says so.
+        -->
+        <div id="doc-text-limit-warning" class="summary summary--warn" hidden role="status" aria-live="polite">
+          <p id="doc-text-limit-warning-text" class="summary__note"></p>
+        </div>
+
+        <!--
           Print / PDF view for the redacted output. Appears only after a
           redaction that produced pixel-verified pages, and opens a read-only
           render of those pages. It never re-redacts anything: the boxes were

@@ -749,8 +749,8 @@ async function handlePopupDocPreview(
   // able to block the feature indefinitely.
   await Promise.race([startupPurge, new Promise((r) => setTimeout(r, PURGE_WAIT_MS))]);
   try {
-    const { docId, pages, pageOffset: offset, totalPages: total } = await previewDocument(fileKey, name, mimeType, kind, pageOffset, totalPages);
-    notifyPopup({ type: "POPUP_DOC_STATE", requestId, docId, name, fileKey, mimeType, kind, pages, pageOffset: offset, totalPages: total });
+    const { docId, pages, pageOffset: offset, totalPages: total, truncated } = await previewDocument(fileKey, name, mimeType, kind, pageOffset, totalPages);
+    notifyPopup({ type: "POPUP_DOC_STATE", requestId, docId, name, fileKey, mimeType, kind, pages, pageOffset: offset, totalPages: total, ...(truncated ? { truncated: true } : {}) });
     void recordAudit({
       ts: new Date().toISOString(),
       action: "doc_previewed",
@@ -2329,7 +2329,7 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
         if (docSession) {
           // The window rides along so a restored session still says "pages
           // 21-40 of 45" instead of claiming 20 pages is the whole document.
-          notifyPopup({ type: "POPUP_DOC_STATE", requestId: msg.requestId, docId: docSession.docId, name: docSession.name, fileKey: docSession.fileKey, mimeType: docSession.mimeType, kind: docSession.kind, pages: docSession.pages, pageOffset: docSession.pageOffset, totalPages: docSession.totalPages });
+          notifyPopup({ type: "POPUP_DOC_STATE", requestId: msg.requestId, docId: docSession.docId, name: docSession.name, fileKey: docSession.fileKey, mimeType: docSession.mimeType, kind: docSession.kind, pages: docSession.pages, pageOffset: docSession.pageOffset, totalPages: docSession.totalPages, ...(docSession.truncated ? { truncated: true } : {}) });
         }
         void notifyAccountState(msg.requestId);
         void handleApiGetStatus(msg.requestId);

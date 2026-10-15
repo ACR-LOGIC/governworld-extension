@@ -1,5 +1,5 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
-import type { CountInput, DocumentPipeline, DocumentInput, DocumentPage, RedactedDocumentResult } from "./adapter.js";
+import type { CountInput, DocumentPipeline, DocumentInput, DocumentPage, PreviewResult, RedactedDocumentResult } from "./adapter.js";
 import type { Rect, RedactionOptions } from "../shared/types.js";
 import {
   OFFSCREEN_CHANNEL,
@@ -180,7 +180,7 @@ export class BrowserDocumentPipeline implements DocumentPipeline {
     return response.totalPages;
   }
 
-  async preview(input: DocumentInput): Promise<DocumentPage[]> {
+  async preview(input: DocumentInput): Promise<PreviewResult> {
     const response = await callOffscreen({
       channel: OFFSCREEN_CHANNEL,
       op: "preview",
@@ -198,7 +198,7 @@ export class BrowserDocumentPipeline implements DocumentPipeline {
     });
     assertOk(response, "preview");
     if (response.op !== "preview") throw new Error("Unexpected offscreen response.");
-    return response.pages;
+    return { pages: response.pages, truncated: response.truncated === true };
   }
 
   async redact(

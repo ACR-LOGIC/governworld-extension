@@ -367,6 +367,12 @@ export type PopupFromWorker =
       totalPages?: number;
       /** 0-based index of the first page this pass scanned; 0 from the start. */
       pageOffset?: number;
+      /**
+       * True when a Word document exceeded the character cap and was cut short.
+       * Optional because a session persisted by an older build predates it; the
+       * popup then makes no claim about the text it did not read.
+       */
+      truncated?: boolean;
       error?: { code: string; userMessage: string };
     }
   | {

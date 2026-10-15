@@ -2,7 +2,8 @@
 import { describe, it, expect } from "vitest";
 import { tokenSpans, findingsFromOcrPages } from "../src/document-pipeline/core.js";
 import type { OcrPageResult, OcrToken } from "../src/document-pipeline/ocr.js";
-import { assertSafeDocxArchive } from "../src/document-pipeline/docx.js";
+import { assertSafeDocxArchive, extractDocxText } from "../src/document-pipeline/docx.js";
+import { MAX_DOCX_CHARS } from "../src/shared/docLimits.js";
 
 function token(text: string, lineIndex: number, x: number, width: number): OcrToken {
   return { text, confidence: 90, lineIndex, bbox: { x, y: 10, width, height: 16 } };
@@ -65,6 +66,105 @@ describe("DOCX archive limits", () => {
 
   it("rejects an archive with an unsafe compression ratio", () => {
     expect(() => assertSafeDocxArchive(docxArchive(20_000, 10))).toThrow(/compression ratio/);
+  });
+});
+
+/**
+ * A minimal, real .docx: a stored (uncompressed) zip holding the three parts
+ * mammoth needs. Hand-built because the suite has no docx writer, and the
+ * character-cap disclosure cannot be tested without real bytes to read.
+ */
+function docxWithText(text: string): ArrayBuffer {
+  const encoder = new TextEncoder();
+  const files: Array<[string, Uint8Array]> = [
+    ["[Content_Types].xml", encoder.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>')],
+    ["_rels/.rels", encoder.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>')],
+    ["word/document.xml", encoder.encode(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>${text}</w:t></w:r></w:p></w:body></w:document>`)],
+  ];
+
+  const locals: Uint8Array[] = [];
+  const central: Uint8Array[] = [];
+  let offset = 0;
+  for (const [name, bytes] of files) {
+    const crc = crc32(bytes);
+    const lh = new Uint8Array(30 + name.length);
+    const lv = new DataView(lh.buffer);
+    lv.setUint32(0, 0x04034b50, true);
+    lv.setUint16(4, 20, true);
+    lv.setUint16(8, 0, true); // stored
+    lv.setUint32(14, crc, true);
+    lv.setUint32(18, bytes.length, true);
+    lv.setUint32(22, bytes.length, true);
+    lv.setUint16(26, name.length, true);
+    for (let i = 0; i < name.length; i += 1) lh[30 + i] = name.charCodeAt(i);
+    locals.push(lh, bytes);
+
+    const ch = new Uint8Array(46 + name.length);
+    const cv = new DataView(ch.buffer);
+    cv.setUint32(0, 0x02014b50, true);
+    cv.setUint16(4, 20, true);
+    cv.setUint16(6, 20, true);
+    cv.setUint16(10, 0, true);
+    cv.setUint32(16, crc, true);
+    cv.setUint32(20, bytes.length, true);
+    cv.setUint32(24, bytes.length, true);
+    cv.setUint16(28, name.length, true);
+    cv.setUint32(42, offset, true); // where this entry's local header starts
+    for (let i = 0; i < name.length; i += 1) ch[46 + i] = name.charCodeAt(i);
+    central.push(ch);
+    offset += lh.length + bytes.length;
+  }
+  const centralSize = central.reduce((n, c) => n + c.length, 0);
+  const eocd = new Uint8Array(22);
+  const ev = new DataView(eocd.buffer);
+  ev.setUint32(0, 0x06054b50, true);
+  ev.setUint16(8, files.length, true);
+  ev.setUint16(10, files.length, true);
+  ev.setUint32(12, centralSize, true);
+  ev.setUint32(16, offset, true);
+
+  const parts = [...locals, ...central, eocd];
+  const total = parts.reduce((n, p) => n + p.length, 0);
+  const out = new Uint8Array(total);
+  let at = 0;
+  for (const p of parts) {
+    out.set(p, at);
+    at += p.length;
+  }
+  return out.buffer;
+}
+
+function crc32(bytes: Uint8Array): number {
+  let crc = ~0;
+  for (let i = 0; i < bytes.length; i += 1) {
+    crc ^= bytes[i];
+    for (let k = 0; k < 8; k += 1) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+  }
+  return ~crc >>> 0;
+}
+
+describe("DOCX character cap is disclosed, not silent", () => {
+  it("reads a short document whole and reports no truncation", async () => {
+    // mammoth appends its own paragraph separator, so compare the content.
+    const { text, truncated } = await extractDocxText(docxWithText("Account 4123"));
+    expect(text.trim()).toBe("Account 4123");
+    expect(truncated).toBe(false);
+  });
+
+  it("cuts a document past the cap AND says so", async () => {
+    // The defect: the cap was applied with no signal, so a long Word file
+    // produced fewer pages and the studio called that page count the document.
+    const { text, truncated } = await extractDocxText(docxWithText("x".repeat(MAX_DOCX_CHARS + 5_000)));
+    expect(text.length).toBe(MAX_DOCX_CHARS);
+    expect(truncated).toBe(true);
+  });
+
+  it("does not report truncation for a document exactly at the cap", async () => {
+    // mammoth's own separators can put a byte count a hair over the limit with
+    // nothing dropped; claiming a cut that did not happen is a false alarm.
+    const { text, truncated } = await extractDocxText(docxWithText("y".repeat(MAX_DOCX_CHARS - 2)));
+    expect(text.length).toBe(MAX_DOCX_CHARS);
+    expect(truncated).toBe(false);
   });
 });
 

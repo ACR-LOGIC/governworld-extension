@@ -58,6 +58,12 @@ export interface DocSession {
    */
   pageOffset: number;
   totalPages: number;
+  /**
+   * True when a Word document exceeded the character cap and was cut short.
+   * Persisted like the page window, so a restored session still discloses that
+   * part of the document was never read.
+   */
+  truncated: boolean;
 }
 
 const sessions = new Map<string, DocSession>();
@@ -128,6 +134,8 @@ interface PersistedSession {
   /** Absent in a record written before windowed passes existed. */
   pageOffset?: number;
   totalPages?: number;
+  /** Absent in a record from a build before the character cap was disclosed. */
+  truncated?: boolean;
 }
 
 /** Record enough to rebuild the session after the worker is recycled. */
@@ -142,6 +150,7 @@ function persistSession(session: DocSession): void {
     categories: session.categories,
     pageOffset: session.pageOffset,
     totalPages: session.totalPages,
+    truncated: session.truncated,
   };
   void chrome.storage.session.set({ [LAST_SESSION_KEY]: record }).catch(() => undefined);
 }
@@ -199,6 +208,10 @@ export async function restoreLastSession(): Promise<DocSession | null> {
       typeof record.totalPages === "number" && Number.isSafeInteger(record.totalPages) && record.totalPages >= 1
         ? record.totalPages
         : record.pages.length + pageOffset,
+    // Only ever coerced to true from a real signal; an absent or malformed
+    // field means "not disclosed", which is the safe direction for a claim
+    // about what was read.
+    truncated: record.truncated === true,
   };
   sessions.set(session.docId, session);
   setLastDocId(session.docId);
@@ -256,7 +269,7 @@ export async function previewDocument(
   pageOffset = 0,
   /** The document's page count, known from the count pass that precedes this. */
   totalPages?: number
-): Promise<{ docId: string; pages: DocumentPage[]; pageOffset: number; totalPages: number }> {
+): Promise<{ docId: string; pages: DocumentPage[]; pageOffset: number; totalPages: number; truncated: boolean }> {
   // The pipeline runs in an offscreen document (Chromium-only). On browsers
   // without it, say so plainly instead of failing deep in the job queue.
   if (!isDocumentPipelineSupported()) throw new Error(DOCUMENT_PIPELINE_UNAVAILABLE_MESSAGE);
@@ -270,11 +283,11 @@ export async function previewDocument(
   // The cap is applied here, against a real total, so an offset the popup
   // computed before the document changed still yields a bounded window.
   const pageWindow = resolvePageWindow(totalPages ?? 1, pageOffset + 1);
-  let rawPages: DocumentPage[];
+  let previewed: { pages: DocumentPage[]; truncated: boolean };
   try {
     await clearAllFiles();
     await storeFile(fileKey, bytes);
-    rawPages = await pipeline.preview({
+    previewed = await pipeline.preview({
       kind,
       bytes,
       name,
@@ -294,7 +307,7 @@ export async function previewDocument(
     throw error;
   }
   // Confidence thresholds are enforced server-side (here), not in the UI.
-  const pages = rawPages.map((p) => ({
+  const pages = previewed.pages.map((p) => ({
     ...p,
     findings: p.findings.filter((f) => meetsThreshold(settings, f.category, f.confidence)),
   }));
@@ -312,10 +325,17 @@ export async function previewDocument(
     // Never claim a total smaller than what was scanned: if the count pass is
     // missing, the document is exactly as long as the pages that came back.
     totalPages: Math.max(pageWindow.total, pages.length + pageWindow.offset),
+    truncated: previewed.truncated === true,
   });
   setLastDocId(docId);
   persistSession(sessions.get(docId)!);
-  return { docId, pages, pageOffset: pageWindow.offset, totalPages: Math.max(pageWindow.total, pages.length + pageWindow.offset) };
+  return {
+    docId,
+    pages,
+    pageOffset: pageWindow.offset,
+    totalPages: Math.max(pageWindow.total, pages.length + pageWindow.offset),
+    truncated: previewed.truncated === true,
+  };
 }
 
 export async function redactDocument(
