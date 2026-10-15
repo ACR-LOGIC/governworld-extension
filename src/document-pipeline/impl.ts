@@ -2,11 +2,11 @@
 import type { DocumentPage, RedactedDocumentResult } from "./adapter.js";
 import type { DocKind, FindingCategory, Rect, RedactionOptions } from "../shared/types.js";
 import type { CustomPattern } from "../shared/customPatterns.js";
-import { renderPdfPages, type RenderedPage } from "./pdf.js";
+import { renderPdfPages, countPdfPages, type RenderedPage } from "./pdf.js";
 import { ocrCanvas, type OcrPageResult, type OcrToken } from "./ocr.js";
 import { assembleOcrText } from "./offsets.js";
 import { loadImagePage, type ImagePage } from "./image.js";
-import { loadDocxPages } from "./docx.js";
+import { loadDocxPages, countDocxPages } from "./docx.js";
 import { findingsFromOcrPages } from "./core.js";
 import { applyBoxes, canvasToPngBytes, pagesToPdf } from "./render.js";
 import { pagePixelVerification, verifyCanvasRegions, verifyEncodedPng, type RedactionVerification, type RegionCoverage } from "./verify.js";
@@ -97,6 +97,13 @@ async function canvasToPageImageBytes(canvas: HTMLCanvasElement): Promise<ArrayB
 export interface PreviewInput extends PipelineInput {
   enabledCategories: FindingCategory[];
   maxPages: number;
+  /**
+   * 0-based index of the first page to process. The user picks which pages a
+   * pass covers (documents longer than the cap are processed one window at a
+   * time), so the preview must render exactly the window the studio asked for
+   * and hand its pages back with their real, absolute indices.
+   */
+  pageOffset?: number;
   ocrLanguage?: string;
   customPatterns?: CustomPattern[];
   /**
@@ -127,15 +134,20 @@ export interface RedactOutput {
 
 async function loadPages(
   input: PipelineInput,
-  maxPages: number
+  maxPages: number,
+  pageOffset = 0
 ): Promise<{ pages: LoadedPage[]; flattenToPdf: boolean }> {
   if (input.kind === "pdf") {
-    const rendered = await renderPdfPages(input.bytes, maxPages);
+    // Indices come back absolute (page 20 is page 20), so a windowed pass lines
+    // up with the boxes and store keys the preview produced.
+    const rendered = await renderPdfPages(input.bytes, maxPages, undefined, pageOffset);
     return { pages: rendered, flattenToPdf: true };
   }
   if (input.kind === "docx") {
     const rendered = await loadDocxPages(input.bytes);
-    return { pages: rendered.slice(0, maxPages), flattenToPdf: true };
+    // The layout already carries absolute indices, so a slice is the window.
+    const from = Math.min(Math.max(0, Math.floor(Number.isFinite(pageOffset) ? pageOffset : 0)), Math.max(0, rendered.length - 1));
+    return { pages: rendered.slice(from, from + maxPages), flattenToPdf: true };
   }
   const page = await loadImagePage(input.bytes);
   return { pages: [page], flattenToPdf: false };
@@ -169,7 +181,7 @@ async function readPages(pages: LoadedPage[], ocrLanguage: string): Promise<OcrP
 }
 
 export async function runDocumentPreview(input: PreviewInput): Promise<DocumentPage[]> {
-  const { pages } = await loadPages(input, input.maxPages);
+  const { pages } = await loadPages(input, input.maxPages, input.pageOffset ?? 0);
   const ocrResults = await readPages(pages, input.ocrLanguage ?? "eng");
   const findings = findingsFromOcrPages(ocrResults, input.enabledCategories, input.customPatterns);
   const grouped = new Map<number, DocumentPage>();
@@ -198,6 +210,23 @@ export async function runDocumentPreview(input: PreviewInput): Promise<DocumentP
     if (page) page.findings.push(f);
   }
   return [...grouped.values()];
+}
+
+/**
+ * Count a document's pages without rendering, OCR-ing or detecting anything.
+ *
+ * The studio uses this to ask the user which pages to scan BEFORE the slow
+ * pass, which is what makes an honest choice possible: "this document has 45
+ * pages, pick up to 20" beats discovering the 45 only after 21-40 were already
+ * dropped. It is also a fail-fast: a corrupt or encrypted document fails here,
+ * in about a second, instead of after a full render.
+ */
+export async function runDocumentCount(input: PipelineInput): Promise<number> {
+  if (input.kind === "pdf") return countPdfPages(input.bytes);
+  if (input.kind === "docx") return countDocxPages(input.bytes);
+  // An image is one page by definition; decoding it here would only spend time
+  // to be told something that is already true.
+  return 1;
 }
 
 /**
@@ -253,9 +282,20 @@ export async function runDocumentRedact(
   maxPages: number,
   padding = DEFAULT_PADDING,
   options?: RedactionOptions,
-  fileKey = "print"
+  fileKey = "print",
+  /**
+   * 0-based index of the first page this pass covers, when the document is
+   * being processed one window at a time.
+   *
+   * This MUST be the same window the findings came from. Redaction re-renders
+   * from the original bytes and matches boxes by absolute page index, so
+   * rendering a different window here paints page 21's boxes over page 1 - and
+   * the pixel verification, which checks the canvases it painted, still passes,
+   * because the wrong page was correctly redacted.
+   */
+  pageOffset = 0
 ): Promise<RedactOutput> {
-  const { pages, flattenToPdf } = await loadPages(input, maxPages);
+  const { pages, flattenToPdf } = await loadPages(input, maxPages, pageOffset);
   const boxMap = new Map<number, Rect[]>();
   for (const b of boxes) boxMap.set(b.pageIndex, b.rects);
 

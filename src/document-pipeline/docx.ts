@@ -75,7 +75,14 @@ export function assertSafeDocxArchive(bytes: ArrayBuffer): void {
   }
 }
 
-function layoutPages(text: string, ctx: CanvasRenderingContext2D): string[][] {
+/**
+ * Lay the extracted text out into pages.
+ *
+ * Exported because the page count has to be known BEFORE any page is drawn:
+ * the studio asks the user which range to scan, and recomputing the layout at
+ * render time would make the count and the rendering disagree.
+ */
+export function layoutDocxPages(text: string, ctx: CanvasRenderingContext2D): string[][] {
   const paragraphs = text.split(/\r?\n/).map((p) => p.trim());
   const maxWidth = PAGE_WIDTH_PX - MARGIN_PX * 2;
   const lines: string[][] = [];
@@ -111,27 +118,53 @@ function layoutPages(text: string, ctx: CanvasRenderingContext2D): string[][] {
   return lines;
 }
 
-export async function loadDocxPages(bytes: ArrayBuffer): Promise<DocxPage[]> {
+/**
+ * Extract the document's raw text, bounded by the same archive limits and
+ * character cap the renderer uses. Shared so a page count and a render can
+ * never disagree about what the document contains.
+ */
+export async function extractDocxText(bytes: ArrayBuffer): Promise<string> {
   assertSafeDocxArchive(bytes);
   const input = { buffer: new Uint8Array(bytes.slice(0)) };
   const { value } = await mammoth.extractRawText(
     input as unknown as Parameters<typeof mammoth.extractRawText>[0]
   );
-  const text = (value ?? "").slice(0, MAX_DOCX_CHARS);
+  return (value ?? "").slice(0, MAX_DOCX_CHARS);
+}
 
+/** A throwaway measuring context for text width; the DOCX layout needs one. */
+function measuringContext(): CanvasRenderingContext2D {
   const canvas = document.createElement("canvas");
   canvas.width = PAGE_WIDTH_PX;
   canvas.height = PAGE_HEIGHT_PX;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) throw new Error("Canvas rendering is unavailable.");
-
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.font = FONT;
   ctx.fillStyle = "#111111";
   ctx.textBaseline = "top";
+  return ctx;
+}
 
-  const pages = layoutPages(text, ctx);
+/**
+ * How many laid-out pages a DOCX produces, without drawing any of them.
+ *
+ * Word files have no intrinsic page count - pages are synthesised from the text
+ * layout - so this runs the same extraction and layout the renderer does, minus
+ * the per-page canvas drawing. That is still the honest total: the count and
+ * the rendered set come from one layout implementation.
+ */
+export async function countDocxPages(bytes: ArrayBuffer): Promise<number> {
+  const text = await extractDocxText(bytes);
+  const pages = layoutDocxPages(text, measuringContext());
+  return pages.length >= 1 ? pages.length : 1;
+}
+
+export async function loadDocxPages(bytes: ArrayBuffer): Promise<DocxPage[]> {
+  const text = await extractDocxText(bytes);
+  const ctx = measuringContext();
+  const pages = layoutDocxPages(text, ctx);
   const fontPx = Number.parseFloat(FONT);
   return pages.map((pageLines, index) => {
     const pageCanvas = document.createElement("canvas");

@@ -1,5 +1,5 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
-import type { DocumentPipeline, DocumentInput, DocumentPage, RedactedDocumentResult } from "./adapter.js";
+import type { CountInput, DocumentPipeline, DocumentInput, DocumentPage, RedactedDocumentResult } from "./adapter.js";
 import type { Rect, RedactionOptions } from "../shared/types.js";
 import {
   OFFSCREEN_CHANNEL,
@@ -159,12 +159,27 @@ async function callOffscreen(request: OffscreenRequest, attempt = 0): Promise<Of
   }
 }
 
-function assertOk(response: OffscreenResponse, _operation: "preview" | "redact"): asserts response is Extract<OffscreenResponse, { ok: true }> {
+function assertOk(response: OffscreenResponse, _operation: "preview" | "redact" | "count"): asserts response is Extract<OffscreenResponse, { ok: true }> {
   if (response.ok) return;
   throw new Error(response.userMessage);
 }
 
 export class BrowserDocumentPipeline implements DocumentPipeline {
+  async count(input: CountInput): Promise<number> {
+    const response = await callOffscreen({
+      channel: OFFSCREEN_CHANNEL,
+      op: "count",
+      jobId: crypto.randomUUID(),
+      kind: input.kind,
+      bytes: bytesToBase64(input.bytes),
+      name: input.name,
+      mimeType: input.mimeType,
+    });
+    assertOk(response, "count");
+    if (response.op !== "count") throw new Error("Unexpected offscreen response.");
+    return response.totalPages;
+  }
+
   async preview(input: DocumentInput): Promise<DocumentPage[]> {
     const response = await callOffscreen({
       channel: OFFSCREEN_CHANNEL,
@@ -176,6 +191,7 @@ export class BrowserDocumentPipeline implements DocumentPipeline {
       mimeType: input.mimeType,
       enabledCategories: input.enabledCategories,
     maxPages: input.maxPages,
+    pageOffset: input.pageOffset,
     ocrLanguage: input.ocrLanguage,
     customPatterns: input.customPatterns,
     previewKeyPrefix: input.previewKeyPrefix,
@@ -202,6 +218,7 @@ export class BrowserDocumentPipeline implements DocumentPipeline {
       boxes,
       padding: effectiveOptions?.padding ?? input.padding,
       options: effectiveOptions,
+      pageOffset: input.pageOffset,
       fileKey: input.previewKeyPrefix,
     });
     assertOk(response, "redact");

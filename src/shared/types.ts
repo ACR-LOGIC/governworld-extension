@@ -172,7 +172,12 @@ export type PopupMessage =
   | { type: "POPUP_CLEAR_DATA"; requestId: string }
   | { type: "POPUP_GET_STATE"; requestId: string }
   | { type: "POPUP_SET_MODE"; requestId: string; mode: ScanMode }
-  | { type: "POPUP_DOC_PREVIEW"; requestId: string; fileKey: string; name: string; mimeType: string; kind: DocKind }
+  | { type: "POPUP_DOC_PREVIEW"; requestId: string; fileKey: string; name: string; mimeType: string; kind: DocKind; pageOffset?: number; totalPages?: number }
+  /**
+   * Count a document's pages before scanning it, so the popup can disclose its
+   * real length and ask which window to scan. Renders and detects nothing.
+   */
+  | { type: "POPUP_DOC_COUNT"; requestId: string; fileKey: string; name: string; mimeType: string; kind: DocKind }
   | { type: "POPUP_DOC_REDACT"; requestId: string; docId: string; fileKey: string; name: string; mimeType: string; kind: DocKind; boxes: { pageIndex: number; rects: Rect[] }[]; findingIds: string[]; options?: RedactionOptions }
   | { type: "POPUP_DOC_CLEAR"; requestId: string; docId: string }
   /**
@@ -350,6 +355,18 @@ export type PopupFromWorker =
       mimeType: string;
       kind: DocKind;
       pages: DocPageMeta[];
+      /**
+       * How many pages the document really has.
+       *
+       * Optional because a session persisted by an older build predates it and
+       * must still restore; the popup then treats the scanned pages as the whole
+       * document. When present it is what lets the studio say "pages 21-40 of
+       * 47" instead of "20 pages" - the difference between a partial scan that
+       * is disclosed and one that is implied to be complete.
+       */
+      totalPages?: number;
+      /** 0-based index of the first page this pass scanned; 0 from the start. */
+      pageOffset?: number;
       error?: { code: string; userMessage: string };
     }
   | {
@@ -398,6 +415,12 @@ export type PopupFromWorker =
       degraded: boolean;
     }
   | { type: "POPUP_DOC_ERROR"; requestId: string; code: string; userMessage: string }
+  /**
+   * The cheap page-count reply. It exists so the studio can ask which pages to
+   * scan BEFORE the slow pass; without it a document longer than the cap was
+   * silently truncated to its first pages and reported as complete.
+   */
+  | { type: "POPUP_DOC_COUNT_RESULT"; requestId: string; totalPages: number }
   | { type: "POPUP_NOTIFICATIONS_STATE"; requestId: string; granted: boolean }
   | {
       type: "POPUP_ACCOUNT_STATE";
@@ -478,6 +501,8 @@ export const MESSAGE_TYPES = new Set<string>([
   "POPUP_GET_STATE",
   "POPUP_SET_MODE",
   "POPUP_DOC_PREVIEW",
+  "POPUP_DOC_COUNT",
+  "POPUP_DOC_COUNT_RESULT",
   "POPUP_DOC_REDACT",
   "POPUP_DOC_CLEAR",
   "POPUP_DOC_CANCEL",

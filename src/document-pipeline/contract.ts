@@ -16,8 +16,14 @@ import type { RedactedDocRef } from "../shared/docStore.js";
 
 export const OFFSCREEN_CHANNEL = "doc-pipeline";
 
-/** Hard cap on pages processed per document (mirrors impl defaults). */
-export const MAX_DOC_PAGES = 20;
+/**
+ * The page cap lives in `src/shared/docLimits.ts`, alongside the size cap and
+ * the window arithmetic, so the popup, the worker, the offscreen document and
+ * the tests all read ONE value. It is re-exported here because the pipeline
+ * contract has always been the import path for it, and a second copy of a
+ * disclosed limit is a second thing to forget to change.
+ */
+export { MAX_DOC_PAGES } from "../shared/docLimits.js";
 
 /**
  * Extension messaging serializes as JSON (Chrome < 148 and the default), so
@@ -53,6 +59,12 @@ export interface OffscreenPreviewRequest {
   mimeType: string;
   enabledCategories: FindingCategory[];
   maxPages: number;
+  /**
+   * 0-based index of the first page to process. Optional so an older caller
+   * (or a test fixture) that omits it gets the document's first pages, which is
+   * the behaviour before windowed passes existed.
+   */
+  pageOffset?: number;
   ocrLanguage?: string;
   customPatterns?: CustomPattern[];
   /**
@@ -77,6 +89,12 @@ export interface OffscreenRedactRequest {
   padding: number;
   options?: RedactionOptions;
   /**
+   * 0-based index of the first page this pass covers. Must match the window the
+   * findings came from: redaction re-renders from the original bytes and matches
+   * boxes by absolute page index, so a different window paints the wrong pages.
+   */
+  pageOffset?: number;
+  /**
    * Key used to namespace the staged redacted pages for the print view. Derived
    * from the document's own file key so a second redaction of the same file
    * replaces its print pages rather than accumulating stale ones.
@@ -84,7 +102,22 @@ export interface OffscreenRedactRequest {
   fileKey?: string;
 }
 
-export type OffscreenRequest = OffscreenPreviewRequest | OffscreenRedactRequest;
+/**
+ * Cheap page count, used before the slow pass so the user can choose which
+ * pages to scan. Renders nothing, OCRs nothing, detects nothing.
+ */
+export interface OffscreenCountRequest {
+  channel: typeof OFFSCREEN_CHANNEL;
+  op: "count";
+  jobId: string;
+  kind: DocKind;
+  /** Base64-encoded document bytes (extension messaging is JSON-serialized). */
+  bytes: string;
+  name: string;
+  mimeType: string;
+}
+
+export type OffscreenRequest = OffscreenPreviewRequest | OffscreenRedactRequest | OffscreenCountRequest;
 
 export interface OffscreenPreviewResponse {
   channel: typeof OFFSCREEN_CHANNEL;
@@ -133,13 +166,43 @@ export interface OffscreenRedactError {
   userMessage: string;
 }
 
-export type OffscreenResponse = OffscreenPreviewResponse | OffscreenPreviewError | OffscreenRedactResponse | OffscreenRedactError;
+export interface OffscreenCountResponse {
+  channel: typeof OFFSCREEN_CHANNEL;
+  op: "count";
+  jobId: string;
+  ok: true;
+  totalPages: number;
+}
+
+export interface OffscreenCountError {
+  channel: typeof OFFSCREEN_CHANNEL;
+  op: "count";
+  jobId: string;
+  ok: false;
+  code: string;
+  userMessage: string;
+}
+
+export type OffscreenResponse =
+  | OffscreenPreviewResponse
+  | OffscreenPreviewError
+  | OffscreenRedactResponse
+  | OffscreenRedactError
+  | OffscreenCountResponse
+  | OffscreenCountError;
+
+const OFFSCREEN_OPS = ["preview", "redact", "count"] as const;
+type OffscreenOp = (typeof OFFSCREEN_OPS)[number];
+
+function isOffscreenOp(value: unknown): value is OffscreenOp {
+  return typeof value === "string" && (OFFSCREEN_OPS as readonly string[]).includes(value);
+}
 
 export function isOffscreenRequest(raw: unknown): raw is OffscreenRequest {
   if (typeof raw !== "object" || raw === null) return false;
   const r = raw as Record<string, unknown>;
   if (r.channel !== OFFSCREEN_CHANNEL) return false;
-  if (r.op !== "preview" && r.op !== "redact") return false;
+  if (!isOffscreenOp(r.op)) return false;
   if (typeof r.jobId !== "string" || !r.jobId) return false;
   if (typeof r.kind !== "string" || (r.kind !== "pdf" && r.kind !== "image" && r.kind !== "docx")) return false;
   return true;
@@ -149,7 +212,7 @@ export function isOffscreenResponse(raw: unknown): raw is OffscreenResponse {
   if (typeof raw !== "object" || raw === null) return false;
   const r = raw as Record<string, unknown>;
   if (r.channel !== OFFSCREEN_CHANNEL) return false;
-  if (r.op !== "preview" && r.op !== "redact") return false;
+  if (!isOffscreenOp(r.op)) return false;
   if (typeof r.jobId !== "string" || !r.jobId) return false;
   return true;
 }

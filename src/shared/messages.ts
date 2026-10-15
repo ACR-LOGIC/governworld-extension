@@ -46,6 +46,22 @@ function isFileKey(value: unknown): value is string {
 }
 
 /**
+ * A 0-based page offset: which page a windowed pass starts at.
+ *
+ * Bounded by MAX_DOC_PAGES-free arithmetic on purpose - the worker clamps it
+ * against the real document anyway. What matters here is that a nonsense value
+ * (negative, fractional, astronomic) fails validation instead of reaching the
+ * renderer, where it would silently render the wrong pages.
+ */
+function isPageOffset(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 && value <= 100_000;
+}
+
+function isTotalPages(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1 && value <= 100_000;
+}
+
+/**
  * Only http(s) and data image URLs may be captured.
  *
  * The URL comes from the page, so it is untrusted input. Rejecting every other
@@ -546,6 +562,15 @@ export function validateMessage(raw: unknown): ValidationResult {
       if (!isName(raw.name)) return { ok: false, error: "Invalid name" };
       if (typeof raw.mimeType !== "string" || !raw.mimeType) return { ok: false, error: "Invalid mimeType" };
       if (!isDocKind(raw.kind)) return { ok: false, error: "Invalid kind" };
+      if (raw.pageOffset !== undefined && !isPageOffset(raw.pageOffset)) return { ok: false, error: "Invalid pageOffset" };
+      if (raw.totalPages !== undefined && !isTotalPages(raw.totalPages)) return { ok: false, error: "Invalid totalPages" };
+      return { ok: true, message: { type, requestId, fileKey: raw.fileKey, name: raw.name, mimeType: raw.mimeType, kind: raw.kind, ...(raw.pageOffset !== undefined ? { pageOffset: raw.pageOffset } : {}), ...(raw.totalPages !== undefined ? { totalPages: raw.totalPages } : {}) } };
+    }
+    case "POPUP_DOC_COUNT": {
+      if (!isFileKey(raw.fileKey)) return { ok: false, error: "Invalid fileKey" };
+      if (!isName(raw.name)) return { ok: false, error: "Invalid name" };
+      if (typeof raw.mimeType !== "string" || !raw.mimeType) return { ok: false, error: "Invalid mimeType" };
+      if (!isDocKind(raw.kind)) return { ok: false, error: "Invalid kind" };
       return { ok: true, message: { type, requestId, fileKey: raw.fileKey, name: raw.name, mimeType: raw.mimeType, kind: raw.kind } };
     }
     case "POPUP_DOC_REDACT": {
@@ -673,7 +698,15 @@ export function validateMessage(raw: unknown): ValidationResult {
       if (!isDocKind(raw.kind)) return { ok: false, error: "Invalid kind" };
       if (!Array.isArray(raw.pages) || !raw.pages.every(isDocPageMeta)) return { ok: false, error: "Invalid pages" };
       if (raw.error !== undefined && !isRecord(raw.error)) return { ok: false, error: "Invalid error" };
-      return { ok: true, message: { type, requestId, docId: raw.docId, name: raw.name, fileKey: raw.fileKey, mimeType: raw.mimeType, kind: raw.kind, pages: raw.pages } };
+      // Both are optional so a session recorded by an older build still
+      // validates; the popup falls back to "the scanned pages are the whole
+      // document" when they are absent. They MUST be copied into the
+      // reconstructed message - a field the validator accepts and the
+      // reconstruction drops is a field the UI never sees, which is how the
+      // old `error` object went missing.
+      if (raw.totalPages !== undefined && !isTotalPages(raw.totalPages)) return { ok: false, error: "Invalid totalPages" };
+      if (raw.pageOffset !== undefined && !isPageOffset(raw.pageOffset)) return { ok: false, error: "Invalid pageOffset" };
+      return { ok: true, message: { type, requestId, docId: raw.docId, name: raw.name, fileKey: raw.fileKey, mimeType: raw.mimeType, kind: raw.kind, pages: raw.pages, ...(raw.totalPages !== undefined ? { totalPages: raw.totalPages } : {}), ...(raw.pageOffset !== undefined ? { pageOffset: raw.pageOffset } : {}) } };
     }
     case "POPUP_DOC_DONE": {
       if (!isName(raw.outputName)) return { ok: false, error: "Invalid outputName" };
@@ -689,6 +722,10 @@ export function validateMessage(raw: unknown): ValidationResult {
       if (typeof raw.code !== "string" || !raw.code) return { ok: false, error: "Invalid error code" };
       if (typeof raw.userMessage !== "string" || !raw.userMessage) return { ok: false, error: "Invalid userMessage" };
       return { ok: true, message: { type, requestId, code: raw.code, userMessage: raw.userMessage } };
+    }
+    case "POPUP_DOC_COUNT_RESULT": {
+      if (!isTotalPages(raw.totalPages)) return { ok: false, error: "Invalid totalPages" };
+      return { ok: true, message: { type, requestId, totalPages: raw.totalPages } };
     }
     case "POPUP_DOC_CLEAR": {
       if (typeof raw.docId !== "string" || !raw.docId) return { ok: false, error: "Invalid docId" };

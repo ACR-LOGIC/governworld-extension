@@ -339,6 +339,26 @@ body[data-reduced-motion="true"] *::after {
   color: var(--danger);
 }
 
+/*
+ * A pass that covered part of the document.
+ *
+ * Amber, not red: this is a disclosure of scope, not a failure - the scan of
+ * the chosen window can be entirely correct. It must still be impossible to
+ * miss, because a partial pass that looks complete is the failure mode this
+ * product exists to prevent.
+ */
+.summary--warn {
+  border-color: #b45309;
+  background: rgba(180, 83, 9, 0.12);
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.summary--warn .summary__note {
+  color: #fbbf24;
+}
+
 .count-badge {
   font-family: var(--mono);
   font-size: 10px;

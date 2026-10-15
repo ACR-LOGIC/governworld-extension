@@ -30,6 +30,7 @@ import {
 import { recordAudit } from "../shared/audit.js";
 import { BUNDLED_OCR_LANGUAGES } from "../shared/ocrLanguages.js";
 import { t, getCategoryLabel, getPresetLabel } from "../shared/i18n.js";
+import { MAX_DOC_PAGES, MAX_DOC_BYTES, MAX_DOC_BYTES_LABEL, resolvePageWindow, pageWindowLabel } from "../shared/docLimits.js";
 import type { AccountView } from "../shared/account.js";
 import type {
   DocKind,
@@ -197,8 +198,6 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, t
 function requestId(): string {
   return crypto.randomUUID();
 }
-
-const MAX_DOC_BYTES = 20 * 1024 * 1024;
 
 /**
  * Stage the chosen file for the worker to read.
@@ -882,6 +881,13 @@ interface DocUiState {
   kind: DocKind;
   pages: DocPageMeta[];
   /**
+   * The document's true length and where this pass started. A windowed pass
+   * must be able to say "pages 21-40 of 45" rather than "20 pages", so a
+   * partial scan can never be mistaken for a whole one.
+   */
+  totalPages?: number;
+  pageOffset?: number;
+  /**
    * True when the bytes came from a screen capture rather than the original
    * file, so OCR quality is bounded by the on-screen size. Carried into the
    * review surface so it can say so instead of implying a full read.
@@ -960,6 +966,11 @@ async function openFullScreenReview(
     mimeType: doc.mimeType,
     kind: doc.kind,
     pages: doc.pages,
+    // The review page shows the document at full size, so it is also where a
+    // user decides whether the scan covered the document. It needs the same
+    // window facts the popup has, or it would imply a partial pass was whole.
+    totalPages: doc.totalPages ?? doc.pages.length,
+    pageOffset: doc.pageOffset ?? 0,
     degraded,
     source,
   };
@@ -1059,6 +1070,149 @@ function resetDocStages(): void {
   docVerificationProblem = false;
 }
 
+/**
+ * A file that has been staged and is waiting for its page count.
+ *
+ * The count pass sits between "user picks a file" and "scan it", because the
+ * window the user is about to choose depends on how long the document really
+ * is. Until the count arrives there is nothing to scan, so nothing is.
+ */
+let pendingCountFile: { fileKey: string; name: string; mimeType: string; kind: DocKind; degraded?: boolean } | null = null;
+
+/**
+ * Page count of the document whose window is being chosen.
+ *
+ * It is held separately from `pendingCountFile` because the chooser is also
+ * opened from the rescan button for a document that is already loaded, where
+ * there is no pending count - only a document whose length is known.
+ */
+let windowTotalPages = 1;
+
+/**
+ * Count the staged document's pages, then let the user choose the window if it
+ * does not fit in one pass.
+ *
+ * This replaces a silent failure: a 45-page document used to be rendered as
+ * its first 20 pages and then described as "20 pages", which is a complete
+ * scan that never happened. The count is cheap - it parses the document and
+ * renders nothing - and it is also a fail-fast, so a corrupt or encrypted file
+ * is rejected in about a second instead of after a minute of work.
+ */
+function startCount(fileKey: string, name: string, mimeType: string, kind: DocKind, degraded = false): void {
+  pendingCountFile = { fileKey, name, mimeType, kind, degraded };
+  resetDocStages();
+  setDocStatus("Scanning document on this device…", false);
+  showDocProgress();
+  void sendDocMessage({ type: "POPUP_DOC_COUNT", requestId: requestId(), fileKey, name, mimeType, kind });
+}
+
+/** Scan one window of the staged document. */
+function startPreview(pageOffset: number, totalPages?: number): void {
+  const pending = pendingCountFile;
+  pendingCountFile = null;
+  if (!pending) return;
+  const { fileKey, name, mimeType, kind, degraded } = pending;
+  resetDocStages();
+  showDocProgress();
+  beginDocSession({ fileKey, name, mimeType, kind, degraded });
+  void sendDocMessage({
+    type: "POPUP_DOC_PREVIEW",
+    requestId: requestId(),
+    fileKey,
+    name,
+    mimeType,
+    kind,
+    pageOffset,
+    ...(totalPages !== undefined ? { totalPages } : {}),
+  });
+}
+
+/**
+ * Show the page-window chooser for a document longer than one pass covers.
+ *
+ * `from` seeds the first page of the proposed window so a re-scan continues
+ * where the last pass stopped instead of offering the same pages again.
+ */
+function openWindowDialog(totalPages: number, from: number): void {
+  const dialog = document.getElementById("doc-window-dialog") as HTMLDialogElement | null;
+  const desc = document.getElementById("doc-window-desc") as HTMLElement | null;
+  const fromInput = document.getElementById("doc-window-from") as HTMLInputElement | null;
+  const toInput = document.getElementById("doc-window-to") as HTMLInputElement | null;
+  const error = document.getElementById("doc-window-error") as HTMLElement | null;
+  if (!dialog) return;
+
+  const proposed = resolvePageWindow(totalPages, from);
+  if (desc) desc.textContent = t(currentLang, "doc_window_desc", { total: String(totalPages), max: String(MAX_DOC_PAGES) });
+  if (fromInput) fromInput.value = String(proposed.from);
+  if (toInput) toInput.value = String(proposed.to);
+  if (error) error.hidden = true;
+  dialog.showModal();
+}
+
+/** Read and validate the dialog's range, or explain why it cannot be used. */
+function readWindowChoice(totalPages: number): number | null {
+  const fromInput = document.getElementById("doc-window-from") as HTMLInputElement | null;
+  const toInput = document.getElementById("doc-window-to") as HTMLInputElement | null;
+  const error = document.getElementById("doc-window-error") as HTMLElement | null;
+  const from = Number(fromInput?.value);
+  const to = Number(toInput?.value);
+  const valid =
+    Number.isFinite(from) &&
+    Number.isFinite(to) &&
+    Number.isInteger(from) &&
+    Number.isInteger(to) &&
+    from >= 1 &&
+    to >= from &&
+    to <= totalPages &&
+    to - from + 1 <= MAX_DOC_PAGES;
+  if (!valid) {
+    // The message names the actual bounds rather than "invalid input": a user
+    // who typed 21-40 for a 22-page document needs to know which end is wrong.
+    if (error) {
+      error.textContent = t(currentLang, "doc_window_invalid", { total: String(totalPages), max: String(MAX_DOC_PAGES) });
+      error.hidden = false;
+    }
+    return null;
+  }
+  if (error) error.hidden = true;
+  return resolvePageWindow(totalPages, from).offset;
+}
+
+/**
+ * Say, persistently, that this pass covered part of the document.
+ *
+ * It hides itself when the pass covers everything, so the common case is
+ * unchanged; and it names the exact range, because "some pages were not
+ * scanned" is not something anyone can act on.
+ */
+function renderWindowWarning(totalPages: number, pageOffset: number, scanned: number): void {
+  const banner = document.getElementById("doc-window-warning") as HTMLElement | null;
+  const text = document.getElementById("doc-window-warning-text") as HTMLElement | null;
+  if (!banner || !text) return;
+  const window = resolvePageWindow(totalPages, pageOffset + 1);
+  // A full pass needs no banner, and neither does a document whose count never
+  // arrived: "pages 1-20 of 20" is the whole document, and claiming otherwise
+  // would be a false alarm - the exact failure this banner exists to prevent.
+  if (!window.windowed) {
+    banner.hidden = true;
+    text.textContent = "";
+    return;
+  }
+  banner.hidden = false;
+  text.textContent = t(currentLang, "doc_window_warning", {
+    from: String(window.from),
+    to: String(Math.min(window.to, pageOffset + scanned)),
+    total: String(window.total),
+  });
+}
+
+function hideWindowWarning(): void {
+  const banner = document.getElementById("doc-window-warning") as HTMLElement | null;
+  const text = document.getElementById("doc-window-warning-text") as HTMLElement | null;
+  if (banner) banner.hidden = true;
+  if (text) text.textContent = "";
+}
+
 const overlayRedrawers: (() => void)[] = [];
 
 export function redrawAllOverlays(): void {
@@ -1146,6 +1300,8 @@ function beginDocSession(seed: {
   name: string;
   mimeType: string;
   kind: DocKind;
+  /** True for a screen capture, whose OCR quality is bounded by what was shown. */
+  degraded?: boolean;
 }): void {
   lastDoc = {
     docId: "",
@@ -1154,6 +1310,7 @@ function beginDocSession(seed: {
     mimeType: seed.mimeType,
     kind: seed.kind,
     pages: [],
+    degraded: seed.degraded === true,
   };
   selectedDocFindingIds.clear();
   overlayRedrawers.length = 0;
@@ -1179,6 +1336,22 @@ async function loadPreviewInto(img: HTMLImageElement, page: DocPageMeta): Promis
   img.alt = `Page ${page.index + 1} (preview unavailable)`;
 }
 
+/**
+ * "47 pages", or "pages 21-40 of 47" for a partial pass.
+ *
+ * The distinction is the whole point: a window that covered a third of a
+ * document must never be labelled as if it were the document.
+ */
+function pageCountLabel(state: DocUiState): string {
+  const scanned = state.pages.length;
+  const total = state.totalPages ?? scanned;
+  const offset = state.pageOffset ?? 0;
+  if (offset > 0 || offset + scanned < total) {
+    return `pages ${offset + 1}\u2013${Math.min(offset + scanned, total)} of ${total}`;
+  }
+  return `${scanned} page${scanned === 1 ? "" : "s"}`;
+}
+
 function renderDoc(state: DocUiState): void {
   lastDoc = state;
   selectedDocFindingIds.clear();
@@ -1199,7 +1372,12 @@ function renderDoc(state: DocUiState): void {
   const docStampText = document.getElementById("doc-stamp-text") as HTMLInputElement | null;
 
   if (docFilename) docFilename.textContent = state.name;
-  if (docPageCount) docPageCount.textContent = `${state.pages.length} page${state.pages.length === 1 ? "" : "s"}`;
+  // "Pages 21-40 of 45" when a pass is partial, "47 pages" when it is the whole
+  // document. The old text was always the latter - it described the pages that
+  // happened to be rendered, which is how a 20-page window of a 45-page
+  // document read as a complete scan.
+  if (docPageCount) docPageCount.textContent = pageCountLabel(state);
+  renderWindowWarning(state.totalPages ?? state.pages.length, state.pageOffset ?? 0, state.pages.length);
   if (workspace) workspace.hidden = false;
 
   if (thumbs) {
@@ -1385,6 +1563,9 @@ function clearDocUi(): void {
   if (thumbs) thumbs.replaceChildren();
   if (list) list.replaceChildren();
   if (redactBtn) redactBtn.disabled = true;
+  // A window warning for a document that is no longer loaded would claim
+  // something about nothing.
+  hideWindowWarning();
 }
 
 /** Wire tab navigation and contextual guidance links. */
@@ -1735,7 +1916,7 @@ export async function initPopup(): Promise<void> {
     const file = docFile.files?.[0];
     if (!file) return;
     if (file.size > MAX_DOC_BYTES) {
-      setDocStatus("This file is too large (maximum 20 MB).", true);
+      setDocStatus(t(currentLang, "doc_too_large", { size: MAX_DOC_BYTES_LABEL }), true);
       return;
     }
     const fileKey = requestId();
@@ -1747,15 +1928,10 @@ export async function initPopup(): Promise<void> {
         (kind === "pdf" ? "application/pdf" : kind === "docx" ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document" : "image/png");
       await storeFile(fileKey, bytes);
       docFile.value = "";
-      resetDocStages();
-      setDocStatus("Scanning document on this device…", false);
-      // A preview takes 6-20s: offscreen document boot, then pdf.js or the
-      // image decode, then a 10MB OCR model. resetDocStages() had just hidden
-      // the progress row, and the status line was invisible, so the popup
-      // showed no change at all for the whole wait and read as broken.
-      showDocProgress();
-      beginDocSession({ fileKey, name: file.name, mimeType, kind });
-      void sendDocMessage({ type: "POPUP_DOC_PREVIEW", requestId: requestId(), fileKey, name: file.name, mimeType, kind });
+      // Count first, then scan: the count is what lets a document longer than
+      // one pass offer the user a choice of pages instead of silently losing
+      // everything past the cap.
+      startCount(fileKey, file.name, mimeType, kind);
     } catch (error) {
       await deleteFile(fileKey).catch(() => undefined);
       docFile.value = "";
@@ -1931,18 +2107,64 @@ export async function initPopup(): Promise<void> {
   const docCancelBtn = document.getElementById("doc-cancel-btn") as HTMLButtonElement | null;
 
   docCancelBtn?.addEventListener("click", () => {
-    if (!lastDoc) return;
+    // Before the count reply arrives there is no session to cancel at the
+    // worker, and POPUP_DOC_CANCEL needs a real docId - a placeholder "" is
+    // refused by validation, which would surface as a confusing error. Stopping
+    // the wait locally is the whole of the action in that state.
+    if (!lastDoc || !lastDoc.docId) {
+      pendingCountFile = null;
+      hideDocProgress();
+      clearDocUi();
+      setDocStatus("Document processing cancelled.", false);
+      return;
+    }
     void sendDocMessage({ type: "POPUP_DOC_CANCEL", requestId: requestId(), docId: lastDoc.docId });
     hideDocProgress();
     clearDocUi();
     setDocStatus("Document processing cancelled.", false);
   });
 
+  // ── Page-window chooser (documents longer than one pass) ────────────────
+  const windowDialog = document.getElementById("doc-window-dialog") as HTMLDialogElement | null;
+  const windowConfirm = document.getElementById("doc-window-confirm") as HTMLButtonElement | null;
+  const windowCancel = document.getElementById("doc-window-cancel") as HTMLButtonElement | null;
+
+  windowConfirm?.addEventListener("click", () => {
+    const pending = pendingCountFile;
+    if (!pending) return;
+    // The document's length was learned from the worker's count; the choice is
+    // validated against it, then converted to the offset the pipeline wants.
+    const offset = readWindowChoice(windowTotalPages);
+    if (offset === null) return;
+    windowDialog?.close();
+    startPreview(offset, windowTotalPages);
+  });
+
+  windowCancel?.addEventListener("click", () => {
+    pendingCountFile = null;
+    windowDialog?.close();
+    hideDocProgress();
+    clearDocUi();
+    setDocStatus("Document scanning cancelled. Pick a file to start again.", false);
+  });
+
+  // Re-choose the window for a document already loaded, continuing after the
+  // pass that just finished rather than offering the same pages again.
+  const windowRescan = document.getElementById("doc-window-rescan-btn") as HTMLButtonElement | null;
+  windowRescan?.addEventListener("click", () => {
+    const doc = lastDoc;
+    if (!doc) return;
+    const total = doc.totalPages ?? doc.pages.length;
+    if (total <= MAX_DOC_PAGES) return;
+    pendingCountFile = { fileKey: doc.fileKey, name: doc.name, mimeType: doc.mimeType, kind: doc.kind };
+    openWindowDialog(total, (doc.pageOffset ?? 0) + doc.pages.length + 1);
+  });
+
   const dropzone = document.getElementById("doc-dropzone") as HTMLDivElement | null;
   if (dropzone && docFile) {
     const handleDroppedFile = async (file: File): Promise<void> => {
       if (file.size > MAX_DOC_BYTES) {
-        setDocStatus("This file is too large (maximum 20 MB).", true);
+        setDocStatus(t(currentLang, "doc_too_large", { size: MAX_DOC_BYTES_LABEL }), true);
         return;
       }
       const fileKey = requestId();
@@ -1953,10 +2175,9 @@ export async function initPopup(): Promise<void> {
           file.type ||
           (kind === "pdf" ? "application/pdf" : kind === "docx" ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document" : "image/png");
         await storeFile(fileKey, bytes);
-        setDocStatus("Scanning document on this device…", false);
-        showDocProgress();
-        beginDocSession({ fileKey, name: file.name, mimeType, kind });
-        void sendDocMessage({ type: "POPUP_DOC_PREVIEW", requestId: requestId(), fileKey, name: file.name, mimeType, kind });
+        // Same count-then-window flow the file picker uses, so a dropped
+        // document can never take a path the picked one does not.
+        startCount(fileKey, file.name, mimeType, kind);
       } catch (error) {
         await deleteFile(fileKey).catch(() => undefined);
         setDocStatus(error instanceof Error ? error.message : "Could not read this file.", true);
@@ -2850,31 +3071,34 @@ export async function initPopup(): Promise<void> {
       );
       return;
     }
+    if (message.type === "POPUP_DOC_COUNT_RESULT") {
+      // The document's real length, known before anything slow ran. One pass
+      // covers it: scan from the top. Longer: let the user choose which window,
+      // rather than silently dropping everything past the cap.
+      hideDocProgress();
+      const total = message.totalPages;
+      if (total <= MAX_DOC_PAGES) {
+        startPreview(0, total);
+      } else if (pendingCountFile) {
+        windowTotalPages = total;
+        openWindowDialog(total, 1);
+      }
+      return;
+    }
     if (message.type === "POPUP_DOC_CAPTURE_READY") {
       // The worker staged the image lifted off the page. Preview it through the
       // ordinary document path, so OCR, review, redaction, download and print
       // are exactly the ones an uploaded file gets - there is no second
-      // redaction surface to keep in step with the first.
+      // redaction surface to keep in step with the first. It goes through the
+      // same count pass as a picked file, so the two paths cannot diverge.
       hideDocProgress();
-      beginDocSession({
-        fileKey: message.fileKey,
-        name: message.name,
-        mimeType: message.mimeType,
-        kind: message.kind,
-      });
+      startCount(message.fileKey, message.name, message.mimeType, message.kind, message.degraded);
+      // State the limit of the source: a screen capture OCRs worse than the
+      // original file, and the user must know which one they are looking at.
       setDocStatus(
         message.degraded ? t(currentLang, "image_capture_screen") : t(currentLang, "image_capture_full"),
         false
       );
-      showDocProgress();
-      void sendDocMessage({
-        type: "POPUP_DOC_PREVIEW",
-        requestId: requestId(),
-        fileKey: message.fileKey,
-        name: message.name,
-        mimeType: message.mimeType,
-        kind: message.kind,
-      });
       return;
     }
     if (message.type === "POPUP_DOC_STATE") {
@@ -2905,6 +3129,11 @@ export async function initPopup(): Promise<void> {
       doc.mimeType = message.mimeType;
       doc.kind = message.kind;
       doc.pages = message.pages;
+      // The document's real length and where this pass started. Without them
+      // the studio can only say "20 pages", which is how a window of a longer
+      // document used to pass for the whole thing.
+      doc.totalPages = message.totalPages ?? message.pages.length;
+      doc.pageOffset = message.pageOffset ?? 0;
       renderDoc(doc);
       const found = message.pages.reduce((n, p) => n + p.findings.length, 0);
       // The preview is finished, so the progress row must stay down. Calling

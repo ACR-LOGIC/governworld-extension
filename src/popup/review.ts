@@ -31,6 +31,9 @@ interface ReviewSession {
   mimeType: string;
   kind: DocKind;
   pages: DocPageMeta[];
+  /** The document's true length and where this pass started. */
+  totalPages: number;
+  pageOffset: number;
   /** True when the bytes came from a screen capture rather than the original file. */
   degraded: boolean;
   source: "original" | "capture";
@@ -58,6 +61,7 @@ const dom = {
   docName: el<HTMLElement>("doc-name"),
   docPages: el<HTMLElement>("doc-pages"),
   notice: el<HTMLDivElement>("source-notice"),
+  windowNotice: el<HTMLDivElement>("window-notice"),
   findings: el<HTMLUListElement>("findings"),
   findingsCount: el<HTMLElement>("findings-count"),
   selectAll: el<HTMLButtonElement>("select-all"),
@@ -351,13 +355,21 @@ function loadSessionFromStorage(value: unknown): ReviewSession | null {
   const v = value as Record<string, unknown>;
   if (typeof v.docId !== "string" || typeof v.fileKey !== "string" || typeof v.name !== "string") return null;
   if (!Array.isArray(v.pages)) return null;
+  const pages = v.pages as DocPageMeta[];
+  const pageOffset =
+    typeof v.pageOffset === "number" && Number.isSafeInteger(v.pageOffset) && v.pageOffset >= 0 ? v.pageOffset : 0;
   return {
     docId: v.docId,
     fileKey: v.fileKey,
     name: v.name,
     mimeType: typeof v.mimeType === "string" ? v.mimeType : "application/octet-stream",
     kind: v.kind === "pdf" || v.kind === "docx" ? v.kind : "image",
-    pages: v.pages as DocPageMeta[],
+    pages,
+    totalPages:
+      typeof v.totalPages === "number" && Number.isSafeInteger(v.totalPages) && v.totalPages >= 1
+        ? v.totalPages
+        : pages.length + pageOffset,
+    pageOffset,
     degraded: v.degraded === true,
     source: v.source === "capture" ? "capture" : "original",
   };
@@ -386,7 +398,17 @@ async function hydrateFromSession(): Promise<void> {
     return;
   }
   if (dom.docName) dom.docName.textContent = session.name;
-  if (dom.docPages) dom.docPages.textContent = `${session.pages.length} page${session.pages.length === 1 ? "" : "s"}`;
+  if (dom.docPages) {
+    // "pages 21-40 of 45" for a partial pass, "45 pages" for a whole one. The
+    // same disclosure the popup makes, on the surface where the document is
+    // actually read.
+    const scanned = session.pages.length;
+    const offset = session.pageOffset;
+    dom.docPages.textContent =
+      offset > 0 || offset + scanned < session.totalPages
+        ? `pages ${offset + 1}\u2013${Math.min(offset + scanned, session.totalPages)} of ${session.totalPages}`
+        : `${scanned} page${scanned === 1 ? "" : "s"}`;
+  }
   if (dom.stageStatus) dom.stageStatus.textContent = "";
 
   // State the limit of the source, because a screen capture OCRs worse than
@@ -399,6 +421,22 @@ async function hydrateFromSession(): Promise<void> {
       dom.notice.classList.add("review__notice--warn");
     } else {
       dom.notice.hidden = true;
+    }
+  }
+
+  // Disclose a partial pass: pages outside this window were never scanned, so
+  // nothing on this surface implies they were.
+  if (dom.windowNotice) {
+    const scanned = session.pages.length;
+    const offset = session.pageOffset;
+    if (offset > 0 || offset + scanned < session.totalPages) {
+      const from = offset + 1;
+      const to = Math.min(offset + scanned, session.totalPages);
+      dom.windowNotice.hidden = false;
+      dom.windowNotice.textContent = `This pass covers pages ${from}\u2013${to} of ${session.totalPages}. Pages outside this range were not scanned or redacted. Use "Start over" in the extension to scan a different range.`;
+    } else {
+      dom.windowNotice.hidden = true;
+      dom.windowNotice.textContent = "";
     }
   }
 

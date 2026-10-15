@@ -4,7 +4,7 @@ import { loadSettings, saveSettings, isCloudAllowed, isAllowedGatewayOrigin, mee
 import { recordAudit, exportSignedAuditLog } from "../shared/audit.js";
 import type { Settings } from "../shared/settings.js";
 import type { DocKind, PopupState, ScanMode, WorkerMessage, ExtensionMessage, Finding, FindingCategory, PopupFromWorker, Rect, RedactionOptions, ScanSettingsMessage, ScanCoverageStatus } from "../shared/types.js";
-import { previewDocument, redactDocument, restoreLastSession, clearSession as clearDocSession, clearAllFiles, storeFile, deleteFile, hasStagedDocument } from "./documents.js";
+import { previewDocument, redactDocument, countDocument, restoreLastSession, clearSession as clearDocSession, clearAllFiles, storeFile, deleteFile, hasStagedDocument } from "./documents.js";
 import { analyzeExamples, testPattern } from "../shared/wizardAnalyzer.js";
 import { captureImage, stageCapturedImage, ImageCaptureError } from "./captureImage.js";
 import {
@@ -737,7 +737,11 @@ async function handlePopupDocPreview(
   name: string,
   mimeType: string,
   kind: DocKind,
-  requestId: string
+  requestId: string,
+  /** 0-based index of the first page to scan; the user's chosen window. */
+  pageOffset = 0,
+  /** The document's page count from the count pass, when one ran. */
+  totalPages?: number
 ): Promise<void> {
   // Do not race the lifecycle purge: it clears the very store this file lives
   // in, which is how a just-picked file turned into "The selected file is no
@@ -745,8 +749,8 @@ async function handlePopupDocPreview(
   // able to block the feature indefinitely.
   await Promise.race([startupPurge, new Promise((r) => setTimeout(r, PURGE_WAIT_MS))]);
   try {
-    const { docId, pages } = await previewDocument(fileKey, name, mimeType, kind);
-    notifyPopup({ type: "POPUP_DOC_STATE", requestId, docId, name, fileKey, mimeType, kind, pages });
+    const { docId, pages, pageOffset: offset, totalPages: total } = await previewDocument(fileKey, name, mimeType, kind, pageOffset, totalPages);
+    notifyPopup({ type: "POPUP_DOC_STATE", requestId, docId, name, fileKey, mimeType, kind, pages, pageOffset: offset, totalPages: total });
     void recordAudit({
       ts: new Date().toISOString(),
       action: "doc_previewed",
@@ -756,6 +760,33 @@ async function handlePopupDocPreview(
     });
   } catch (error) {
     const userMessage = error instanceof Error ? error.message : "The document could not be processed.";
+    notifyPopup({ type: "POPUP_DOC_ERROR", requestId, code: "DOC_ERROR", userMessage });
+    void recordAudit({ ts: new Date().toISOString(), action: "doc_previewed", outcome: "error" });
+  }
+}
+
+/**
+ * Count a document's pages, cheaply, so the popup can ask the user which
+ * window to scan before doing the slow pass.
+ *
+ * This is the difference between a long document being silently reduced to its
+ * first 20 pages and the user choosing the range. It also fails fast: a
+ * corrupt or encrypted document is rejected here in about a second rather than
+ * after a minute of rendering.
+ */
+async function handlePopupDocCount(
+  fileKey: string,
+  name: string,
+  mimeType: string,
+  kind: DocKind,
+  requestId: string
+): Promise<void> {
+  await Promise.race([startupPurge, new Promise((r) => setTimeout(r, PURGE_WAIT_MS))]);
+  try {
+    const totalPages = await countDocument({ fileKey, name, mimeType, kind });
+    notifyPopup({ type: "POPUP_DOC_COUNT_RESULT", requestId, totalPages });
+  } catch (error) {
+    const userMessage = error instanceof Error ? error.message : "The document could not be read.";
     notifyPopup({ type: "POPUP_DOC_ERROR", requestId, code: "DOC_ERROR", userMessage });
     void recordAudit({ ts: new Date().toISOString(), action: "doc_previewed", outcome: "error" });
   }
@@ -2296,7 +2327,9 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
         notifyPopup({ type: "POPUP_STATE", requestId: msg.requestId, state: await stateForActiveTab() });
         const docSession = await restoreLastSession();
         if (docSession) {
-          notifyPopup({ type: "POPUP_DOC_STATE", requestId: msg.requestId, docId: docSession.docId, name: docSession.name, fileKey: docSession.fileKey, mimeType: docSession.mimeType, kind: docSession.kind, pages: docSession.pages });
+          // The window rides along so a restored session still says "pages
+          // 21-40 of 45" instead of claiming 20 pages is the whole document.
+          notifyPopup({ type: "POPUP_DOC_STATE", requestId: msg.requestId, docId: docSession.docId, name: docSession.name, fileKey: docSession.fileKey, mimeType: docSession.mimeType, kind: docSession.kind, pages: docSession.pages, pageOffset: docSession.pageOffset, totalPages: docSession.totalPages });
         }
         void notifyAccountState(msg.requestId);
         void handleApiGetStatus(msg.requestId);
@@ -2309,7 +2342,10 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
         await handlePopupSetMode(msg.mode, msg.requestId);
         break;
       case "POPUP_DOC_PREVIEW":
-        await handlePopupDocPreview(msg.fileKey, msg.name, msg.mimeType, msg.kind, msg.requestId);
+        await handlePopupDocPreview(msg.fileKey, msg.name, msg.mimeType, msg.kind, msg.requestId, msg.pageOffset ?? 0, msg.totalPages);
+        break;
+      case "POPUP_DOC_COUNT":
+        await handlePopupDocCount(msg.fileKey, msg.name, msg.mimeType, msg.kind, msg.requestId);
         break;
       case "POPUP_DOC_REDACT":
         await handlePopupDocRedact(msg.docId, msg.fileKey, msg.name, msg.mimeType, msg.kind, msg.boxes, msg.findingIds, msg.requestId, msg.options);

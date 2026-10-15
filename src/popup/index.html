@@ -202,6 +202,18 @@
         </div>
 
         <!--
+          Discloses that a pass covered part of the document. GovernWorld scans
+          at most 20 pages at a time, so a longer document is processed one
+          window at a time - and a window that was never scanned must never
+          look like a document that was. This banner is that disclosure, and it
+          stays visible for as long as the windowed document is loaded.
+        -->
+        <div id="doc-window-warning" class="summary summary--warn" hidden role="status" aria-live="polite">
+          <p id="doc-window-warning-text" class="summary__note"></p>
+          <button type="button" class="btn btn--ghost btn--sm" id="doc-window-rescan-btn" data-i18n="doc_window_rescan">Scan different pages</button>
+        </div>
+
+        <!--
           Print / PDF view for the redacted output. Appears only after a
           redaction that produced pixel-verified pages, and opens a read-only
           render of those pages. It never re-redacts anything: the boxes were
@@ -221,6 +233,12 @@
           <strong data-i18n="dropzone_title">Drag &amp; drop a document or image here</strong>
           <span class="footnote" data-i18n="dropzone_desc">or click to select file</span>
         </div>
+        <!--
+          The limits, stated before the user picks a file: what formats are
+          accepted, how large, and how many pages fit in one pass. The last one
+          used to be discovered only by watching pages 21+ vanish.
+        -->
+        <p id="doc-dropzone-hint" class="footnote" data-i18n="dropzone_formats">Supports PDF (.pdf), Word (.docx), and Images (.png, .jpg, .webp) up to 20 MB</p>
         <div class="form-row" style="margin-top: 8px;">
           <label for="doc-ocr-language-select" data-i18n="ocr_lang_label">Document OCR Language</label>
           <select id="doc-ocr-language-select" class="preset-select" aria-label="Document OCR recognition language">
@@ -899,6 +917,31 @@
     <div class="dialog-actions">
       <button id="doc-cancel" class="btn btn--ghost btn--sm" type="button" data-i18n="dialog_cancel">Cancel</button>
       <button id="doc-confirm" class="btn btn--primary btn--sm" type="button" data-i18n="dialog_download_redacted">Download Redacted</button>
+    </div>
+  </dialog>
+
+  <!--
+    Page-window chooser for documents longer than one pass can cover.
+
+    A 45-page document cannot be scanned in one pass, and silently scanning
+    its first 20 pages and calling that the document is exactly the false
+    all-clear this product exists to prevent. The count pass tells the user how
+    long the document really is, and this dialog lets them say which 20 pages
+    a pass covers - 1-20, 21-40, 5-25, anything.
+  -->
+  <dialog id="doc-window-dialog" class="dialog" aria-labelledby="doc-window-title">
+    <h3 id="doc-window-title" data-i18n="doc_window_title">Choose which pages to scan</h3>
+    <p id="doc-window-desc" class="footnote"></p>
+    <div class="form-row">
+      <label for="doc-window-from" data-i18n="doc_window_from">From page</label>
+      <input id="doc-window-from" type="number" min="1" step="1" value="1" />
+      <label for="doc-window-to" data-i18n="doc_window_to">To page</label>
+      <input id="doc-window-to" type="number" min="1" step="1" />
+    </div>
+    <p id="doc-window-error" class="summary__note status--error" hidden role="alert"></p>
+    <div class="dialog-actions">
+      <button id="doc-window-cancel" class="btn btn--ghost btn--sm" type="button" data-i18n="dialog_cancel">Cancel</button>
+      <button id="doc-window-confirm" class="btn btn--primary btn--sm" type="button" data-i18n="doc_window_confirm">Scan pages</button>
     </div>
   </dialog>
 

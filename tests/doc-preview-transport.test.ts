@@ -52,6 +52,77 @@ describe("document page previews are referenced, not inlined", () => {
     }
   });
 
+  it("carries the page window through validation instead of dropping it", () => {
+    // A field the validator accepts but the reconstruction discards is a field
+    // the UI never sees - which is how POPUP_DOC_STATE's `error` object went
+    // missing and how "20 pages" used to be the only thing the studio could say
+    // about a 45-page document.
+    const result = validateMessage({ ...docState({}), totalPages: 45, pageOffset: 20 });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.message.type).toBe("POPUP_DOC_STATE");
+    if (result.message.type !== "POPUP_DOC_STATE") return;
+    expect(result.message.totalPages).toBe(45);
+    expect(result.message.pageOffset).toBe(20);
+  });
+
+  it("rejects a nonsense page window", () => {
+    for (const bad of [{ totalPages: 0 }, { totalPages: 1.5 }, { totalPages: -3 }, { pageOffset: -1 }, { pageOffset: 2.5 }]) {
+      expect(validateMessage({ ...docState({}), ...bad }).ok, JSON.stringify(bad)).toBe(false);
+    }
+  });
+
+  it("keeps a windowed multi-page document state under the message size limit", () => {
+    // The window facts are two numbers on the message, not per-page payload, so
+    // the 20-page budget is unchanged by them.
+    const pages = Array.from({ length: 20 }, (_, i) => ({
+      index: i + 20,
+      widthPx: 1240,
+      heightPx: 1754,
+      previewKey: previewKey("key1", i + 20),
+      findings: Array.from({ length: 6 }, (_, f) => ({ ...finding, id: `doc:${i + 20}:${f}` })),
+    }));
+    const message = { ...docState({}), pages, totalPages: 45, pageOffset: 20 };
+    expect(JSON.stringify(message).length).toBeLessThanOrEqual(MAX_MESSAGE_BYTES);
+    const result = validateMessage(message);
+    expect(result.ok).toBe(true);
+    if (result.ok && result.message.type === "POPUP_DOC_STATE") {
+      expect(result.message.totalPages).toBe(45);
+      expect(result.message.pageOffset).toBe(20);
+    }
+  });
+
+  it("counts a document before scanning it", () => {
+    // The count is what makes an honest page choice possible: without it a
+    // document longer than the cap was silently reduced to its first pages.
+    const ask = validateMessage({ type: "POPUP_DOC_COUNT", requestId: "r1", fileKey: "key1", name: "doc.pdf", mimeType: "application/pdf", kind: "pdf" });
+    expect(ask.ok).toBe(true);
+    const reply = validateMessage({ type: "POPUP_DOC_COUNT_RESULT", requestId: "r1", totalPages: 45 });
+    expect(reply.ok).toBe(true);
+    if (reply.ok) expect(reply.message).toEqual({ type: "POPUP_DOC_COUNT_RESULT", requestId: "r1", totalPages: 45 });
+  });
+
+  it("rejects a count reply that is not a real page total", () => {
+    for (const total of [0, -1, 1.5, Number.NaN, "45"]) {
+      expect(validateMessage({ type: "POPUP_DOC_COUNT_RESULT", requestId: "r1", totalPages: total }).ok, String(total)).toBe(false);
+    }
+  });
+
+  it("passes the chosen page window to the preview", () => {
+    const message = validateMessage({ type: "POPUP_DOC_PREVIEW", requestId: "r1", fileKey: "key1", name: "doc.pdf", mimeType: "application/pdf", kind: "pdf", pageOffset: 20, totalPages: 45 });
+    expect(message.ok).toBe(true);
+    if (!message.ok || message.message.type !== "POPUP_DOC_PREVIEW") return;
+    expect(message.message.pageOffset).toBe(20);
+    expect(message.message.totalPages).toBe(45);
+  });
+
+  it("rejects a preview window that cannot exist", () => {
+    for (const bad of [{ pageOffset: -1 }, { pageOffset: 1.5 }, { totalPages: 0 }]) {
+      const message = validateMessage({ type: "POPUP_DOC_PREVIEW", requestId: "r1", fileKey: "key1", name: "doc.pdf", mimeType: "application/pdf", kind: "pdf", ...bad });
+      expect(message.ok, JSON.stringify(bad)).toBe(false);
+    }
+  });
+
   it("keeps a realistic multi-page document state under the message size limit", () => {
     // 20 pages (MAX_DOC_PAGES) with several findings each must still fit, which is
     // only true because the images are referenced rather than embedded.

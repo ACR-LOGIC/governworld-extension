@@ -91,6 +91,70 @@ describe("Document Studio feedback contract", () => {
   });
 });
 
+describe("document limits are disclosed, not silently applied", () => {
+  it("counts the document before scanning it", () => {
+    // A 45-page document used to be rendered as its first 20 pages and then
+    // described as "20 pages". The count pass is what lets the studio tell the
+    // user how long the document really is, and offer a choice of pages.
+    const changeHandler = popupSrc.slice(popupSrc.indexOf('addEventListener("change"'));
+    expect(changeHandler).toContain("startCount(");
+    expect(popupSrc).toContain('type: "POPUP_DOC_COUNT"');
+  });
+
+  it("scans from the start when the document fits in one pass", () => {
+    const onCount = popupSrc.slice(popupSrc.indexOf('message.type === "POPUP_DOC_COUNT_RESULT"'));
+    const block = onCount.slice(0, onCount.indexOf('message.type === "POPUP_DOC_CAPTURE_READY"'));
+    expect(block).toContain("total <= MAX_DOC_PAGES");
+    expect(block).toContain("startPreview(0, total)");
+  });
+
+  it("asks which pages to scan when the document is longer than one pass", () => {
+    expect(markup).toContain('id="doc-window-dialog"');
+    expect(popupSrc).toContain("openWindowDialog(");
+    const onCount = popupSrc.slice(popupSrc.indexOf('message.type === "POPUP_DOC_COUNT_RESULT"'));
+    expect(onCount).toContain("openWindowDialog(total, 1)");
+  });
+
+  it("validates the chosen range against the document and the cap", () => {
+    const fn = popupSrc.slice(popupSrc.indexOf("function readWindowChoice"));
+    expect(fn).toContain("MAX_DOC_PAGES");
+    expect(fn).toContain("doc_window_invalid");
+  });
+
+  it("says, persistently, that a pass covered part of the document", () => {
+    // The whole point: a window that covered a third of a document must never
+    // be labelled - or merely implied - as the whole document.
+    expect(markup).toContain('id="doc-window-warning"');
+    expect(markup).toContain('id="doc-window-warning-text"');
+    const fn = popupSrc.slice(popupSrc.indexOf("function renderWindowWarning"));
+    expect(fn).toContain("doc_window_warning");
+    expect(fn).toContain("window.windowed");
+  });
+
+  it("labels the page count by the window, not just the pages rendered", () => {
+    const fn = popupSrc.slice(popupSrc.indexOf("function pageCountLabel"));
+    const body = fn.slice(0, fn.indexOf("\n}"));
+    expect(body).toContain("pageOffset");
+    expect(body).toContain("totalPages");
+  });
+
+  it("states the size and page limits where the user picks a file", () => {
+    expect(markup).toContain('data-i18n="dropzone_formats"');
+    expect(markup).toContain('id="doc-dropzone-hint"');
+  });
+
+  it("keeps the redaction window the same as the scanned window", () => {
+    // Redaction re-renders from the original bytes and matches boxes by
+    // absolute page index. A different window here paints the right boxes onto
+    // the wrong pages - and the pixel verification still passes, because the
+    // wrong page was correctly redacted.
+    const documentsSrc = readFileSync(join(extRoot, "src/service-worker/documents.ts"), "utf8");
+    expect(documentsSrc).toContain("pageOffset: session.pageOffset");
+    const offscreenSrc = readFileSync(join(extRoot, "src/offscreen/offscreen.ts"), "utf8");
+    expect(offscreenSrc).toContain("raw.pageOffset ?? 0");
+  });
+});
+
 describe("popup initialisation cannot fail silently", () => {
   it("handles a rejected initPopup", () => {
     // initPopup awaits storage before attaching a single listener, so a

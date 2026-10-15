@@ -1,9 +1,10 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
-import type { DocumentPage } from "../document-pipeline/adapter.js";
+import type { DocumentPage, CountInput } from "../document-pipeline/adapter.js";
 import { BrowserDocumentPipeline } from "../document-pipeline/browser.js";
 import { MAX_DOC_PAGES } from "../document-pipeline/contract.js";
 import type { RedactionVerification } from "../document-pipeline/verify.js";
 import type { RedactedDocRef } from "../shared/docStore.js";
+import { MAX_DOC_BYTES, pageWindowLabel, resolvePageWindow } from "../shared/docLimits.js";
 import type { DocKind, FindingCategory, Rect, RedactionOptions } from "../shared/types.js";
 import { loadSettings, meetsThreshold } from "../shared/settings.js";
 import {
@@ -23,7 +24,6 @@ import { docStoreFile, docReadFile, docDeleteFile, docClearFiles, markDocumentSt
 const DB_NAME = "governworld-redaction";
 const DB_VERSION = 1;
 const STORE = "docfiles";
-const MAX_DOC_BYTES = 20 * 1024 * 1024;
 const LAST_DOC_KEY = "lastDocId";
 /**
  * Descriptor for the in-flight/last document session, minus the file bytes.
@@ -46,6 +46,18 @@ export interface DocSession {
   bytes: ArrayBuffer;
   pages: DocumentPage[];
   categories: FindingCategory[];
+  /**
+   * 0-based index of the first page this session scanned, and the document's
+   * true length.
+   *
+   * The window is part of the session, not of the request, because redaction
+   * re-renders from the original bytes: if the preview scanned pages 21-40 and
+   * the redact rendered pages 1-20, the boxes would land on the wrong pages and
+   * the pixel verification would still pass. Total pages ride along so the UI
+   * can say "pages 21-40 of 45" instead of implying 20 is the whole document.
+   */
+  pageOffset: number;
+  totalPages: number;
 }
 
 const sessions = new Map<string, DocSession>();
@@ -113,6 +125,9 @@ interface PersistedSession {
   kind: DocKind;
   pages: DocumentPage[];
   categories: FindingCategory[];
+  /** Absent in a record written before windowed passes existed. */
+  pageOffset?: number;
+  totalPages?: number;
 }
 
 /** Record enough to rebuild the session after the worker is recycled. */
@@ -125,6 +140,8 @@ function persistSession(session: DocSession): void {
     kind: session.kind,
     pages: session.pages,
     categories: session.categories,
+    pageOffset: session.pageOffset,
+    totalPages: session.totalPages,
   };
   void chrome.storage.session.set({ [LAST_SESSION_KEY]: record }).catch(() => undefined);
 }
@@ -163,6 +180,10 @@ export async function restoreLastSession(): Promise<DocSession | null> {
     return null;
   }
 
+  const pageOffset =
+    typeof record.pageOffset === "number" && Number.isSafeInteger(record.pageOffset) && record.pageOffset >= 0
+      ? record.pageOffset
+      : 0;
   const session: DocSession = {
     docId: record.docId,
     fileKey: record.fileKey,
@@ -172,6 +193,12 @@ export async function restoreLastSession(): Promise<DocSession | null> {
     bytes,
     pages: record.pages,
     categories: Array.isArray(record.categories) ? record.categories : uniqueCategories(record.pages),
+    pageOffset,
+    // An older record has no total; the scanned pages are then all that is known.
+    totalPages:
+      typeof record.totalPages === "number" && Number.isSafeInteger(record.totalPages) && record.totalPages >= 1
+        ? record.totalPages
+        : record.pages.length + pageOffset,
   };
   sessions.set(session.docId, session);
   setLastDocId(session.docId);
@@ -196,12 +223,40 @@ function uniqueCategories(pages: DocumentPage[]): FindingCategory[] {
   return [...seen];
 }
 
+/**
+ * Count a document's pages without scanning it.
+ *
+ * The popup asks before the slow pass so the user can choose which window to
+ * scan. Without it, every document longer than the cap was truncated to its
+ * first pages in silence and then reported as complete.
+ */
+export async function countDocument(input: {
+  fileKey: string;
+  name: string;
+  mimeType: string;
+  kind: DocKind;
+}): Promise<number> {
+  if (!isDocumentPipelineSupported()) throw new Error(DOCUMENT_PIPELINE_UNAVAILABLE_MESSAGE);
+  const bytes = await readFile(input.fileKey);
+  if (!bytes) throw new Error("The selected file is no longer available. Please re-open it.");
+  if (bytes.byteLength > MAX_DOC_BYTES) throw new Error("Document is too large to process on this device.");
+
+  const countInput: CountInput = { kind: input.kind, bytes, name: input.name, mimeType: input.mimeType };
+  const total = await pipeline.count(countInput);
+  // A document always has at least one page; anything else is a bug or a lie.
+  return Number.isSafeInteger(total) && total >= 1 ? total : 1;
+}
+
 export async function previewDocument(
   fileKey: string,
   name: string,
   mimeType: string,
-  kind: DocKind
-): Promise<{ docId: string; pages: DocumentPage[] }> {
+  kind: DocKind,
+  /** 0-based index of the first page to scan; 0 scans from the start. */
+  pageOffset = 0,
+  /** The document's page count, known from the count pass that precedes this. */
+  totalPages?: number
+): Promise<{ docId: string; pages: DocumentPage[]; pageOffset: number; totalPages: number }> {
   // The pipeline runs in an offscreen document (Chromium-only). On browsers
   // without it, say so plainly instead of failing deep in the job queue.
   if (!isDocumentPipelineSupported()) throw new Error(DOCUMENT_PIPELINE_UNAVAILABLE_MESSAGE);
@@ -212,6 +267,9 @@ export async function previewDocument(
   const settings = await loadSettings();
   const customPatterns = await loadCustomPatterns();
   const docId = crypto.randomUUID();
+  // The cap is applied here, against a real total, so an offset the popup
+  // computed before the document changed still yields a bounded window.
+  const pageWindow = resolvePageWindow(totalPages ?? 1, pageOffset + 1);
   let rawPages: DocumentPage[];
   try {
     await clearAllFiles();
@@ -223,6 +281,7 @@ export async function previewDocument(
       mimeType,
       enabledCategories: settings.enabledCategories,
       maxPages: MAX_DOC_PAGES,
+      pageOffset: pageWindow.offset,
       padding: settings.maskPadding,
       previewPages: [],
       categories: [],
@@ -240,10 +299,23 @@ export async function previewDocument(
     findings: p.findings.filter((f) => meetsThreshold(settings, f.category, f.confidence)),
   }));
 
-  sessions.set(docId, { docId, fileKey, name, mimeType, kind, bytes, pages, categories: uniqueCategories(pages) });
+  sessions.set(docId, {
+    docId,
+    fileKey,
+    name,
+    mimeType,
+    kind,
+    bytes,
+    pages,
+    categories: uniqueCategories(pages),
+    pageOffset: pageWindow.offset,
+    // Never claim a total smaller than what was scanned: if the count pass is
+    // missing, the document is exactly as long as the pages that came back.
+    totalPages: Math.max(pageWindow.total, pages.length + pageWindow.offset),
+  });
   setLastDocId(docId);
   persistSession(sessions.get(docId)!);
-  return { docId, pages };
+  return { docId, pages, pageOffset: pageWindow.offset, totalPages: Math.max(pageWindow.total, pages.length + pageWindow.offset) };
 }
 
 export async function redactDocument(
@@ -296,6 +368,9 @@ export async function redactDocument(
       mimeType: session.mimeType,
       enabledCategories: settings.enabledCategories,
       maxPages: MAX_DOC_PAGES,
+      // The same window the findings came from. A different one here paints the
+      // right boxes onto the wrong pages.
+      pageOffset: session.pageOffset,
       padding: effectivePadding,
       previewKeyPrefix: session.fileKey,
       previewPages: session.pages,
@@ -305,12 +380,30 @@ export async function redactDocument(
     targetBoxes,
     options
   );
+  // A windowed pass produces a file that covers only part of the document, so
+  // the name has to say which part: "report-redacted-p21-40.pdf" cannot be
+  // mistaken for the whole document, and two windows do not collide on disk.
+  const outputName = windowedOutputName(result.outputName, session.pageOffset, session.totalPages);
   return {
-    outputName: result.outputName,
+    outputName,
     outputBytes: result.outputBytes,
     outputMimeType: result.outputMimeType,
     verification: result.verification,
     redactedRegions: targetBoxes.reduce((n, b) => n + b.rects.length, 0),
     printRef: result.printRef ?? null
   };
+}
+
+/**
+ * Insert the page window into an output filename, when the pass is partial.
+ *
+ * "report-redacted.pdf" becomes "report-redacted-p21-40.pdf". A full pass keeps
+ * the plain name: "-p1-20" on a 20-page document would be noise.
+ */
+function windowedOutputName(outputName: string, pageOffset: number, totalPages: number): string {
+  const label = pageWindowLabel(resolvePageWindow(totalPages, pageOffset + 1));
+  if (!label) return outputName;
+  const dot = outputName.lastIndexOf(".");
+  if (dot <= 0) return `${outputName}-${label}`;
+  return `${outputName.slice(0, dot)}-${label}${outputName.slice(dot)}`;
 }

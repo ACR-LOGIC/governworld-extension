@@ -120,10 +120,33 @@ function tokensFromTextLayer(
   return tokens.length > 0 ? tokens : null;
 }
 
+/**
+ * Open a PDF and read how many pages it has, without rendering any of them.
+ *
+ * This exists so the studio can ask the user WHICH pages to scan before doing
+ * the expensive part. The document used to be parsed twice anyway - once per
+ * preview and once per redaction - so one more parse that renders nothing is
+ * cheap by comparison, and it is the difference between a 45-page scan taking
+ * one pass over the wrong 20 pages and one pass over the right 20.
+ */
+export async function countPdfPages(data: ArrayBuffer): Promise<number> {
+  configurePdfWorker();
+  const loadingTask = pdfjsLib.getDocument({ data, useSystemFonts: true });
+  const pdf = await loadingTask.promise;
+  try {
+    const total = pdf.numPages;
+    return Number.isSafeInteger(total) && total >= 1 ? total : 1;
+  } finally {
+    await loadingTask.destroy().catch(() => undefined);
+  }
+}
+
 export async function renderPdfPages(
   data: ArrayBuffer,
   maxPages: number,
-  dpi = 150
+  dpi = 150,
+  /** 0-based index of the first page to render; 0 renders from the start. */
+  startPage = 0
 ): Promise<RenderedPage[]> {
   configurePdfWorker();
   // `isEvalSupported` is gone in pdf.js 6: the library no longer compiles
@@ -134,13 +157,20 @@ export async function renderPdfPages(
 
   try {
     const total = pdf.numPages;
-    const pagesToRender = Math.min(total, maxPages);
+    const offset = Math.min(Math.max(0, Math.floor(Number.isFinite(startPage) ? startPage : 0)), Math.max(0, total - 1));
+    const pagesToRender = Math.min(total - offset, maxPages);
     const out: RenderedPage[] = [];
     let totalPixels = 0;
 
     const baseScale = dpi / 72; // 72 points per inch
     for (let i = 1; i <= pagesToRender; i++) {
-      const page = await pdf.getPage(i);
+      // Page indices stay ABSOLUTE: a window that starts at page 21 must hand
+      // back page 20 (0-based), because every finding, box and store key is
+      // keyed by it, and the redaction pass re-renders the same window and
+      // matches boxes by this number. Renumbering from zero here would paint
+      // page 21's boxes onto page 1.
+      const pageNumber = offset + i;
+      const page = await pdf.getPage(pageNumber);
       const base = page.getViewport({ scale: 1 });
       let viewport = page.getViewport({ scale: baseScale });
 
@@ -181,7 +211,7 @@ export async function renderPdfPages(
         tokens = null;
       }
       out.push({
-        index: i - 1,
+        index: pageNumber - 1,
         canvas,
         widthPx: canvas.width,
         heightPx: canvas.height,

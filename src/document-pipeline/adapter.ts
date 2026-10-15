@@ -17,6 +17,14 @@ import type { RedactedDocRef } from "../shared/docStore.js";
 
 export type DocumentKind = DocKind;
 
+/** What a page count needs: the bytes and enough identity to reject them. */
+export interface CountInput {
+  kind: DocumentKind;
+  bytes: ArrayBuffer;
+  name: string;
+  mimeType: string;
+}
+
 export interface DocumentInput {
   kind: DocumentKind;
   /** File bytes (the user's own selected local file). */
@@ -27,6 +35,16 @@ export interface DocumentInput {
   enabledCategories: FindingCategory[];
   /** Hard cap on pages processed per document. */
   maxPages: number;
+  /**
+   * 0-based index of the first page to process, when the document is being
+   * scanned one window at a time. Optional so an omitted value means "from the
+   * start", the behaviour before windowed passes existed.
+   *
+   * Preview and redact MUST be called with the same offset for the same
+   * document: findings are keyed by absolute page index, and redaction
+   * re-renders from the original bytes.
+   */
+  pageOffset?: number;
   /**
    * Identifier used to derive the page-preview store keys. The offscreen
    * document persists the rendered page bitmaps under these keys instead of
@@ -90,6 +108,14 @@ export interface RedactedDocumentResult {
 
 export interface DocumentPipeline {
   /**
+   * Count the document's pages without rendering or detecting anything.
+   *
+   * The studio uses it to disclose the document's real length and ask which
+   * window to scan BEFORE the slow pass, so a 45-page document is never
+   * silently reduced to its first 20 pages.
+   */
+  count(input: CountInput): Promise<number>;
+  /**
    * Render pages + run local OCR/detectors, returning reviewable findings.
    * Must reject encrypted/malformed inputs without exposing their contents.
    */
@@ -106,6 +132,9 @@ export interface DocumentPipeline {
 }
 
 export class UnavailableDocumentPipeline implements DocumentPipeline {
+  async count(): Promise<number> {
+    throw new Error("Document redaction is not available in this build yet.");
+  }
   async preview(): Promise<DocumentPage[]> {
     throw new Error("Document redaction is not available in this build yet.");
   }

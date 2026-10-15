@@ -38,7 +38,8 @@
     "verify:print": "node scripts/verify-print-pipeline.mjs",
     "test:no-text": "node scripts/verify-no-text-reporting.mjs",
     "test:invocation": "node scripts/verify-invocation-feedback.mjs",
-    "test:review": "node scripts/verify-review-surface.mjs"
+    "test:review": "node scripts/verify-review-surface.mjs",
+    "test:doc-window": "node scripts/verify-doc-window.mjs"
   },
   "dependencies": {
     "mammoth": "^1.13.0",
