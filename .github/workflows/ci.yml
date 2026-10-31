@@ -6,15 +6,18 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
         with:
           # Node 20 reached end-of-life on 2026-04-30, so it is no longer a
           # supported build runtime. pdfjs-dist 6 also requires >=22.13. Node 24 is
@@ -28,6 +31,9 @@ jobs:
       - name: TypeScript Typecheck
         run: npm run typecheck
 
+      - name: ESLint Security Linter
+        run: npm run lint:security
+
       # Fails on popup/sidepanel drift. The sidepanel is generated from the popup,
       # so a popup-only edit is the exact failure mode this catches.
       - name: Verify Sidepanel Is In Sync
@@ -36,11 +42,20 @@ jobs:
       - name: Run Test Suite
         run: npm test
 
-      - name: Build Extension
+      - name: Build Extension (Chromium)
         run: npm run build
 
       - name: Verify Built Manifest & Offline Assets
         run: npx vitest run tests/dist-manifest.test.ts tests/offline-assets.test.ts
+
+      - name: Build Extension (Firefox)
+        run: npm run build:firefox
+
+      - name: Build Extension Payload (Safari)
+        run: npm run build:safari
+
+      - name: Verify Firefox Package & Manifest
+        run: npx vitest run tests/firefox-package.test.ts tests/firefox-manifest.test.ts
 
       # Catches the digests in RELEASE_EVIDENCE.md going stale. Store assets and
       # the tarball are tracked and must match; the zip is gitignored, so it is

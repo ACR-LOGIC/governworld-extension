@@ -74,6 +74,7 @@ export interface AuditEvent {
   gatewayOrigin?: string;
   /** Category set active after the change — policy references, never content. */
   enabledCategories?: string[];
+  prevHash?: string;
   outcome: "ok" | "denied" | "error";
 }
 
@@ -107,13 +108,16 @@ export function isAuditEvent(value: unknown): value is AuditEvent {
   ) {
     return false;
   }
+  if (value.prevHash !== undefined && (typeof value.prevHash !== "string" || !/^[a-f0-9]{64}$/.test(value.prevHash))) {
+    return false;
+  }
   return true;
 }
 
 /** Canonical serialization: stable key order so signatures are reproducible. */
 export function canonicalEventLine(event: AuditEvent): string {
   const ordered: Record<string, unknown> = {};
-  for (const key of ["ts", "action", "host", "counts", "docHash", "pages", "presetId", "gatewayOrigin", "enabledCategories", "outcome"] as const) {
+  for (const key of ["ts", "action", "host", "counts", "docHash", "pages", "presetId", "gatewayOrigin", "enabledCategories", "prevHash", "outcome"] as const) {
     if (event[key] !== undefined) ordered[key] = event[key];
   }
   return JSON.stringify(ordered);
@@ -138,14 +142,103 @@ export async function loadAuditLog(): Promise<AuditEvent[]> {
   return value.filter(isAuditEvent);
 }
 
-export async function recordAudit(event: AuditEvent): Promise<void> {
+export async function sha256Hex(data: string): Promise<string> {
+  const bytes = new TextEncoder().encode(data);
+  const hashBuf = await crypto.subtle.digest("SHA-256", bytes);
+  const hashArray = Array.from(new Uint8Array(hashBuf));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+export interface ChainVerificationResult {
+  valid: boolean;
+  brokenIndex?: number;
+  reason?: string;
+}
+
+export async function verifyAuditChain(events: AuditEvent[]): Promise<ChainVerificationResult> {
+  if (events.length === 0) return { valid: true };
+
+  // Detect prefix truncation: if the first event carries a prevHash, preceding history was deleted or pruned
+  const isChainedLog = events.some((e) => e.prevHash !== undefined);
+  if (isChainedLog && events[0].prevHash !== undefined) {
+    return {
+      valid: false,
+      brokenIndex: 0,
+      reason: "Prefix history truncated: genesis event at index 0 carries prevHash pointing to prior deleted event",
+    };
+  }
+
+  for (let i = 1; i < events.length; i++) {
+    const prev = events[i - 1];
+    const current = events[i];
+    if (isChainedLog) {
+      if (current.prevHash === undefined) {
+        return {
+          valid: false,
+          brokenIndex: i,
+          reason: `Missing prevHash at index ${i} in a hash-chained log`,
+        };
+      }
+      const expected = await sha256Hex(canonicalEventLine(prev));
+      if (current.prevHash !== expected) {
+        return {
+          valid: false,
+          brokenIndex: i,
+          reason: `Hash chain mismatch at index ${i}: expected prevHash ${expected}, got ${current.prevHash}`,
+        };
+      }
+    }
+  }
+  return { valid: true };
+}
+
+export interface RecordAuditOptions {
+  /**
+   * When true, persistence errors reject the returned promise.
+   * Required for protected release operations (such as document redaction and clipboard copy).
+   */
+  failClosed?: boolean;
+}
+
+let isAuditWriting = false;
+const auditWriteWaiters: Array<() => void> = [];
+
+async function acquireAuditLock(): Promise<void> {
+  if (!isAuditWriting) {
+    isAuditWriting = true;
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    auditWriteWaiters.push(resolve);
+  });
+}
+
+function releaseAuditLock(): void {
+  const next = auditWriteWaiters.shift();
+  if (next) {
+    next();
+  } else {
+    isAuditWriting = false;
+  }
+}
+
+export async function recordAudit(event: AuditEvent, options?: RecordAuditOptions): Promise<void> {
+  await acquireAuditLock();
   try {
     const events = await loadAuditLog();
+    if (!event.prevHash && events.length > 0) {
+      const last = events[events.length - 1];
+      event.prevHash = await sha256Hex(canonicalEventLine(last));
+    }
     events.push(event);
     await chrome.storage.local.set({ [AUDIT_KEY]: trimEvents(events) });
-  } catch {
-    // Audit storage failure must never break the operation being audited.
-    // The fail-closed invariant is best-effort when storage is unavailable.
+  } catch (err) {
+    if (options?.failClosed) {
+      throw err;
+    }
+    // Best-effort for non-release events (scans, previews, UI mode changes)
+  } finally {
+    releaseAuditLock();
   }
 }
 
@@ -194,16 +287,51 @@ interface StoredSigningKeys {
   publicKeyJwk: JsonWebKey;
 }
 
+let keyGenPromise: Promise<AuditSigningKeys> | null = null;
+
 async function getOrCreateSigningKeys(): Promise<AuditSigningKeys> {
-  const existing = await withKeyStore<StoredSigningKeys | undefined>("readonly", (s) => s.get(KEY_ID));
-  if (existing && existing.privateKey instanceof CryptoKey) {
-    return { privateKey: existing.privateKey, publicKeyJwk: existing.publicKeyJwk };
+  if (keyGenPromise) return keyGenPromise;
+  keyGenPromise = (async () => {
+    const existing = await withKeyStore<StoredSigningKeys | undefined>("readonly", (s) => s.get(KEY_ID));
+    if (existing && existing.privateKey instanceof CryptoKey) {
+      return { privateKey: existing.privateKey, publicKeyJwk: existing.publicKeyJwk };
+    }
+    const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"]);
+    const publicKeyJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
+    const stored: StoredSigningKeys = { privateKey: pair.privateKey, publicKeyJwk };
+    await withKeyStore("readwrite", (s) => s.put(stored, KEY_ID));
+    return { privateKey: pair.privateKey, publicKeyJwk };
+  })();
+  try {
+    return await keyGenPromise;
+  } finally {
+    keyGenPromise = null;
   }
-  const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, false, ["sign", "verify"]);
-  const publicKeyJwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
-  const stored: StoredSigningKeys = { privateKey: pair.privateKey, publicKeyJwk };
-  await withKeyStore("readwrite", (s) => s.put(stored, KEY_ID));
-  return { privateKey: pair.privateKey, publicKeyJwk };
+}
+
+export const AUDIT_CHECKPOINT_KEY = "auditCheckpointState";
+
+export interface AuditCheckpoint {
+  checkpointVersion: 1;
+  sequenceNumber: number;
+  timestamp: string;
+  eventCount: number;
+  headHash: string;
+  prevCheckpointHash?: string;
+}
+
+export function canonicalCheckpointLine(cp: AuditCheckpoint): string {
+  const ordered: Record<string, unknown> = {
+    checkpointVersion: cp.checkpointVersion,
+    eventCount: cp.eventCount,
+    headHash: cp.headHash,
+  };
+  if (cp.prevCheckpointHash !== undefined) {
+    ordered.prevCheckpointHash = cp.prevCheckpointHash;
+  }
+  ordered.sequenceNumber = cp.sequenceNumber;
+  ordered.timestamp = cp.timestamp;
+  return JSON.stringify(ordered);
 }
 
 export interface SignedAuditExport {
@@ -212,29 +340,97 @@ export interface SignedAuditExport {
   publicKeyJwk: JsonWebKey;
   exportedAt: string;
   eventCount: number;
+  checkpoint?: AuditCheckpoint;
+  checkpointSignatureBase64?: string;
+}
+
+export interface VerifyAuditExportOptions {
+  minSequenceNumber?: number;
+  expectedHeadHash?: string;
 }
 
 /**
  * Export + sign in one step. The signature covers the exact JSONL bytes
  * (UTF-8), so any post-export edit breaks verification.
+ * Checkpoint anchoring provides monotonic sequence numbering to resist rollback attacks.
  */
 export async function exportSignedAuditLog(): Promise<SignedAuditExport> {
-  const events = await loadAuditLog();
-  const jsonl = toAuditJsonl(events);
-  const { privateKey, publicKeyJwk } = await getOrCreateSigningKeys();
-  const data = new TextEncoder().encode(jsonl);
-  const signature = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, privateKey, data);
-  return {
-    jsonl,
-    signatureBase64: btoa(String.fromCharCode(...new Uint8Array(signature))),
-    publicKeyJwk,
-    exportedAt: new Date().toISOString(),
-    eventCount: events.length,
-  };
+  await acquireAuditLock();
+  try {
+    const events = await loadAuditLog();
+    const jsonl = toAuditJsonl(events);
+    const { privateKey, publicKeyJwk } = await getOrCreateSigningKeys();
+    const data = new TextEncoder().encode(jsonl);
+    const signature = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, privateKey, data);
+
+    const headHash =
+      events.length > 0
+        ? await sha256Hex(canonicalEventLine(events[events.length - 1]))
+        : "0".repeat(64);
+
+    let seq = 1;
+    let prevCheckpointHash: string | undefined = undefined;
+    try {
+      if (typeof chrome !== "undefined" && chrome?.storage?.local) {
+        const raw = await chrome.storage.local.get(AUDIT_CHECKPOINT_KEY);
+        const state = raw[AUDIT_CHECKPOINT_KEY];
+        if (isRecord(state) && typeof state.lastSequenceNumber === "number") {
+          seq = state.lastSequenceNumber + 1;
+          if (typeof state.lastCheckpointHash === "string") {
+            prevCheckpointHash = state.lastCheckpointHash;
+          }
+        }
+      }
+    } catch {
+      // storage unavailable or mocked
+    }
+
+    const exportedAt = new Date().toISOString();
+    const checkpoint: AuditCheckpoint = {
+      checkpointVersion: 1,
+      sequenceNumber: seq,
+      timestamp: exportedAt,
+      eventCount: events.length,
+      headHash,
+      prevCheckpointHash,
+    };
+
+    const cpData = new TextEncoder().encode(canonicalCheckpointLine(checkpoint));
+    const cpSig = await crypto.subtle.sign({ name: "ECDSA", hash: "SHA-256" }, privateKey, cpData);
+    const currentCpHash = await sha256Hex(canonicalCheckpointLine(checkpoint));
+
+    try {
+      if (typeof chrome !== "undefined" && chrome?.storage?.local) {
+        await chrome.storage.local.set({
+          [AUDIT_CHECKPOINT_KEY]: {
+            lastSequenceNumber: seq,
+            lastCheckpointHash: currentCpHash,
+          },
+        });
+      }
+    } catch {
+      // Best-effort state persistence
+    }
+
+    return {
+      jsonl,
+      signatureBase64: btoa(String.fromCharCode(...new Uint8Array(signature))),
+      publicKeyJwk,
+      exportedAt,
+      eventCount: events.length,
+      checkpoint,
+      checkpointSignatureBase64: btoa(String.fromCharCode(...new Uint8Array(cpSig))),
+    };
+  } finally {
+    releaseAuditLock();
+  }
 }
 
 /** Verify an export against its public key (used by tests and reviewers). */
-export async function verifySignedAuditExport(exported: SignedAuditExport): Promise<boolean> {
+export async function verifySignedAuditExport(
+  exported: SignedAuditExport,
+  options?: VerifyAuditExportOptions
+): Promise<boolean> {
   try {
     const publicKey = await crypto.subtle.importKey(
       "jwk",
@@ -245,7 +441,49 @@ export async function verifySignedAuditExport(exported: SignedAuditExport): Prom
     );
     const data = new TextEncoder().encode(exported.jsonl);
     const sigBytes = Uint8Array.from(atob(exported.signatureBase64), (c) => c.charCodeAt(0));
-    return await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, publicKey, sigBytes, data);
+    const sigValid = await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, publicKey, sigBytes, data);
+    if (!sigValid) return false;
+
+    if (exported.checkpoint) {
+      if (exported.checkpoint.checkpointVersion !== 1) return false;
+      if (options?.minSequenceNumber !== undefined && exported.checkpoint.sequenceNumber < options.minSequenceNumber) {
+        return false;
+      }
+      if (options?.expectedHeadHash !== undefined && exported.checkpoint.headHash !== options.expectedHeadHash) {
+        return false;
+      }
+      if (exported.checkpointSignatureBase64) {
+        const cpData = new TextEncoder().encode(canonicalCheckpointLine(exported.checkpoint));
+        const cpSigBytes = Uint8Array.from(atob(exported.checkpointSignatureBase64), (c) => c.charCodeAt(0));
+        const cpValid = await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, publicKey, cpSigBytes, cpData);
+        if (!cpValid) return false;
+      }
+    }
+
+    // Verify hash chain of events in jsonl
+    const lines = exported.jsonl.split("\n").filter((l) => l.trim().length > 0);
+    const events: AuditEvent[] = [];
+    for (const line of lines) {
+      try {
+        const parsed = JSON.parse(line);
+        if (!isAuditEvent(parsed)) return false;
+        events.push(parsed);
+      } catch {
+        return false;
+      }
+    }
+
+    if (exported.checkpoint) {
+      if (events.length !== exported.checkpoint.eventCount) return false;
+      const expectedHead =
+        events.length > 0
+          ? await sha256Hex(canonicalEventLine(events[events.length - 1]))
+          : "0".repeat(64);
+      if (exported.checkpoint.headHash !== expectedHead) return false;
+    }
+
+    const chainCheck = await verifyAuditChain(events);
+    return chainCheck.valid;
   } catch {
     return false;
   }

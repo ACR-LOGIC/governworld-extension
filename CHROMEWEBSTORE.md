@@ -52,21 +52,35 @@ Every permission declared in `manifest.json` is strictly required for core local
 
 ---
 
-## 3. Privacy & Data Use Disclosures
+## 3. Privacy & Data Use Disclosures (Three-Way Alignment)
 
 - **Single Purpose:** Provide local-first detection and redaction of sensitive data in web pages and local files.
 - **Remote Code:** The extension does NOT execute remote code or download scripts dynamically. All scripts and WebAssembly modules are bundled locally within the extension.
 - **Data Collection:** The extension collects **NO user data, NO page content, and NO document bytes**. Everything remains strictly on the local machine.
-- **Privacy Policy:** Published at
-  https://governworld.acrlogic.com/chrome-extension-privacy (the extension's own
-  Chrome Extension Privacy Notice). The same policy ships inside the package as
-  `privacy.html` and is linked from the extension's settings section. The Terms &
-  Conditions ship as `legal.html` in the same place.
+
+In accordance with Chrome Web Store Developer Program Policies (Limited Use and Data Minimization requirements):
+
+1. **Manifest Alignment:** The extension declares zero install-time `host_permissions`. The `activeTab` permission grants ephemeral access solely upon explicit user interaction (clicking "Scan this page"). All code and WebAssembly binaries (pdf.js, Tesseract.js) are strictly bundled locally within the extension.
+2. **Developer Dashboard Privacy Practices:** 
+   - **Local Page & Document Processing:** Not collected, not transmitted. Executed locally on the user's CPU/GPU without cloud transmission.
+   - **Optional Account / Cloud Integration:** Disabled by default. If explicitly configured by the user, only billing tier metadata and authentication tokens are transmitted over TLS to the user-specified gateway origin. No scanned text or document bytes are ever included.
+   - **Community Packs:** Disabled by default. No outgoing tracking.
+   - **Audit Logs:** Stored locally in browser storage with ECDSA digital signature and SHA-256 hash chaining; exported only when the user explicitly clicks "Export Audit Log".
+3. **Hosted Privacy Policy Alignment:** Matches `PRIVACY.md` and the hosted notice at `https://governworld.acrlogic.com/chrome-extension-privacy`. Packaged as `privacy.html` in the extension.
 
 ---
 
 ## 4. Version History
 
+- **0.1.1 (2026-10-30):** Hardened privacy and compliance release.
+  - Implemented cryptographic SHA-256 hash chaining for the audit log, with independent CLI verification tool (`scripts/verify-audit.mjs`).
+  - Added fail-closed audit enforcement for protected document redaction and clipboard release.
+  - Enforced strict session storage isolation (`chrome.storage.session` accessible only to trusted contexts).
+  - Sanitized shadow-root injection in Paste Shield (100% innerHTML-free).
+  - Added drag-and-drop file inspection to Paste Shield.
+  - Added Firefox AMO `data_collection_permissions` declaration (`"required": ["none"]`).
+  - Added enterprise policy deployment and configuration guide (`docs/ENTERPRISE_DEPLOYMENT.md`).
+  - Updated dependencies to `pdfjs-dist@6.4.299`.
 - **0.1.0 (2026-09-27):** Initial release featuring local-first detection engine,
   document scanning & redaction, interactive Redaction Wizard, 10-part instruction
   suite with deep linking, zero host permissions, and locked API-ready cloud

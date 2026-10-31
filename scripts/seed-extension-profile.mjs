@@ -40,7 +40,7 @@ try {
   await page.evaluate(() => {
     const manager = document.querySelector("extensions-manager");
     const toolbar = manager?.shadowRoot?.querySelector("#toolbar");
-    const devMode = toolbar?.shadowRoot?.querySelector("#devMode") as HTMLInputElement;
+    const devMode = toolbar?.shadowRoot?.querySelector("#devMode");
     if (devMode && !devMode.checked) devMode.click();
   });
   await page.waitForTimeout(500);

@@ -471,30 +471,85 @@ export function showPasteGuardDialog(
   dialog.style.left = `${Math.round(left)}px`;
   dialog.style.top = `${Math.round(top)}px`;
 
-  // Header
+  // Header - constructed safely via DOM API (no innerHTML)
   const header = doc.createElement("div");
   header.className = "gw-header";
-  header.innerHTML = `
-    <svg class="gw-shield-icon" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-      <defs>
-        <linearGradient id="gw-shield-grad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stop-color="#22d3ee" />
-          <stop offset="1" stop-color="#0ea5e9" />
-        </linearGradient>
-      </defs>
-      <path d="M24 4 L41 10 V23 C41 35 34 42 24 46 C14 42 7 35 7 23 V10 Z" fill="#0f172a" stroke="url(#gw-shield-grad)" stroke-width="2.6" />
-      <path d="M24 11 L35 14.6 V23 C35 31 30.6 36.4 24 39 C17.4 36.4 13 31 13 23 V14.6 Z" fill="none" stroke="#22d3ee" stroke-width="1.6" opacity="0.85" />
-      <rect x="16" y="24" width="16" height="4.4" rx="2.2" fill="#ef4444" />
-      <circle cx="24" cy="32.4" r="1.8" fill="#34d399" />
-    </svg>
-    <div class="gw-header-text">
-      <div class="gw-title" id="gw-pg-title">
-        GovernWorld Paste Shield
-        <span class="gw-badge">${matches.length} Sensitive ${matches.length === 1 ? "Item" : "Items"}</span>
-      </div>
-      <div class="gw-subtitle">On-device privacy check intercepted sensitive data</div>
-    </div>
-  `;
+
+  const svgNS = "http://www.w3.org/2000/svg";
+  const createSvg = (tag: string) =>
+    typeof doc.createElementNS === "function" ? doc.createElementNS(svgNS, tag) : doc.createElement(tag);
+
+  const svg = createSvg("svg");
+  svg.setAttribute("class", "gw-shield-icon");
+  svg.setAttribute("viewBox", "0 0 48 48");
+
+  const defs = createSvg("defs");
+  const grad = createSvg("linearGradient");
+  grad.setAttribute("id", "gw-shield-grad");
+  grad.setAttribute("x1", "0");
+  grad.setAttribute("y1", "0");
+  grad.setAttribute("x2", "0");
+  grad.setAttribute("y2", "1");
+
+  const stop1 = createSvg("stop");
+  stop1.setAttribute("offset", "0");
+  stop1.setAttribute("stop-color", "#22d3ee");
+
+  const stop2 = createSvg("stop");
+  stop2.setAttribute("offset", "1");
+  stop2.setAttribute("stop-color", "#0ea5e9");
+
+  grad.append(stop1, stop2);
+  defs.appendChild(grad);
+
+  const path1 = createSvg("path");
+  path1.setAttribute("d", "M24 4 L41 10 V23 C41 35 34 42 24 46 C14 42 7 35 7 23 V10 Z");
+  path1.setAttribute("fill", "#0f172a");
+  path1.setAttribute("stroke", "url(#gw-shield-grad)");
+  path1.setAttribute("stroke-width", "2.6");
+
+  const path2 = createSvg("path");
+  path2.setAttribute("d", "M24 11 L35 14.6 V23 C35 31 30.6 36.4 24 39 C17.4 36.4 13 31 13 23 V14.6 Z");
+  path2.setAttribute("fill", "none");
+  path2.setAttribute("stroke", "#22d3ee");
+  path2.setAttribute("stroke-width", "1.6");
+  path2.setAttribute("opacity", "0.85");
+
+  const rect = createSvg("rect");
+  rect.setAttribute("x", "16");
+  rect.setAttribute("y", "24");
+  rect.setAttribute("width", "16");
+  rect.setAttribute("height", "4.4");
+  rect.setAttribute("rx", "2.2");
+  rect.setAttribute("fill", "#ef4444");
+
+  const circle = createSvg("circle");
+  circle.setAttribute("cx", "24");
+  circle.setAttribute("cy", "32.4");
+  circle.setAttribute("r", "1.8");
+  circle.setAttribute("fill", "#34d399");
+
+  svg.append(defs, path1, path2, rect, circle);
+
+  const headerText = doc.createElement("div");
+  headerText.className = "gw-header-text";
+
+  const titleDiv = doc.createElement("div");
+  titleDiv.className = "gw-title";
+  titleDiv.id = "gw-pg-title";
+  titleDiv.append(doc.createTextNode("GovernWorld Paste Shield "));
+
+  const badgeSpan = doc.createElement("span");
+  badgeSpan.className = "gw-badge";
+  badgeSpan.textContent = `${matches.length} Sensitive ${matches.length === 1 ? "Item" : "Items"}`;
+  titleDiv.appendChild(badgeSpan);
+
+  const subtitleDiv = doc.createElement("div");
+  subtitleDiv.className = "gw-subtitle";
+  subtitleDiv.textContent = "On-device privacy check intercepted sensitive data";
+
+  headerText.append(titleDiv, subtitleDiv);
+  header.append(svg, headerText);
 
   // Findings list
   const content = doc.createElement("div");
@@ -532,7 +587,10 @@ export function showPasteGuardDialog(
   const btnSanitize = doc.createElement("button");
   btnSanitize.className = "gw-btn gw-btn-primary";
   btnSanitize.id = "gw-btn-sanitize";
-  btnSanitize.innerHTML = `Sanitize &amp; Paste <span class="gw-kbd">↵ Enter</span>`;
+  const kbdSanitize = doc.createElement("span");
+  kbdSanitize.className = "gw-kbd";
+  kbdSanitize.textContent = "↵ Enter";
+  btnSanitize.append(doc.createTextNode("Sanitize & Paste "), kbdSanitize);
 
   const btnRaw = doc.createElement("button");
   btnRaw.className = "gw-btn gw-btn-ghost";
@@ -542,7 +600,10 @@ export function showPasteGuardDialog(
   const btnCancel = doc.createElement("button");
   btnCancel.className = "gw-btn gw-btn-danger";
   btnCancel.id = "gw-btn-cancel";
-  btnCancel.innerHTML = `Cancel <span class="gw-kbd">Esc</span>`;
+  const kbdCancel = doc.createElement("span");
+  kbdCancel.className = "gw-kbd";
+  kbdCancel.textContent = "Esc";
+  btnCancel.append(doc.createTextNode("Cancel "), kbdCancel);
 
   actions.append(btnSanitize, btnRaw, btnCancel);
   dialog.append(header, content, actions);
@@ -818,7 +879,7 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
     }
   };
 
-  const onDrop = (e: DragEvent) => {
+  const onDrop = async (e: DragEvent) => {
     if (isHandlingEvent) return;
     const target = e.target;
     if (!isEditableElement(target)) return;
@@ -826,7 +887,32 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
     const text = e.dataTransfer?.getData("text/plain") || e.dataTransfer?.getData("text") || "";
     if (text) {
       handlePastedContent(text, target, e);
+      return;
     }
+
+    // Inspect dropped text/code/csv/json files
+    const files = e.dataTransfer?.files;
+    if (files && files.length > 0) {
+      for (const file of Array.from(files)) {
+        if (file.type.startsWith("text/") || /\.(txt|csv|json|md|tsv|log)$/i.test(file.name)) {
+          try {
+            if (typeof file.text === "function") {
+              const fileText = await file.text();
+              if (fileText) {
+                handlePastedContent(fileText, target, e);
+                return;
+              }
+            }
+          } catch {
+            // File read failure
+          }
+        }
+      }
+    }
+  };
+
+  const handleDropEvent = (e: Event): void => {
+    void onDrop(e as DragEvent);
   };
 
   const attachToRoot = (root: Document | ShadowRoot): void => {
@@ -835,13 +921,13 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
     attachedList.push(root);
     root.addEventListener("paste", onPaste as EventListener, true);
     root.addEventListener("beforeinput", onBeforeInput as EventListener, true);
-    root.addEventListener("drop", onDrop as EventListener, true);
+    root.addEventListener("drop", handleDropEvent, true);
   };
 
   const detachFromRoot = (root: Document | ShadowRoot): void => {
     root.removeEventListener("paste", onPaste as EventListener, true);
     root.removeEventListener("beforeinput", onBeforeInput as EventListener, true);
-    root.removeEventListener("drop", onDrop as EventListener, true);
+    root.removeEventListener("drop", handleDropEvent, true);
   };
 
   /** Attach to every reachable same-document surface under a scope. */

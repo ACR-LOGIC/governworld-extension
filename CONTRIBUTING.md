@@ -37,7 +37,7 @@ If GovernWorld helps protect your privacy or workflow, you can support ongoing m
 ## Development Workflow
 
 ### Prerequisites
-- Node.js 20+
+- Node.js 22.13+
 - npm 10+
 - Google Chrome (or Chromium-based browser)
 

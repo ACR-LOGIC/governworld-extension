@@ -23,12 +23,12 @@ describe("the Firefox source manifest", () => {
     version: string;
     permissions: string[];
     background?: Record<string, unknown>;
-    browser_specific_settings?: { gecko?: { id?: string } };
+    browser_specific_settings?: { gecko?: { id?: string; data_collection_permissions?: { required?: string[] } } };
   };
   const v3 = readJson("manifest.json") as {
     manifest_version: number;
     permissions: string[];
-    browser_specific_settings?: { gecko?: { id?: string } };
+    browser_specific_settings?: { gecko?: { id?: string; data_collection_permissions?: { required?: string[] } } };
   };
   const pkg = readJson("package.json") as { version: string };
 
@@ -40,6 +40,10 @@ describe("the Firefox source manifest", () => {
   it("carries the locked add-on ID, matching the Chromium manifest", () => {
     expect(ff.browser_specific_settings?.gecko?.id).toBe(LOCKED_GECKO_ID);
     expect(v3.browser_specific_settings?.gecko?.id).toBe(LOCKED_GECKO_ID);
+  });
+
+  it("declares that no data is collected, as AMO requires", () => {
+    expect(ff.browser_specific_settings?.gecko?.data_collection_permissions?.required).toEqual(["none"]);
   });
 
   it("uses event-page background scripts Firefox installs", () => {

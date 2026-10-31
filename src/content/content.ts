@@ -505,7 +505,11 @@ if (g.__gwRedactionContentLoaded !== true) {
     });
   }
 
-  chrome.runtime.onMessage.addListener((raw: unknown, _sender, sendResponse) => {
+  chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
+    if (sender && sender.id && sender.id !== chrome.runtime.id) {
+      sendResponse({ ok: false, error: "Unauthorized sender" });
+      return;
+    }
     if (typeof raw === "object" && raw !== null && (raw as { type?: unknown }).type === "PING") {
       sendResponse({ ok: true, status: "ready" });
       return true;
