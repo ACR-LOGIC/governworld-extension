@@ -137,7 +137,7 @@ settled; changing one is a product decision, not a cleanup.
 
 ## Environment
 
-- Node.js 20+, npm 10+. Targets: Chrome 116+, Firefox 109+.
+- Node.js 22.13+ (Node 20 is end-of-life; pdfjs-dist 6 requires 22.13+; CI uses 24), npm 10+. Targets: Chrome 116+, Firefox 109+.
 - Release packaging: `npm run release:zip <sha>` (`scripts/make-release.mjs`) for
   Chromium, `npm run release:browsers <sha>` (`scripts/make-browser-releases.mjs`)
   for per-browser artifacts (`GovernWorld-Chromium-…`, `GovernWorld-Firefox-…`,

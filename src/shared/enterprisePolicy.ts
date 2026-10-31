@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 import { isRecord } from "./types.js";
+import type { NetworkDestinationPolicy } from "./networkGuard.js";
 import {
   ALL_CATEGORIES,
   isCategory,
@@ -36,6 +37,10 @@ export interface EnterprisePolicy {
   userCanDisable: boolean;
   /** Categories the user cannot disable. */
   enforcedCategories: FindingCategory[];
+  /** Network destination fetch policy: "public_only" (default), "managed_intranet", or "disabled". */
+  networkDestinationPolicy: NetworkDestinationPolicy;
+  /** Internal network allowlist for managed_intranet. */
+  networkAllowlist: string[];
 }
 
 export const NO_ENTERPRISE_POLICY: EnterprisePolicy = {
@@ -44,6 +49,8 @@ export const NO_ENTERPRISE_POLICY: EnterprisePolicy = {
   protectionMode: "this-tab",
   userCanDisable: true,
   enforcedCategories: [],
+  networkDestinationPolicy: "public_only",
+  networkAllowlist: [],
 };
 
 /** Maximum-protection fallback for a present-but-invalid managed policy. */
@@ -53,6 +60,8 @@ export const FAIL_CLOSED_ENTERPRISE_POLICY: EnterprisePolicy = {
   protectionMode: "always-on",
   userCanDisable: false,
   enforcedCategories: [...ALL_CATEGORIES],
+  networkDestinationPolicy: "disabled",
+  networkAllowlist: [],
 };
 
 export function parseEnterprisePolicy(raw: unknown): EnterprisePolicy {
@@ -78,12 +87,33 @@ export function parseEnterprisePolicy(raw: unknown): EnterprisePolicy {
     }
     enforced = [...seen];
   }
+
+  let networkPolicy: NetworkDestinationPolicy = "public_only";
+  if (raw.networkDestinationPolicy !== undefined) {
+    if (raw.networkDestinationPolicy === "public_only" || raw.networkDestinationPolicy === "managed_intranet" || raw.networkDestinationPolicy === "disabled") {
+      networkPolicy = raw.networkDestinationPolicy;
+    } else {
+      return { ...FAIL_CLOSED_ENTERPRISE_POLICY };
+    }
+  }
+
+  let allowlist: string[] = [];
+  if (raw.networkAllowlist !== undefined) {
+    if (!Array.isArray(raw.networkAllowlist)) return { ...FAIL_CLOSED_ENTERPRISE_POLICY };
+    for (const item of raw.networkAllowlist) {
+      if (typeof item !== "string" || item.length > 512) return { ...FAIL_CLOSED_ENTERPRISE_POLICY };
+      allowlist.push(item);
+    }
+  }
+
   return {
     managed: true,
     valid: true,
     protectionMode: mode,
     userCanDisable: raw.userCanDisable ?? false,
     enforcedCategories: enforced,
+    networkDestinationPolicy: networkPolicy,
+    networkAllowlist: allowlist,
   };
 }
 

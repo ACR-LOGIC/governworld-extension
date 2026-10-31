@@ -40,6 +40,8 @@ import {
 } from "../shared/customPatterns.js";
 import { syncSiteProtection } from "./siteProtection.js";
 import { loadEnterprisePolicy, resolveEffectiveProtection } from "../shared/enterprisePolicy.js";
+import { MAX_DOC_BYTES } from "../shared/docLimits.js";
+import { evaluateDestinationPolicy, fetchWithPolicy, readBoundedArrayBuffer } from "../shared/networkGuard.js";
 
 /**
  * Scan settings with admin-mandated categories merged in. Page scans must not
@@ -891,7 +893,7 @@ async function settleDeliveryAudit(requestId: string, delivered: boolean): Promi
     action: "doc_redacted",
     docHash: pending.docHash,
     outcome: delivered ? "ok" : "error",
-  });
+  }, { failClosed: true });
 }
 
 function deferDeliveryAudit(requestId: string, docHash: string): void {
@@ -985,13 +987,13 @@ async function handlePopupDocRedact(
       // The browser accepted the file, so delivery is known here. It still says
       // nothing about whether the boxes were covered, which is why `verified`
       // gates the outcome rather than the download.
-      void recordAudit({
+      await recordAudit({
         ts: new Date().toISOString(),
         action: "doc_redacted",
         docHash,
         outcome: verified ? "ok" : "error",
         ...(verified ? {} : { counts: { unverified: verification.checkedRegions - verification.darkRegions } }),
-      });
+      }, { failClosed: true });
       notifyPopup({ type: "POPUP_DOC_DONE", requestId, outputName, outputMimeType, printFileKey: printRef?.fileKey });
     } else {
       // The worker cannot know whether the popup's fallback download reached the
@@ -1188,17 +1190,46 @@ async function handleContentScanResult(message: Extract<WorkerMessage, { type: "
       }
 
       // ── PDF extraction ────────────────────────────────────────────────
+      let skippedNetworkCount = 0;
       for (const item of pdfQueue) {
         try {
-          const { tryFetchOriginal } = await import("./captureImage.js");
-          // For PDFs we fetch the bytes — pdf.ts handles them.
+          const enterprisePolicy = await loadEnterprisePolicy();
+          const destCheck = evaluateDestinationPolicy(item.url, enterprisePolicy.networkDestinationPolicy, enterprisePolicy.networkAllowlist);
+          if (!destCheck.allowed) {
+            skippedNetworkCount++;
+            continue;
+          }
+
           let response: Response | null = null;
           try {
-            response = await fetch(item.url, { credentials: "omit", redirect: "follow" });
-          } catch { /* network error */ }
-          if (!response?.ok) continue;
-          const buffer = await response.arrayBuffer();
-          if (buffer.byteLength === 0) continue;
+            response = await fetchWithPolicy(item.url, {
+              credentials: "omit",
+              policy: enterprisePolicy.networkDestinationPolicy,
+              allowlist: enterprisePolicy.networkAllowlist,
+              timeoutMs: FETCH_TIMEOUT_MS,
+            });
+          } catch {
+            skippedNetworkCount++;
+            continue;
+          }
+          if (!response?.ok) {
+            skippedNetworkCount++;
+            continue;
+          }
+
+          const declaredType = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+          if (declaredType && !declaredType.includes("pdf") && declaredType !== "application/octet-stream" && declaredType !== "binary/octet-stream") {
+            continue;
+          }
+
+          const clHeader = response.headers.get("content-length");
+          if (clHeader) {
+            const cl = parseInt(clHeader, 10);
+            if (Number.isFinite(cl) && cl > MAX_DOC_BYTES) continue;
+          }
+
+          const { buffer, exceeded } = await readBoundedArrayBuffer(response, MAX_DOC_BYTES);
+          if (exceeded || buffer.byteLength === 0 || buffer.byteLength > MAX_DOC_BYTES) continue;
 
           const tmpKey = `pdf_${crypto.randomUUID().replace(/-/g, "").slice(0, 16)}`;
           await storeFile(tmpKey, buffer);
@@ -1225,13 +1256,18 @@ async function handleContentScanResult(message: Extract<WorkerMessage, { type: "
         } catch { /* PDF item failure is not fatal */ }
       }
 
-      if (newFindings.length === 0) return;
+      if (newFindings.length === 0 && skippedNetworkCount === 0) return;
 
-      // Merge new findings into the persisted session and push a POPUP_STATE update.
+      // Merge new findings and updated stats into the persisted session and push a POPUP_STATE update.
       const currentSession = await readSession(tabId);
       if (!currentSession || currentSession.sessionId !== message.sessionId) return;
+      const updatedStats = { ...currentSession.stats };
+      if (skippedNetworkCount > 0) {
+        updatedStats.deferredMediaCount = (updatedStats.deferredMediaCount ?? 0) + skippedNetworkCount;
+        updatedStats.coverageStatus = "PARTIALLY_SCANNED";
+      }
       const merged = [...currentSession.findings, ...newFindings];
-      await writeSession(tabId, { ...currentSession, findings: merged });
+      await writeSession(tabId, { ...currentSession, findings: merged, stats: updatedStats });
       const updatedSession = await readSession(tabId);
       notifyPopup({
         type: "POPUP_STATE",
@@ -1827,15 +1863,20 @@ if (chrome.contextMenus?.onClicked) {
         const response = await sendToTab(tabId, msg);
         const error = actionError(response);
         const counts = actionCounts(response);
-        void recordAudit({
-          ts: new Date().toISOString(),
-          action: "selection_redacted",
-          ...(host ? { host } : {}),
-          ...(counts ? { counts } : {}),
-          outcome: error ? "error" : "ok",
-        });
-        if (error) {
-          await reportActionFailure(tabId, `Redact selection: ${error}`);
+        let auditError: string | null = null;
+        try {
+          await recordAudit({
+            ts: new Date().toISOString(),
+            action: "selection_redacted",
+            ...(host ? { host } : {}),
+            ...(counts ? { counts } : {}),
+            outcome: error ? "error" : "ok",
+          }, { failClosed: true });
+        } catch (err) {
+          auditError = err instanceof Error ? err.message : String(err);
+        }
+        if (error || auditError) {
+          await reportActionFailure(tabId, `Redact selection: ${error || `Audit persistence failed (${auditError})`}`);
         } else {
           flashTabStatus(tabId, "ok");
           console.info(`[governworld] Redacted selection copied to the clipboard (${Object.values(counts ?? {}).reduce((a, b) => a + b, 0)} values masked)`);

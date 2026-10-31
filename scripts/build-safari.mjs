@@ -95,4 +95,4 @@ base.background = { service_worker: "service-worker.js", type: "module" };
 writeFileSync(join(outDir, "manifest.json"), JSON.stringify(base, null, 2) + "\n");
 console.log(`Safari payload manifest version: ${pkg.version}`);
 console.log("Built Safari handoff payload to dist-safari/");
-console.log("Next (requires Mac+Xcode or App Store Connect): xcrun safari-web-extension-packager dist-safari");
+console.log("Next (requires Mac+Xcode or App Store Connect): xcrun safari-web-extension-packager --copy-resources dist-safari");

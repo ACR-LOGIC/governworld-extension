@@ -624,11 +624,11 @@ function detectNpis(text: string): RawMatch[] {
   for (const m of text.matchAll(NPI_LABEL_RE)) {
     const valueStart = m.index + m[0].length;
     const rest = text.slice(valueStart, Math.min(text.length, valueStart + 24));
-    const idMatch = rest.match(NPI_RUN_RE);
+    const idMatch = new RegExp(NPI_RUN_RE.source, "i").exec(rest);
     if (!idMatch) continue;
     const rawId = idMatch[0];
     if (!isValidNpi(rawId)) continue;
-    const idStart = idMatch.index ?? 0;
+    const idStart = idMatch.index;
     out.push({
       category: "npi",
       confidence: 0.93,
@@ -680,11 +680,11 @@ function detectMbis(text: string): RawMatch[] {
   for (const m of text.matchAll(MBI_LABEL_RE)) {
     const valueStart = m.index + m[0].length;
     const rest = text.slice(valueStart, Math.min(text.length, valueStart + 24));
-    const idMatch = rest.match(MBI_RUN_RE);
+    const idMatch = new RegExp(MBI_RUN_RE.source, "i").exec(rest);
     if (!idMatch) continue;
     const rawId = idMatch[0];
     if (!isValidMbi(rawId.toUpperCase())) continue;
-    const idStart = idMatch.index ?? 0;
+    const idStart = idMatch.index;
     out.push({
       category: "mbi",
       confidence: 0.92,

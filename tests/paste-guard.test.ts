@@ -276,6 +276,7 @@ function createMockDocument(): any {
     documentElement: body,
     defaultView: { innerWidth: 1024, innerHeight: 768 },
     createElement: (tag: string) => createMockElement(tag),
+    createElementNS: (_ns: string, tag: string) => createMockElement(tag),
     createTextNode: (text: string) => ({ textContent: text, nodeType: 3 }),
     getElementById: (id: string) => {
       if (elementsById[id]) return elementsById[id];
@@ -545,6 +546,41 @@ describe("Paste Guard - Event Interception & Lifecycle", () => {
 
     const host = doc.getElementById("__governworld-paste-guard-host");
     expect(host).toBeNull();
+
+    teardown();
+  });
+
+  it("intercepts drag-and-drop of text files containing sensitive data", async () => {
+    const doc = createMockDocument();
+    const target = createMockElement("textarea");
+    doc.body.appendChild(target);
+
+    const teardown = initPasteGuard(doc);
+
+    const preventDefault = vi.fn();
+    const stopPropagation = vi.fn();
+    const dropEvent = {
+      type: "drop",
+      target,
+      dataTransfer: {
+        getData: () => "",
+        files: [
+          {
+            name: "credentials.txt",
+            type: "text/plain",
+            text: async () => "Secret API key: AKIAIOSFODNN7EXAMPLE",
+          },
+        ],
+      },
+      preventDefault,
+      stopPropagation,
+    };
+
+    await doc.dispatchEvent(dropEvent);
+    expect(preventDefault).toHaveBeenCalled();
+
+    const host = doc.getElementById("__governworld-paste-guard-host");
+    expect(host).not.toBeNull();
 
     teardown();
   });

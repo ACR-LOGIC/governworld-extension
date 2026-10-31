@@ -26,6 +26,8 @@
  */
 
 import { storeFile, deleteFile } from "./documents.js";
+import { loadEnterprisePolicy } from "../shared/enterprisePolicy.js";
+import { evaluateDestinationPolicy, fetchWithPolicy, readBoundedArrayBuffer } from "../shared/networkGuard.js";
 
 /** The pipeline refuses documents over 20 MB; do not stage anything larger. */
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -116,9 +118,18 @@ export async function tryFetchOriginal(src: string): Promise<CapturedImage | nul
 
   if (url.protocol !== "https:" && url.protocol !== "http:") return null;
 
+  const enterprisePolicy = await loadEnterprisePolicy();
+  const destCheck = evaluateDestinationPolicy(url, enterprisePolicy.networkDestinationPolicy, enterprisePolicy.networkAllowlist);
+  if (!destCheck.allowed) return null;
+
   let response: Response;
   try {
-    response = await fetch(url.href, { credentials: "omit", redirect: "follow" });
+    response = await fetchWithPolicy(url.href, {
+      credentials: "omit",
+      policy: enterprisePolicy.networkDestinationPolicy,
+      allowlist: enterprisePolicy.networkAllowlist,
+      timeoutMs: 10_000,
+    });
   } catch {
     return null;
   }
@@ -129,9 +140,17 @@ export async function tryFetchOriginal(src: string): Promise<CapturedImage | nul
   // an HTML error page to a pipeline that expects pixels.
   if (declared && !SUPPORTED_MIME.has(declared)) return null;
 
-  const buffer = await response.arrayBuffer();
+  const contentLength = response.headers.get("content-length");
+  if (contentLength) {
+    const cl = parseInt(contentLength, 10);
+    if (Number.isFinite(cl) && cl > MAX_IMAGE_BYTES) {
+      throw new ImageCaptureError("image too large", "That image is too large to process on this device.");
+    }
+  }
+
+  const { buffer, exceeded } = await readBoundedArrayBuffer(response, MAX_IMAGE_BYTES);
+  if (exceeded) throw new ImageCaptureError("image too large", "That image is too large to process on this device.");
   if (buffer.byteLength === 0) return null;
-  if (buffer.byteLength > MAX_IMAGE_BYTES) throw new ImageCaptureError("image too large", "That image is too large to process on this device.");
 
   const mimeType = declared || mimeFromUrl(url.href);
   return { bytes: buffer, mimeType, name: nameFromUrl(url.href, mimeType), source: "original", degraded: false };
