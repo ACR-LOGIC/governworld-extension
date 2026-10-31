@@ -52,9 +52,9 @@
     "tesseract.js": "^7.0.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.63.0",
-    "@types/chrome": "^0.3.4",
-    "@types/node": "^26.6.3",
+    "@playwright/test": "^1.64.1",
+    "@types/chrome": "^0.3.7",
+    "@types/node": "^26.6.5",
     "esbuild": "^0.28.2",
     "eslint": "^10.14.0",
     "eslint-plugin-security": "^4.2.1",
