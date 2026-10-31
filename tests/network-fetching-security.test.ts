@@ -13,6 +13,8 @@
 };
 
 import { describe, it, expect, vi } from "vitest";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 import {
   isCloudMetadataHost,
   readBoundedArrayBuffer,
@@ -232,6 +234,68 @@ describe("network fetching security & boundary protections (Objective 5)", () =>
       ).rejects.toThrow("Network policy blocked destination");
     } finally {
       globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("verifies real wire HTTP redirect chains and loops on actual network server", async () => {
+    // Spin up an actual HTTP server on a random free port on loopback
+    const server = http.createServer((req, res) => {
+      const url = new URL(req.url || "/", `http://${req.headers.host}`);
+      if (url.pathname === "/start") {
+        res.writeHead(302, { Location: "/target" });
+        res.end();
+      } else if (url.pathname === "/target") {
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end("target-reached");
+      } else if (url.pathname === "/loop") {
+        res.writeHead(302, { Location: "/loop" });
+        res.end();
+      } else if (url.pathname === "/redirect-to-metadata") {
+        res.writeHead(302, { Location: "http://169.254.169.254/secret" });
+        res.end();
+      } else {
+        res.writeHead(404);
+        res.end();
+      }
+    });
+
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", () => resolve()));
+    const port = (server.address() as AddressInfo).port;
+    const baseUrl = `http://127.0.0.1:${port}`;
+
+    try {
+      // 1. Success under managed_intranet with explicit allowlist
+      const resp = await fetchWithPolicy(`${baseUrl}/start`, {
+        policy: "managed_intranet",
+        allowlist: ["127.0.0.1"],
+      });
+      const text = await resp.text();
+      expect(resp.status).toBe(200);
+      expect(text).toBe("target-reached");
+
+      // 2. Blocked at step 1 under public_only
+      await expect(
+        fetchWithPolicy(`${baseUrl}/start`, { policy: "public_only" })
+      ).rejects.toThrow("Destination is loopback network, blocked under public_only policy");
+
+      // 3. Blocked at redirect hop when destination is metadata endpoint
+      await expect(
+        fetchWithPolicy(`${baseUrl}/redirect-to-metadata`, {
+          policy: "managed_intranet",
+          allowlist: ["127.0.0.1"], // allowlist allows step 1, but step 2 metadata is strictly blocked!
+        })
+      ).rejects.toThrow("Cloud metadata destination blocked");
+
+      // 4. Exceeding maxRedirects fails with explicit error
+      await expect(
+        fetchWithPolicy(`${baseUrl}/loop`, {
+          policy: "managed_intranet",
+          allowlist: ["127.0.0.1"],
+          maxRedirects: 3,
+        })
+      ).rejects.toThrow("Too many redirects (exceeded limit of 3)");
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
 });
