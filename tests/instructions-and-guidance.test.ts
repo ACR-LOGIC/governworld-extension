@@ -47,6 +47,7 @@ describe("Instructions, Tab Navigation & Contextual Guidance", () => {
       "guide-redaction-styles",
       "guide-accessibility",
       "guide-languages",
+      "guide-notifications",
       "guide-settings",
       "guide-shortcuts",
       "guide-troubleshooting",

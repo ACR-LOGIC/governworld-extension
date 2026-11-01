@@ -11,6 +11,7 @@ import type { CustomPattern, CommunityAccount, CommunityRule } from "./customPat
 import type { PatternTestResult, WizardAnalysis } from "./wizardAnalyzer";
 import type { ImageCandidate } from "./messages";
 import type { AccountView } from "./account";
+import type { NotificationPreferences } from "./settings.js";
 
 export type FindingCategory =
   | "email"
@@ -210,6 +211,7 @@ export type PopupMessage =
   | { type: "POPUP_EXPORT_AUDIT"; requestId: string }
   | { type: "POPUP_UNDO_MASKS"; requestId: string }
   | { type: "POPUP_SET_NOTIFICATIONS"; requestId: string; enabled: boolean }
+  | { type: "POPUP_SET_NOTIFICATION_PREFS"; requestId: string; prefs: Partial<NotificationPreferences> }
   | { type: "POPUP_ACCOUNT_SAVE"; requestId: string; gatewayOrigin: string; apiKey: string }
   | { type: "POPUP_ACCOUNT_CLEAR"; requestId: string }
   | { type: "POPUP_ACCOUNT_PURCHASE"; requestId: string; planId: string }
@@ -262,6 +264,7 @@ export type WorkerMessage =
   | { type: "CONTEXT_MASK_SELECTION"; requestId: string; selectionText?: string; settings?: ScanSettingsMessage }
   /** Async OCR/PDF findings from a visual-capture queue item (content → SW). */
   | { type: "SCAN_PAGE_VISUAL_RESULT"; requestId: string; sessionId: string; sourceId: string; findings: Finding[] }
+  | { type: "CONTENT_SHOW_TOAST"; requestId: string; level?: "info" | "success" | "warning" | "danger"; title: string; message: string; durationMs?: number; actionLabel?: string }
   /** Coverage status broadcast from the SW to the popup after all async media results are merged. */
   | { type: "POPUP_SCAN_COVERAGE"; requestId: string; coverageStatus: string; deferredMediaCount: number };
 
@@ -428,6 +431,7 @@ export type PopupFromWorker =
    */
   | { type: "POPUP_DOC_COUNT_RESULT"; requestId: string; totalPages: number }
   | { type: "POPUP_NOTIFICATIONS_STATE"; requestId: string; granted: boolean }
+  | { type: "POPUP_NOTIFICATION_PREFS_STATE"; requestId: string; prefs: NotificationPreferences; granted?: boolean }
   | {
       type: "POPUP_ACCOUNT_STATE";
       requestId: string;
@@ -539,10 +543,12 @@ export const MESSAGE_TYPES = new Set<string>([
   "POPUP_UNDO_MASKS",
   "POPUP_UNDO_DONE",
   "POPUP_SET_NOTIFICATIONS",
+  "POPUP_SET_NOTIFICATION_PREFS",
   "POPUP_ACCOUNT_SAVE",
   "POPUP_ACCOUNT_CLEAR",
   "POPUP_ACCOUNT_PURCHASE",
   "POPUP_NOTIFICATIONS_STATE",
+  "POPUP_NOTIFICATION_PREFS_STATE",
   "POPUP_ACCOUNT_STATE",
   "POPUP_ACCOUNT_PURCHASE_URL",
   "POPUP_WIZARD_ANALYZE",
@@ -574,6 +580,7 @@ export const MESSAGE_TYPES = new Set<string>([
   "POPUP_API_SUBMIT_RESULT",
   // Multi-format acquisition pipeline messages (Layer 2–5 async OCR/PDF results)
   "SCAN_PAGE_VISUAL_RESULT",
+  "CONTENT_SHOW_TOAST",
   "POPUP_SCAN_COVERAGE",
 ]);
 

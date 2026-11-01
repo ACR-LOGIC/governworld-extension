@@ -205,20 +205,30 @@ async function clearSession(tabId: number): Promise<void> {
   clearBadgeForTab(tabId);
 }
 
-export function updateBadgeForTab(tabId: number, count: number): void {
+export function updateBadgeForTab(tabId: number, count: number, forceColor?: string): void {
   try {
-    if (chrome.action?.setBadgeText) {
-      void chrome.action.setBadgeText({
-        tabId,
-        text: count > 0 ? (count > 99 ? "99+" : String(count)) : "",
-      }).catch(() => undefined);
-    }
-    if (chrome.action?.setBadgeBackgroundColor) {
-      void chrome.action.setBadgeBackgroundColor({
-        tabId,
-        color: count > 0 ? "#E53E3E" : "#2563EB",
-      }).catch(() => undefined);
-    }
+    void (async () => {
+      const settings = await loadSettings().catch(() => null);
+      const badgeEnabled = settings ? settings.notificationPrefs?.badgeEnabled ?? true : true;
+      if (!badgeEnabled) {
+        if (chrome.action?.setBadgeText) {
+          void chrome.action.setBadgeText({ tabId, text: "" }).catch(() => undefined);
+        }
+        return;
+      }
+      if (chrome.action?.setBadgeText) {
+        void chrome.action.setBadgeText({
+          tabId,
+          text: count > 0 ? (count > 99 ? "99+" : String(count)) : "",
+        }).catch(() => undefined);
+      }
+      if (chrome.action?.setBadgeBackgroundColor) {
+        void chrome.action.setBadgeBackgroundColor({
+          tabId,
+          color: forceColor ?? (count > 0 ? "#E53E3E" : "#2563EB"),
+        }).catch(() => undefined);
+      }
+    })();
   } catch {
     // Best-effort badge update
   }
@@ -353,23 +363,110 @@ async function restoreFindingBadge(tabId: number): Promise<void> {
  * sends (the setting AND the optional permission), because a failure notice is
  * not worth overriding a user's stated preference for.
  */
+/** True when the user has granted the optional notifications permission. */
+async function notificationsGranted(): Promise<boolean> {
+  try {
+    return (await chrome.permissions.contains({ permissions: ["notifications"] })) as boolean;
+  } catch {
+    return false;
+  }
+}
+
+export interface ExtensionNotificationPayload {
+  tabId?: number;
+  event: "scan_findings" | "paste_intercept" | "policy_change" | "redaction_complete" | "action_failure";
+  level?: "info" | "success" | "warning" | "danger";
+  title: string;
+  message: string;
+  count?: number;
+  categories?: Record<string, number>;
+}
+
+export async function dispatchExtensionNotification(payload: ExtensionNotificationPayload): Promise<void> {
+  try {
+    const settings = await loadSettings();
+    const prefs = settings.notificationPrefs;
+
+    if (payload.event === "scan_findings" && !prefs.notifyCriticalFindings) return;
+    if (payload.event === "paste_intercept" && !prefs.notifyPasteInterception) return;
+    if (payload.event === "policy_change" && !prefs.notifyPolicyChanges) return;
+    if (payload.event === "redaction_complete" && !prefs.notifyRedactionComplete) return;
+
+    let displayTitle = payload.title;
+    let displayMessage = payload.message;
+
+    if (prefs.privacyMode === "minimal" && payload.event === "scan_findings") {
+      const c = payload.count ?? 1;
+      displayTitle = "GovernWorld \u2014 Sensitive Data Detected";
+      displayMessage = `${c} sensitive item${c === 1 ? "" : "s"} detected on this page.`;
+    }
+
+    // 1. In-page Toast HUD (closed shadow DOM in active tab)
+    if (prefs.toastEnabled && payload.tabId !== undefined && payload.tabId > 0) {
+      void chrome.tabs.sendMessage(payload.tabId, {
+        type: "CONTENT_SHOW_TOAST",
+        requestId: `toast-${Date.now()}`,
+        level: payload.level ?? "info",
+        title: displayTitle,
+        message: displayMessage,
+      }).catch(() => undefined);
+    }
+
+    // 2. Desktop OS notification (gated by optional permission)
+    if (prefs.systemEnabled && (await notificationsGranted())) {
+      await chrome.notifications.create({
+        type: "basic",
+        iconUrl: chrome.runtime.getURL("icons/icon-128.png"),
+        title: displayTitle,
+        message: displayMessage,
+        priority: payload.level === "danger" ? 1 : 0,
+      });
+    }
+
+    // 3. Action badge counter/status
+    if (prefs.badgeEnabled && payload.tabId !== undefined && payload.tabId > 0) {
+      if (payload.event === "scan_findings" && payload.count !== undefined) {
+        updateBadgeForTab(payload.tabId, payload.count);
+      } else if (payload.event === "action_failure") {
+        flashTabStatus(payload.tabId, "failed");
+      } else if (payload.event === "redaction_complete") {
+        flashTabStatus(payload.tabId, "ok");
+      }
+    }
+  } catch {
+    // Fail closed
+  }
+}
+
+async function maybeNotifyFindings(findings: Finding[], tabId?: number): Promise<void> {
+  if (findings.length === 0) return;
+  const counts = countByCategory(findings);
+  const top = Object.entries(counts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([category, n]) => `${n} ${category.replace(/_/g, " ")}`)
+    .join(", ");
+  await dispatchExtensionNotification({
+    tabId,
+    event: "scan_findings",
+    level: "warning",
+    title: "GovernWorld \u2014 sensitive data found",
+    message: `${findings.length} value${findings.length === 1 ? "" : "s"} detected on this page: ${top}.`,
+    count: findings.length,
+    categories: counts,
+  });
+}
+
 async function reportActionFailure(tabId: number, userMessage: string): Promise<void> {
   flashTabStatus(tabId, "failed");
   console.warn(`[governworld] ${userMessage}`);
-  try {
-    const settings = await loadSettings();
-    if (!settings.notificationsEnabled) return;
-    if (!(await notificationsGranted())) return;
-    await chrome.notifications.create({
-      type: "basic",
-      iconUrl: chrome.runtime.getURL("icons/icon-128.png"),
-      title: "GovernWorld \u2014 action not completed",
-      message: userMessage,
-      priority: 0,
-    });
-  } catch {
-    // A failed notice must never escalate into a failed action.
-  }
+  await dispatchExtensionNotification({
+    tabId,
+    event: "action_failure",
+    level: "danger",
+    title: "GovernWorld \u2014 action not completed",
+    message: userMessage,
+  });
 }
 
 /** True when the content script confirmed the action rather than refusing it. */
@@ -995,6 +1092,12 @@ async function handlePopupDocRedact(
         ...(verified ? {} : { counts: { unverified: verification.checkedRegions - verification.darkRegions } }),
       }, { failClosed: true });
       notifyPopup({ type: "POPUP_DOC_DONE", requestId, outputName, outputMimeType, printFileKey: printRef?.fileKey });
+      void dispatchExtensionNotification({
+        event: "redaction_complete",
+        level: "success",
+        title: "GovernWorld \u2014 Document Redacted",
+        message: `Successfully redacted and verified ${outputName}.`,
+      });
     } else {
       // The worker cannot know whether the popup's fallback download reached the
       // user, so it must not decide the audit outcome. Wait for the report.
@@ -1110,7 +1213,7 @@ async function handleContentScanResult(message: Extract<WorkerMessage, { type: "
   const session = await readSession(tabId);
   notifyPopup({ type: "POPUP_STATE", requestId: pending.requestId, state: buildPopupState(settings, session) });
   updateBadgeForTab(tabId, findings.length);
-  void maybeNotifyFindings(findings);
+  void maybeNotifyFindings(findings, tabId);
 
   // ── Async media dispatch (Layers 2–5) ─────────────────────────────────
   // Fire-and-forget: process the visual and PDF queues and merge findings back.
@@ -1300,36 +1403,7 @@ async function handleContentError(message: Extract<WorkerMessage, { type: "CONTE
   });
 }
 
-// ---------- Notifications (optional permission) ----------
-
-/** True when the user has granted the optional notifications permission. */
-async function notificationsGranted(): Promise<boolean> {
-  return (await chrome.permissions.contains({ permissions: ["notifications"] })) as boolean;
-}
-
-/**
- * Surface a scan finding as a Chrome notification. Fail-closed: only fires when
- * the user enabled notifications in settings AND granted the optional
- * permission AND at least one finding was detected.
- */
-async function maybeNotifyFindings(findings: Finding[]): Promise<void> {
-  if (findings.length === 0) return;
-  const settings = await loadSettings();
-  if (!settings.notificationsEnabled) return;
-  if (!(await notificationsGranted())) return;
-  const counts = countByCategory(findings);
-  const top = Object.entries(counts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([category, n]) => `${n} ${category.replace(/_/g, " ")}`)
-    .join(", ");  await chrome.notifications.create({
-    type: "basic",
-    iconUrl: chrome.runtime.getURL("icons/icon-128.png"),
-    title: "GovernWorld — sensitive data found",
-    message: `${findings.length} value${findings.length === 1 ? "" : "s"} detected on this page: ${top}.`,
-    priority: 0,
-  });
-}
+// Notifications logic moved to dispatchExtensionNotification above
 
 // ---------- Account (gateway identity binding) ----------
 
@@ -2442,14 +2516,52 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
         if (msg.enabled) {
           const granted = (await chrome.permissions.request({ permissions: ["notifications"] })) as boolean;
           const settings = await loadSettings();
-          await saveSettings({ ...settings, notificationsEnabled: granted });
+          const prefs = { ...settings.notificationPrefs, systemEnabled: granted };
+          await saveSettings({ ...settings, notificationsEnabled: granted, notificationPrefs: prefs });
           notifyPopup({ type: "POPUP_NOTIFICATIONS_STATE", requestId: msg.requestId, granted });
         } else {
           await chrome.permissions.remove({ permissions: ["notifications"] });
           const settings = await loadSettings();
-          await saveSettings({ ...settings, notificationsEnabled: false });
+          const prefs = { ...settings.notificationPrefs, systemEnabled: false };
+          await saveSettings({ ...settings, notificationsEnabled: false, notificationPrefs: prefs });
           notifyPopup({ type: "POPUP_NOTIFICATIONS_STATE", requestId: msg.requestId, granted: false });
         }
+        break;
+      }
+      case "POPUP_SET_NOTIFICATION_PREFS": {
+        const current = await loadSettings();
+        const mergedPrefs = {
+          ...current.notificationPrefs,
+          ...msg.prefs,
+        };
+        let granted = await notificationsGranted();
+        if (msg.prefs.systemEnabled === true && !granted) {
+          try {
+            granted = (await chrome.permissions.request({ permissions: ["notifications"] })) as boolean;
+            mergedPrefs.systemEnabled = granted;
+          } catch {
+            mergedPrefs.systemEnabled = false;
+          }
+        } else if (msg.prefs.systemEnabled === false && granted) {
+          try {
+            await chrome.permissions.remove({ permissions: ["notifications"] });
+            granted = false;
+          } catch {
+            // ignore
+          }
+        }
+        const updatedSettings: Settings = {
+          ...current,
+          notificationsEnabled: mergedPrefs.systemEnabled,
+          notificationPrefs: mergedPrefs,
+        };
+        await saveSettings(updatedSettings);
+        notifyPopup({
+          type: "POPUP_NOTIFICATION_PREFS_STATE",
+          requestId: msg.requestId,
+          prefs: updatedSettings.notificationPrefs,
+          granted,
+        });
         break;
       }
       case "POPUP_ACCOUNT_SAVE":

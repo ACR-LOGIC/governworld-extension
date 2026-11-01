@@ -8,6 +8,7 @@ import { detect, maskValue, maskContext, placeholderLabelFor } from "./detect.js
 import { createOverlay } from "./overlay.js";
 import type { OverlayController } from "./overlay.js";
 import { initPasteGuard } from "./pasteGuard.js";
+import { showToast } from "./toast.js";
 import { validateMessage } from "../shared/messages.js";
 import type { Finding, FindingCategory, Rect, WorkerMessage } from "../shared/types.js";
 import { buildCanonicalDocument } from "./normalization/canonical.js";
@@ -525,6 +526,17 @@ if (g.__gwRedactionContentLoaded !== true) {
     void (async () => {
       try {
         switch (msg.type) {
+          case "CONTENT_SHOW_TOAST": {
+            showToast({
+              title: msg.title,
+              message: msg.message,
+              level: msg.level,
+              durationMs: msg.durationMs,
+              actionLabel: msg.actionLabel,
+            });
+            sendResponse({ ok: true });
+            break;
+          }
           case "SCAN_PAGE": {
             clearSession();
             sessionId = msg.sessionId;

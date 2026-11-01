@@ -15,6 +15,9 @@ import {
   type LanguageCode,
   type FontSizeScale,
   type SessionTimeoutOption,
+  DEFAULT_NOTIFICATION_PREFS,
+  isNotificationPrivacyMode,
+  type NotificationPreferences,
 } from "../shared/settings.js";
 import {
   loadEnterprisePolicy,
@@ -2615,9 +2618,74 @@ export async function initPopup(): Promise<void> {
   // ---------- Notifications & Account Settings ----------
   const notificationsToggle = document.getElementById("notifications-toggle") as HTMLInputElement | null;
   const notificationsStatus = document.getElementById("notifications-status") as HTMLParagraphElement | null;
+  const notifyToastToggle = document.getElementById("notify-toast-toggle") as HTMLInputElement | null;
+  const notifyBadgeToggle = document.getElementById("notify-badge-toggle") as HTMLInputElement | null;
+  const notifySoundToggle = document.getElementById("notify-sound-toggle") as HTMLInputElement | null;
+  const notifyFindingsToggle = document.getElementById("notify-findings-toggle") as HTMLInputElement | null;
+  const notifyPasteToggle = document.getElementById("notify-paste-toggle") as HTMLInputElement | null;
+  const notifyPolicyToggle = document.getElementById("notify-policy-toggle") as HTMLInputElement | null;
+  const notifyRedactToggle = document.getElementById("notify-redact-toggle") as HTMLInputElement | null;
+  const notifyPrivacySelect = document.getElementById("notify-privacy-select") as HTMLSelectElement | null;
+
+  const currentPrefs = settings.notificationPrefs ?? DEFAULT_NOTIFICATION_PREFS;
+
   if (notificationsToggle) {
     notificationsToggle.checked = settings.notificationsEnabled;
     notificationsToggle.setAttribute("aria-checked", notificationsToggle.checked ? "true" : "false");
+  }
+  if (notifyToastToggle) {
+    notifyToastToggle.checked = currentPrefs.toastEnabled;
+    notifyToastToggle.setAttribute("aria-checked", notifyToastToggle.checked ? "true" : "false");
+  }
+  if (notifyBadgeToggle) {
+    notifyBadgeToggle.checked = currentPrefs.badgeEnabled;
+    notifyBadgeToggle.setAttribute("aria-checked", notifyBadgeToggle.checked ? "true" : "false");
+  }
+  if (notifySoundToggle) {
+    notifySoundToggle.checked = currentPrefs.soundEnabled;
+    notifySoundToggle.setAttribute("aria-checked", notifySoundToggle.checked ? "true" : "false");
+  }
+  if (notifyFindingsToggle) {
+    notifyFindingsToggle.checked = currentPrefs.notifyCriticalFindings;
+    notifyFindingsToggle.setAttribute("aria-checked", notifyFindingsToggle.checked ? "true" : "false");
+  }
+  if (notifyPasteToggle) {
+    notifyPasteToggle.checked = currentPrefs.notifyPasteInterception;
+    notifyPasteToggle.setAttribute("aria-checked", notifyPasteToggle.checked ? "true" : "false");
+  }
+  if (notifyPolicyToggle) {
+    notifyPolicyToggle.checked = currentPrefs.notifyPolicyChanges;
+    notifyPolicyToggle.setAttribute("aria-checked", notifyPolicyToggle.checked ? "true" : "false");
+  }
+  if (notifyRedactToggle) {
+    notifyRedactToggle.checked = currentPrefs.notifyRedactionComplete;
+    notifyRedactToggle.setAttribute("aria-checked", notifyRedactToggle.checked ? "true" : "false");
+  }
+  if (notifyPrivacySelect) {
+    notifyPrivacySelect.value = currentPrefs.privacyMode;
+  }
+
+  const syncNotificationPrefs = () => {
+    const updatedPrefs: NotificationPreferences = {
+      systemEnabled: notificationsToggle ? notificationsToggle.checked : false,
+      toastEnabled: notifyToastToggle ? notifyToastToggle.checked : true,
+      badgeEnabled: notifyBadgeToggle ? notifyBadgeToggle.checked : true,
+      soundEnabled: notifySoundToggle ? notifySoundToggle.checked : false,
+      notifyCriticalFindings: notifyFindingsToggle ? notifyFindingsToggle.checked : true,
+      notifyPasteInterception: notifyPasteToggle ? notifyPasteToggle.checked : true,
+      notifyPolicyChanges: notifyPolicyToggle ? notifyPolicyToggle.checked : true,
+      notifyRedactionComplete: notifyRedactToggle ? notifyRedactToggle.checked : true,
+      privacyMode: notifyPrivacySelect && isNotificationPrivacyMode(notifyPrivacySelect.value) ? notifyPrivacySelect.value : "detailed",
+    };
+
+    void chrome.runtime.sendMessage({
+      type: "POPUP_SET_NOTIFICATION_PREFS",
+      requestId: requestId(),
+      prefs: updatedPrefs,
+    });
+  };
+
+  if (notificationsToggle) {
     notificationsToggle.addEventListener("change", () => {
       notificationsToggle.setAttribute("aria-checked", notificationsToggle.checked ? "true" : "false");
       void chrome.runtime.sendMessage({
@@ -2627,6 +2695,17 @@ export async function initPopup(): Promise<void> {
       });
     });
   }
+
+  [notifyToastToggle, notifyBadgeToggle, notifySoundToggle, notifyFindingsToggle, notifyPasteToggle, notifyPolicyToggle, notifyRedactToggle].forEach((toggle) => {
+    toggle?.addEventListener("change", () => {
+      toggle.setAttribute("aria-checked", toggle.checked ? "true" : "false");
+      syncNotificationPrefs();
+    });
+  });
+
+  notifyPrivacySelect?.addEventListener("change", () => {
+    syncNotificationPrefs();
+  });
 
   const originInput = document.getElementById("gateway-origin-input") as HTMLInputElement | null;
   const keyInput = document.getElementById("gateway-key-input") as HTMLInputElement | null;
@@ -3305,6 +3384,48 @@ export async function initPopup(): Promise<void> {
         notificationsStatus.textContent = message.granted
           ? t(current.language, "notifications_enabled")
           : t(current.language, "notifications_denied");
+      }
+      return;
+    }
+    if (message.type === "POPUP_NOTIFICATION_PREFS_STATE") {
+      if (notificationsToggle) {
+        notificationsToggle.checked = message.prefs.systemEnabled;
+        notificationsToggle.setAttribute("aria-checked", message.prefs.systemEnabled ? "true" : "false");
+      }
+      if (notifyToastToggle) {
+        notifyToastToggle.checked = message.prefs.toastEnabled;
+        notifyToastToggle.setAttribute("aria-checked", message.prefs.toastEnabled ? "true" : "false");
+      }
+      if (notifyBadgeToggle) {
+        notifyBadgeToggle.checked = message.prefs.badgeEnabled;
+        notifyBadgeToggle.setAttribute("aria-checked", message.prefs.badgeEnabled ? "true" : "false");
+      }
+      if (notifySoundToggle) {
+        notifySoundToggle.checked = message.prefs.soundEnabled;
+        notifySoundToggle.setAttribute("aria-checked", message.prefs.soundEnabled ? "true" : "false");
+      }
+      if (notifyFindingsToggle) {
+        notifyFindingsToggle.checked = message.prefs.notifyCriticalFindings;
+        notifyFindingsToggle.setAttribute("aria-checked", message.prefs.notifyCriticalFindings ? "true" : "false");
+      }
+      if (notifyPasteToggle) {
+        notifyPasteToggle.checked = message.prefs.notifyPasteInterception;
+        notifyPasteToggle.setAttribute("aria-checked", message.prefs.notifyPasteInterception ? "true" : "false");
+      }
+      if (notifyPolicyToggle) {
+        notifyPolicyToggle.checked = message.prefs.notifyPolicyChanges;
+        notifyPolicyToggle.setAttribute("aria-checked", message.prefs.notifyPolicyChanges ? "true" : "false");
+      }
+      if (notifyRedactToggle) {
+        notifyRedactToggle.checked = message.prefs.notifyRedactionComplete;
+        notifyRedactToggle.setAttribute("aria-checked", message.prefs.notifyRedactionComplete ? "true" : "false");
+      }
+      if (notifyPrivacySelect) {
+        notifyPrivacySelect.value = message.prefs.privacyMode;
+      }
+      if (notificationsStatus) {
+        const current = await loadSettings();
+        notificationsStatus.textContent = t(current.language, "notifications_saved");
       }
       return;
     }

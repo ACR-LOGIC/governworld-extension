@@ -615,11 +615,55 @@
         </div>
 
         <div class="settings-page" id="settings-page-notifications" data-settings-page="notifications" hidden>
-          <h3 data-i18n="notifications_title">Notifications</h3>
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+            <h3 data-i18n="notifications_title" style="margin: 0;">Notifications</h3>
+            <button type="button" class="help-link help-link--sm" data-guide="guide-notifications" data-i18n="info_btn">Info ↗</button>
+          </div>
+          <p class="footnote" data-i18n="notifications_desc">Configure delivery channels, event triggers, and privacy modes for protection alerts.</p>
+
+          <h4 style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-muted); margin: 12px 0 6px;" data-i18n="notify_channels_title">Alert Channels</h4>
           <label class="toggle-row">
             <input id="notifications-toggle" type="checkbox" role="switch" aria-checked="false" />
-            <span data-i18n="notify_toggle">Notify me when sensitive data is found</span>
+            <span data-i18n="notify_os_desktop">Desktop &amp; OS notifications</span>
           </label>
+          <label class="toggle-row">
+            <input id="notify-toast-toggle" type="checkbox" role="switch" aria-checked="true" />
+            <span data-i18n="notify_in_page_toasts">In-page toast alerts</span>
+          </label>
+          <label class="toggle-row">
+            <input id="notify-badge-toggle" type="checkbox" role="switch" aria-checked="true" />
+            <span data-i18n="notify_icon_badges">Toolbar badge indicators</span>
+          </label>
+          <label class="toggle-row">
+            <input id="notify-sound-toggle" type="checkbox" role="switch" aria-checked="false" />
+            <span data-i18n="notify_sound_alerts">Audio &amp; speech alerts</span>
+          </label>
+
+          <h4 style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-muted); margin: 12px 0 6px;" data-i18n="notify_events_title">Event Triggers</h4>
+          <label class="toggle-row">
+            <input id="notify-findings-toggle" type="checkbox" role="switch" aria-checked="true" />
+            <span data-i18n="notify_event_findings">Page scan sensitive findings</span>
+          </label>
+          <label class="toggle-row">
+            <input id="notify-paste-toggle" type="checkbox" role="switch" aria-checked="true" />
+            <span data-i18n="notify_event_paste">Paste Shield interceptions</span>
+          </label>
+          <label class="toggle-row">
+            <input id="notify-policy-toggle" type="checkbox" role="switch" aria-checked="true" />
+            <span data-i18n="notify_event_policy">Policy &amp; protection mode changes</span>
+          </label>
+          <label class="toggle-row">
+            <input id="notify-redact-toggle" type="checkbox" role="switch" aria-checked="true" />
+            <span data-i18n="notify_event_redact">Document redaction complete</span>
+          </label>
+
+          <div class="form-row" style="margin-top: 10px;">
+            <label for="notify-privacy-select" data-i18n="notify_privacy_mode_label">Notification privacy mode</label>
+            <select id="notify-privacy-select" class="preset-select">
+              <option value="detailed" data-i18n="notify_privacy_detailed">Detailed (Category counts)</option>
+              <option value="minimal" data-i18n="notify_privacy_minimal">Minimal (Zero category disclosure)</option>
+            </select>
+          </div>
           <p id="notifications-status" class="footnote" role="status" aria-live="polite"></p>
         </div>
 
@@ -910,6 +954,7 @@
             <div id="guide-redaction-styles" class="guide-card"><h4 data-i18n="guide-redaction-styles">Redaction Styles</h4><p class="footnote">Blackout, whiteout, or text stamp.</p></div>
             <div id="guide-accessibility" class="guide-card"><h4 data-i18n="guide-accessibility">Accessibility</h4><p class="footnote">High contrast, dyslexia mode, reduced motion, speech.</p></div>
             <div id="guide-languages" class="guide-card"><h4 data-i18n="guide-languages">Languages</h4><p class="footnote">7 UI languages with instant switching.</p></div>
+            <div id="guide-notifications" class="guide-card"><h4 data-i18n="guide-notifications">Notifications</h4><p class="footnote" data-i18n="guide_notifications_desc">Configure how alerts appear across icon badges, in-page toasts, and desktop notifications without leaking sensitive data.</p></div>
             <div id="guide-settings" class="guide-card"><h4 data-i18n="guide-settings">Settings</h4><p class="footnote">Organized by Profile, Protection, Detection, Appearance, and more.</p></div>
             <div id="guide-shortcuts" class="guide-card"><h4 data-i18n="guide-shortcuts">Shortcuts</h4><p class="footnote">Alt+Shift+S scan, Alt+Shift+M masks, Alt+Shift+P side panel.</p></div>
             <div id="guide-troubleshooting" class="guide-card"><h4 data-i18n="guide-troubleshooting">Troubleshooting</h4><p class="footnote">If scan fails, try refreshing the page and scanning again.</p></div>

@@ -6,6 +6,66 @@ export type { FindingCategory, ScanMode, RedactionStyle, LanguageCode };
 
 export type FontSizeScale = "default" | "medium" | "large" | "xlarge";
 export type SessionTimeoutOption = "never" | "5m" | "15m" | "30m";
+export type NotificationPrivacyMode = "detailed" | "minimal";
+
+export interface NotificationPreferences {
+  /** When true, desktop/OS notifications are sent via chrome.notifications (optional permission). */
+  systemEnabled: boolean;
+  /** When true, in-page HUD toast popups appear on the active page. */
+  toastEnabled: boolean;
+  /** When true, the extension action icon updates with real-time finding badges and status flashes. */
+  badgeEnabled: boolean;
+  /** When true, audio and speech synthesis announcements accompany critical alerts. */
+  soundEnabled: boolean;
+  /** Trigger notification when sensitive findings are detected during page scans. */
+  notifyCriticalFindings: boolean;
+  /** Trigger notification when Paste Shield intercepts clipboard paste or sanitizes text. */
+  notifyPasteInterception: boolean;
+  /** Trigger notification on site protection mode change or enterprise policy updates. */
+  notifyPolicyChanges: boolean;
+  /** Trigger notification when Document Studio redaction is completed and verified. */
+  notifyRedactionComplete: boolean;
+  /**
+   * "detailed": includes category breakdown & counts (e.g. "3 items: 2 email, 1 ssn").
+   * "minimal": zero-knowledge generic alert (e.g. "3 sensitive items detected") without category disclosure.
+   */
+  privacyMode: NotificationPrivacyMode;
+}
+
+export const DEFAULT_NOTIFICATION_PREFS: NotificationPreferences = {
+  systemEnabled: false,
+  toastEnabled: true,
+  badgeEnabled: true,
+  soundEnabled: false,
+  notifyCriticalFindings: true,
+  notifyPasteInterception: true,
+  notifyPolicyChanges: true,
+  notifyRedactionComplete: true,
+  privacyMode: "detailed",
+};
+
+export function isNotificationPrivacyMode(value: unknown): value is NotificationPrivacyMode {
+  return value === "detailed" || value === "minimal";
+}
+
+export function normalizeNotificationPrefs(raw: unknown, legacySystemEnabled?: boolean): NotificationPreferences {
+  const base = { ...DEFAULT_NOTIFICATION_PREFS };
+  if (typeof legacySystemEnabled === "boolean") {
+    base.systemEnabled = legacySystemEnabled;
+  }
+  if (!isRecord(raw)) return base;
+  return {
+    systemEnabled: typeof raw.systemEnabled === "boolean" ? raw.systemEnabled : base.systemEnabled,
+    toastEnabled: typeof raw.toastEnabled === "boolean" ? raw.toastEnabled : base.toastEnabled,
+    badgeEnabled: typeof raw.badgeEnabled === "boolean" ? raw.badgeEnabled : base.badgeEnabled,
+    soundEnabled: typeof raw.soundEnabled === "boolean" ? raw.soundEnabled : base.soundEnabled,
+    notifyCriticalFindings: typeof raw.notifyCriticalFindings === "boolean" ? raw.notifyCriticalFindings : base.notifyCriticalFindings,
+    notifyPasteInterception: typeof raw.notifyPasteInterception === "boolean" ? raw.notifyPasteInterception : base.notifyPasteInterception,
+    notifyPolicyChanges: typeof raw.notifyPolicyChanges === "boolean" ? raw.notifyPolicyChanges : base.notifyPolicyChanges,
+    notifyRedactionComplete: typeof raw.notifyRedactionComplete === "boolean" ? raw.notifyRedactionComplete : base.notifyRedactionComplete,
+    privacyMode: isNotificationPrivacyMode(raw.privacyMode) ? raw.privacyMode : base.privacyMode,
+  };
+}
 
 /**
  * Paste-protection coverage mode.
@@ -193,6 +253,8 @@ export interface Settings {
   verificationNoticeAcknowledged: boolean;
   /** When true, a scan that finds sensitive data raises a Chrome notification (optional permission). */
   notificationsEnabled: boolean;
+  /** Granular user preferences across alert channels, event triggers, and privacy modes. */
+  notificationPrefs: NotificationPreferences;
   /** Human-readable label cached from the linked gateway account (never a secret). */
   accountLabel?: string;
   consentVersion: string;
@@ -267,6 +329,7 @@ export const DEFAULT_SETTINGS: Settings = {
   disclosureAcknowledged: false,
   verificationNoticeAcknowledged: false,
   notificationsEnabled: false,
+  notificationPrefs: { ...DEFAULT_NOTIFICATION_PREFS },
   consentVersion: CONSENT_VERSION,
   ocrLanguage: "eng",
   language: "en",
@@ -338,7 +401,10 @@ export function normalizeSettings(raw: unknown): Settings {
     typeof raw.consentVersion === "string" && raw.consentVersion.length > 0 ? raw.consentVersion : CONSENT_VERSION;
   const disclosureAcknowledged = raw.disclosureAcknowledged === true;
   const verificationNoticeAcknowledged = raw.verificationNoticeAcknowledged === true;
-  const notificationsEnabled = raw.notificationsEnabled === true;
+  const rawNotificationPrefs = isRecord(raw.notificationPrefs) ? raw.notificationPrefs : undefined;
+  const legacyNotificationsEnabled = typeof raw.notificationsEnabled === "boolean" ? raw.notificationsEnabled : undefined;
+  const notificationPrefs = normalizeNotificationPrefs(rawNotificationPrefs, legacyNotificationsEnabled);
+  const notificationsEnabled = notificationPrefs.systemEnabled;
   const accountLabel =
     typeof raw.accountLabel === "string" && raw.accountLabel.length > 0 && raw.accountLabel.length <= 200
       ? raw.accountLabel
@@ -396,6 +462,7 @@ export function normalizeSettings(raw: unknown): Settings {
     disclosureAcknowledged,
     verificationNoticeAcknowledged,
     notificationsEnabled,
+    notificationPrefs,
     ...(accountLabel !== undefined ? { accountLabel } : {}),
     ocrLanguage,
     language,

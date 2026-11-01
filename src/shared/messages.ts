@@ -799,6 +799,14 @@ export function validateMessage(raw: unknown): ValidationResult {
       if (!Array.isArray(raw.rules) && raw.error === undefined) return { ok: false, error: "Invalid rules" };
       return { ok: true, message: { type, requestId, rules: (raw.rules ?? []) as any, error: raw.error as any } };
     }
+    case "POPUP_SET_NOTIFICATION_PREFS": {
+      if (!isRecord(raw.prefs)) return { ok: false, error: "Invalid prefs" };
+      return { ok: true, message: { type, requestId, prefs: raw.prefs as any } };
+    }
+    case "POPUP_NOTIFICATION_PREFS_STATE": {
+      if (!isRecord(raw.prefs)) return { ok: false, error: "Invalid prefs" };
+      return { ok: true, message: { type, requestId, prefs: raw.prefs as any, granted: typeof raw.granted === "boolean" ? raw.granted : undefined } };
+    }
     case "POPUP_SET_NOTIFICATIONS": {
       if (typeof raw.enabled !== "boolean") return { ok: false, error: "Invalid enabled" };
       return { ok: true, message: { type, requestId, enabled: raw.enabled } };
@@ -1016,6 +1024,38 @@ export function validateMessage(raw: unknown): ValidationResult {
           checkedRegions: typeof raw.checkedRegions === "number" ? raw.checkedRegions : undefined,
           method,
           problem: typeof raw.problem === "string" ? raw.problem : undefined,
+        },
+      };
+    }
+    case "CONTENT_SHOW_TOAST": {
+      if (typeof raw.title !== "string" || !raw.title || raw.title.length > 200) {
+        return { ok: false, error: "Invalid title" };
+      }
+      if (typeof raw.message !== "string" || !raw.message || raw.message.length > 500) {
+        return { ok: false, error: "Invalid message" };
+      }
+      const level = raw.level;
+      if (level !== undefined && level !== "info" && level !== "success" && level !== "warning" && level !== "danger") {
+        return { ok: false, error: "Invalid level" };
+      }
+      const durationMs = raw.durationMs;
+      if (durationMs !== undefined && (typeof durationMs !== "number" || !Number.isFinite(durationMs) || durationMs < 500 || durationMs > 30000)) {
+        return { ok: false, error: "Invalid durationMs" };
+      }
+      const actionLabel = raw.actionLabel;
+      if (actionLabel !== undefined && (typeof actionLabel !== "string" || actionLabel.length === 0 || actionLabel.length > 50)) {
+        return { ok: false, error: "Invalid actionLabel" };
+      }
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          title: raw.title,
+          message: raw.message,
+          ...(level ? { level } : {}),
+          ...(durationMs ? { durationMs } : {}),
+          ...(actionLabel ? { actionLabel } : {}),
         },
       };
     }

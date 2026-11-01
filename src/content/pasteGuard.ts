@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 import { detect, maskValue, placeholderLabelFor } from "./detect.js";
+import { showToast } from "./toast.js";
 import type { RawMatch } from "./detect.js";
 import { DEFAULT_SETTINGS, normalizeSettings } from "../shared/settings.js";
 import type { FindingCategory, ProtectionMode, Settings } from "../shared/settings.js";
@@ -838,6 +839,14 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
           isHandlingEvent = false;
           const sanitized = sanitizePastedText(text, matches);
           insertTextIntoElement(target, sanitized);
+          if (cachedSettings.notificationPrefs?.toastEnabled && cachedSettings.notificationPrefs?.notifyPasteInterception) {
+            showToast({
+              title: "GovernWorld — Paste Shield",
+              message: "Sanitized text pasted safely.",
+              level: "success",
+              durationMs: 3500,
+            });
+          }
         },
         onRaw: () => {
           isHandlingEvent = false;
@@ -847,6 +856,14 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
           isHandlingEvent = false;
         },
       });
+      if (cachedSettings.notificationPrefs?.toastEnabled && cachedSettings.notificationPrefs?.notifyPasteInterception) {
+        showToast({
+          title: "GovernWorld — Paste Shield",
+          message: `${matches.length} sensitive item${matches.length === 1 ? "" : "s"} intercepted from clipboard.`,
+          level: "warning",
+          durationMs: 4000,
+        });
+      }
     } catch {
       // Fail closed: a dialog fault must never become a raw-text insertion.
       // The paste stays cancelled and nothing reaches the destination.
