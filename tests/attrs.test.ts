@@ -85,13 +85,13 @@ describe("collectAttrRecords", () => {
     expect(records).toEqual([{ attributeName: "alt", value: "kept@example.com", startOffset: 0 }]);
   });
 
-  it("collapses whitespace and drops empty values, preserving leading whitespace startOffset", () => {
+  it("trims leading/trailing whitespace only, preserving internal whitespace runs", () => {
     const root = fakeRoot([
       fakeEl({ title: "  Multi\nline\tvalue  " }),
       fakeEl({ placeholder: "   " }),
     ]);
     const { records } = collectAttrRecords(root, { maxTotalChars: 5000, maxPerValue: 2048 });
-    expect(records).toEqual([{ attributeName: "title", value: "Multi line value", startOffset: 2 }]);
+    expect(records).toEqual([{ attributeName: "title", value: "Multi\nline\tvalue", startOffset: 2 }]);
   });
 
   it("enforces the total character budget and reports truncation", () => {

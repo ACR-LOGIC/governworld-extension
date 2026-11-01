@@ -48,6 +48,8 @@ if (g.__gwRedactionContentLoaded !== true) {
   let placeholdersEnabled = false;
   let currentSettings: ScanSettings | null = null;
   let currentCustomPatterns: any[] = [];
+  /** Manual selection ranges from CONTEXT_MASK_SELECTION (selection, not scan findings). */
+  let manualSelectionRanges: Array<{ range: Range; rects: DOMRectList; label: string; placeholder?: string }> = [];
 
   function clearSession() {
     sessionId = null;
@@ -59,6 +61,7 @@ if (g.__gwRedactionContentLoaded !== true) {
     attrScan = null;
     findings = [];
     placeholdersEnabled = false;
+    manualSelectionRanges = [];
     overlay?.clear();
     overlay?.destroy();
     overlay = null;
@@ -661,12 +664,18 @@ if (g.__gwRedactionContentLoaded !== true) {
             break;
           }
           case "REMOVE_MASKS": {
-            if (msg.sessionId !== sessionId) {
+            // Allow removing manual masks without an active scan session
+            const hasManualMasks = manualSelectionRanges.length > 0;
+            if (msg.sessionId !== sessionId && !hasManualMasks) {
               sendResponse({ ok: false, error: "Stale session" });
               break;
             }
             findings = findings.map((f) => ({ ...f, selected: false }));
-            overlay?.clear();
+            manualSelectionRanges = [];
+            if (overlay) {
+              overlay.clear();
+              overlay.setRecalculator?.(() => {});
+            }
             touchSession();
             sendResponse({ ok: true });
             break;
@@ -745,20 +754,46 @@ if (g.__gwRedactionContentLoaded !== true) {
             placeholdersEnabled = msg.settings?.maskPlaceholders ?? false;
             const range = sel.getRangeAt(0);
             const rects = range.getClientRects();
-            const items: Array<{ kind: "highlight" | "mask"; label: string; placeholder?: string; x: number; y: number; width: number; height: number }> = [];
             const padding = 4;
-            for (const r of rects) {
-              items.push({
-                kind: "mask",
-                label: "Selected text",
-                ...(placeholdersEnabled ? { placeholder: "[REDACTED]" } : {}),
+            // Store for recalculation on scroll/resize
+            manualSelectionRanges.push({
+              range,
+              rects,
+              label: "Selected text",
+              ...(placeholdersEnabled ? { placeholder: "[REDACTED]" } : {}),
+            });
+            const items = manualSelectionRanges.flatMap((msr) =>
+              Array.from(msr.rects).map((r) => ({
+                kind: "mask" as const,
+                label: msr.label,
+                ...(msr.placeholder ? { placeholder: msr.placeholder } : {}),
                 x: r.x - padding,
                 y: r.y - padding,
                 width: r.width + padding * 2,
                 height: r.height + padding * 2,
+              }))
+            );
+            if (overlay) {
+              overlay.render(items);
+              // Set recalculator to update manual masks on scroll/resize
+              const currentOverlay = overlay;
+              currentOverlay.setRecalculator?.(() => {
+                const updated = manualSelectionRanges.flatMap((msr) => {
+                  const freshRects = msr.range.getClientRects();
+                  if (freshRects.length === 0) return [];
+                  return Array.from(freshRects).map((r) => ({
+                    kind: "mask" as const,
+                    label: msr.label,
+                    ...(msr.placeholder ? { placeholder: msr.placeholder } : {}),
+                    x: r.x - padding,
+                    y: r.y - padding,
+                    width: r.width + padding * 2,
+                    height: r.height + padding * 2,
+                  }));
+                });
+                return updated;
               });
             }
-            overlay.render(items);
             touchSession();
             sendResponse({ ok: true });
             break;
@@ -778,11 +813,51 @@ if (g.__gwRedactionContentLoaded !== true) {
    * redacted form of the current selection so plain copy/cut cannot leak
    * masked values. The DOM is never mutated; the redacted text is derived
    * from the scan state. With no selected findings, copy behaves normally.
+   * For input/textarea, preserves native newlines and selection.
    */
   function onClipboard(event: ClipboardEvent): void {
     if (!sessionId) return;
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+
+    const activeElement = document.activeElement;
+    const isInputOrTextarea =
+      activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement;
+
+    // If selection is inside an input/textarea, use native value with preserved newlines
+    if (isInputOrTextarea && activeElement === sel.anchorNode?.parentElement) {
+      const input = activeElement;
+      const start = input.selectionStart;
+      const end = input.selectionEnd;
+      if (
+        start !== null &&
+        end !== null &&
+        start !== end &&
+        start >= 0 &&
+        end <= input.value.length
+      ) {
+        const selectedText = input.value.slice(start, end);
+        const active = findings.filter(
+          (f) => f.selected && f.startOffset < end && f.endOffset > start
+        );
+        if (active.length > 0) {
+          // Redact using the same logic but on the native string
+          const chars = Array.from(selectedText);
+          for (const f of active) {
+            const fs = Math.max(start, f.startOffset);
+            const fe = Math.min(end, f.endOffset);
+            if (fe <= fs) continue;
+            for (let i = fs - start; i < fe - start; i++) chars[i] = "\u2588";
+          }
+          event.clipboardData?.setData("text/plain", chars.join(""));
+          event.preventDefault();
+          touchSession();
+        }
+        return;
+      }
+    }
+
+    // Fallback: combined scan text approach (may flatten newlines across segments)
     const range = sel.getRangeAt(0) as unknown as RangeLike<Text>;
     const span = selectionCombinedSpan(
       range,

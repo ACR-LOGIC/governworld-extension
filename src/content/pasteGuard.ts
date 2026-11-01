@@ -901,13 +901,21 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
     const target = e.target;
     if (!isEditableElement(target)) return;
 
+    // Synchronous preventDefault to block the drop before any async work
+    e.preventDefault();
+    if (typeof e.stopImmediatePropagation === "function") {
+      e.stopImmediatePropagation();
+    } else {
+      e.stopPropagation();
+    }
+
     const text = e.dataTransfer?.getData("text/plain") || e.dataTransfer?.getData("text") || "";
     if (text) {
       handlePastedContent(text, target, e);
       return;
     }
 
-    // Inspect dropped text/code/csv/json files
+    // Inspect dropped text/code/csv/json files (async but event already cancelled)
     const files = e.dataTransfer?.files;
     if (files && files.length > 0) {
       for (const file of Array.from(files)) {
@@ -917,8 +925,8 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
               const fileText = await file.text();
               if (fileText) {
                 handlePastedContent(fileText, target, e);
-                return;
               }
+              return;
             }
           } catch {
             // File read failure

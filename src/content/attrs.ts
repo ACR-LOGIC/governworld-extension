@@ -40,9 +40,9 @@ export interface AttrScan {
 
 const TRIM_RE = /^[\s\u00a0\u200b]+|[\s\u00a0\u200b]+$/g;
 
-/** Collapse internal whitespace runs (incl. newlines/tabs) to single spaces. */
+/** Trim leading/trailing whitespace only — do NOT collapse internal whitespace runs. */
 function normalizeValue(raw: string): string {
-  return raw.replace(/[\s\u00a0\u200b]+/g, " ").replace(TRIM_RE, "");
+  return raw.replace(TRIM_RE, "");
 }
 
 /**
