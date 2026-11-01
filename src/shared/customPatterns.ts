@@ -55,7 +55,7 @@ export interface CustomPattern {
   /** Allowed flags: g, i, m only. */
   flags: string;
   /** Which capture group holds the sensitive value (0 = full match). */
-  captureGroup: number;
+  captureGroup?: number;
   /** 0..1 — user-set after testing. */
   confidence: number;
   /** Optional nearby-keyword hints (max 10 items, max 40 chars each). */
@@ -504,7 +504,7 @@ export function buildContributionPayload(
     category: pattern.category,
     pattern: pattern.pattern,
     flags: pattern.flags,
-    captureGroup: pattern.captureGroup,
+    captureGroup: pattern.captureGroup ?? 0,
     confidence: pattern.confidence,
   };
   if (pattern.contextCues) payload.contextCues = pattern.contextCues;

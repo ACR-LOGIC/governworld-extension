@@ -7,7 +7,7 @@ import {
   buildAttrScan,
   collectAttrRecords,
 } from "../src/content/attrs.js";
-import type { AttrElementLike, AttrRecord } from "../src/content/attrs.js";
+import type { AttrElementLike, AttrRecord, AttrRootLike } from "../src/content/attrs.js";
 import { detect, maskValue } from "../src/content/detect.js";
 import type { Finding, FindingCategory } from "../src/shared/types.js";
 
@@ -82,16 +82,16 @@ describe("collectAttrRecords", () => {
       fakeEl({ alt: "kept@example.com" }),
     ]);
     const { records } = collectAttrRecords(root, { maxTotalChars: 5000, maxPerValue: 2048 });
-    expect(records).toEqual([{ attributeName: "alt", value: "kept@example.com" }]);
+    expect(records).toEqual([{ attributeName: "alt", value: "kept@example.com", startOffset: 0 }]);
   });
 
-  it("collapses whitespace and drops empty values", () => {
+  it("trims leading/trailing whitespace only, preserving internal whitespace runs", () => {
     const root = fakeRoot([
       fakeEl({ title: "  Multi\nline\tvalue  " }),
       fakeEl({ placeholder: "   " }),
     ]);
     const { records } = collectAttrRecords(root, { maxTotalChars: 5000, maxPerValue: 2048 });
-    expect(records).toEqual([{ attributeName: "title", value: "Multi line value" }]);
+    expect(records).toEqual([{ attributeName: "title", value: "Multi\nline\tvalue", startOffset: 2 }]);
   });
 
   it("enforces the total character budget and reports truncation", () => {
@@ -103,6 +103,32 @@ describe("collectAttrRecords", () => {
     const { records, truncated } = collectAttrRecords(root, { maxTotalChars: 12, maxPerValue: 8 });
     expect(truncated).toBe(true);
     expect(records.map((r) => r.attributeName)).toEqual(["aria-label", "title"]);
+  });
+
+  it("traverses shadow roots and child iframes to collect accessibility attributes", () => {
+    const shadowRoot = fakeRoot([fakeEl({ "aria-label": "Shadow Action Button" })]);
+    const frameDoc = fakeRoot([fakeEl({ alt: "Frame Picture" })]);
+
+    const root = {
+      querySelectorAll(selector: string) {
+        if (selector === "*") {
+          return [
+            { shadowRoot, tagName: "DIV", getAttribute: () => null, closest: () => null },
+            { contentDocument: frameDoc, tagName: "IFRAME", getAttribute: () => null, closest: () => null },
+          ] as unknown as AttrElementLike[];
+        }
+        return [];
+      },
+    };
+
+    const { records } = collectAttrRecords(root as unknown as AttrRootLike, {
+      maxTotalChars: 5000,
+      maxPerValue: 2048,
+    });
+
+    const values = records.map((r) => r.value);
+    expect(values).toContain("Shadow Action Button");
+    expect(values).toContain("Frame Picture");
   });
 });
 

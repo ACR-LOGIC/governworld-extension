@@ -38,3 +38,10 @@ test-results/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Local AI agent workspaces
+.agents/
+
+# Generated release images (regenerable via scripts)
+release/images/marquee-promo-tile-1400x560.png
+release/images/store-icon-128x128.png

@@ -48,6 +48,8 @@ if (g.__gwRedactionContentLoaded !== true) {
   let placeholdersEnabled = false;
   let currentSettings: ScanSettings | null = null;
   let currentCustomPatterns: any[] = [];
+  /** Manual selection ranges from CONTEXT_MASK_SELECTION (selection, not scan findings). */
+  let manualSelectionRanges: Array<{ range: Range; rects: DOMRectList; label: string; placeholder?: string }> = [];
 
   function clearSession() {
     sessionId = null;
@@ -59,6 +61,7 @@ if (g.__gwRedactionContentLoaded !== true) {
     attrScan = null;
     findings = [];
     placeholdersEnabled = false;
+    manualSelectionRanges = [];
     overlay?.clear();
     overlay?.destroy();
     overlay = null;
@@ -84,6 +87,68 @@ if (g.__gwRedactionContentLoaded !== true) {
     return maskContext(slice);
   }
 
+  function computeFormInputTokenRect(
+    el: HTMLInputElement | HTMLTextAreaElement,
+    r: DOMRect,
+    val: string,
+    startOffset: number,
+    endOffset: number
+  ): Rect | null {
+    try {
+      if (typeof window === "undefined" || typeof window.getComputedStyle !== "function") return null;
+      const style = window.getComputedStyle(el);
+      const paddingLeft = parseFloat(style.paddingLeft) || 0;
+      const paddingTop = parseFloat(style.paddingTop) || 0;
+      const borderLeft = parseFloat(style.borderLeftWidth) || 0;
+      const borderTop = parseFloat(style.borderTopWidth) || 0;
+      const fontSize = parseFloat(style.fontSize) || 14;
+      const font = style.font || `${style.fontSize || "14px"} ${style.fontFamily || "sans-serif"}`;
+      const lineHeight = parseFloat(style.lineHeight) || fontSize * 1.2;
+
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return null;
+      ctx.font = font;
+
+      const tag = el.tagName.toLowerCase();
+      if (tag === "textarea") {
+        const beforeText = val.slice(0, startOffset);
+        const beforeLines = beforeText.split("\n");
+        const lineIdx = beforeLines.length - 1;
+        const lineBefore = beforeLines[lineIdx];
+        const tokenText = val.slice(startOffset, endOffset).split("\n")[0];
+
+        const beforeWidth = ctx.measureText(lineBefore).width;
+        const tokenWidth = ctx.measureText(tokenText).width;
+
+        const x = r.x + borderLeft + paddingLeft + beforeWidth - el.scrollLeft;
+        const y = r.y + borderTop + paddingTop + lineIdx * lineHeight - el.scrollTop;
+        const width = Math.min(tokenWidth, Math.max(0, r.x + r.width - x));
+        const height = Math.min(lineHeight, Math.max(0, r.y + r.height - y));
+        if (width > 0 && height > 0) {
+          return { x, y, width, height };
+        }
+      } else {
+        const beforeText = val.slice(0, startOffset);
+        const tokenText = val.slice(startOffset, endOffset);
+
+        const beforeWidth = ctx.measureText(beforeText).width;
+        const tokenWidth = ctx.measureText(tokenText).width;
+
+        const x = r.x + borderLeft + paddingLeft + beforeWidth - el.scrollLeft;
+        const y = r.y + borderTop + paddingTop;
+        const width = Math.min(tokenWidth, Math.max(0, r.x + r.width - x));
+        const height = Math.min(lineHeight, Math.max(0, r.height - borderTop * 2 - paddingTop * 2));
+        if (width > 0 && height > 0) {
+          return { x, y, width, height };
+        }
+      }
+    } catch {
+      // Fallback to full element rect
+    }
+    return null;
+  }
+
   function findingRects(start: number, end: number): Rect[] {
     const ranges = mapRange(segments, segmentStarts, combined.length, start, end);
     const rects: Rect[] = [];
@@ -99,8 +164,27 @@ if (g.__gwRedactionContentLoaded !== true) {
             rects.push({ x: r.x, y: r.y, width: r.width, height: r.height });
           }
         } else if (node.nodeType === Node.ELEMENT_NODE) {
-          const r = (node as HTMLElement).getBoundingClientRect();
+          const el = node as HTMLElement;
+          const r = el.getBoundingClientRect();
           if (r.width > 0 && r.height > 0) {
+            const tag = el.tagName.toLowerCase();
+            if (
+              (tag === "input" || tag === "textarea") &&
+              typeof (el as HTMLInputElement).value === "string"
+            ) {
+              const val = (el as HTMLInputElement).value;
+              const tokenRect = computeFormInputTokenRect(
+                el as HTMLInputElement | HTMLTextAreaElement,
+                r,
+                val,
+                range.startOffset,
+                range.endOffset
+              );
+              if (tokenRect) {
+                rects.push(tokenRect);
+                continue;
+              }
+            }
             rects.push({ x: r.x, y: r.y, width: r.width, height: r.height });
           }
         }
@@ -167,11 +251,16 @@ if (g.__gwRedactionContentLoaded !== true) {
     });
   }
 
-  function recomputeOverlay(padding: number) {
-    if (!overlay) overlay = createOverlay(document);
+  function getOverlayItems(padding: number): Array<{ kind: "highlight" | "mask"; label: string; placeholder?: string; x: number; y: number; width: number; height: number }> {
     const items: Array<{ kind: "highlight" | "mask"; label: string; placeholder?: string; x: number; y: number; width: number; height: number }> = [];
     for (const finding of findings) {
       if (!finding.selected) continue;
+      if (finding.source !== "attr" && finding.nodeId && finding.nodeId !== "svg") {
+        const fresh = findingRects(finding.startOffset, finding.endOffset);
+        if (fresh.length > 0) {
+          finding.rects = fresh;
+        }
+      }
       for (const r of finding.rects) {
         items.push({
           kind: "mask",
@@ -184,6 +273,14 @@ if (g.__gwRedactionContentLoaded !== true) {
         });
       }
     }
+    return items;
+  }
+
+  function recomputeOverlay(padding: number) {
+    if (!overlay) {
+      overlay = createOverlay(document, () => getOverlayItems(4));
+    }
+    const items = getOverlayItems(padding);
     overlay.render(items);
   }
 
@@ -288,7 +385,10 @@ if (g.__gwRedactionContentLoaded !== true) {
     }
     currentCustomPatterns = customPatterns;
 
-    const rawMatches = detect(combined, settings.enabledCategories, customPatterns);
+    const threshold = (cat: FindingCategory) => settings.confidenceThresholds?.[cat] ?? 0;
+    const rawMatches = detect(combined, settings.enabledCategories, customPatterns).filter(
+      (m) => m.confidence >= threshold(m.category)
+    );
     findings = buildFindings(rawMatches, settings.enabledCategories, customPatterns);
 
     // ── Layer 2 (SVG branch): Inline SVG text → run through detect ────────
@@ -296,7 +396,9 @@ if (g.__gwRedactionContentLoaded !== true) {
       const svgSegments = extractSvgText(document);
       if (svgSegments.length > 0) {
         const svgText = svgSegments.map((s) => s.text).join("\n");
-        const svgMatches = detect(svgText, settings.enabledCategories, customPatterns);
+        const svgMatches = detect(svgText, settings.enabledCategories, customPatterns).filter(
+          (m) => m.confidence >= threshold(m.category)
+        );
         const svgOffset = combined.length + 1; // beyond the DOM scan text
         svgMatches.forEach((match, i) => {
           const value = svgText.slice(match.start, match.end);
@@ -322,7 +424,7 @@ if (g.__gwRedactionContentLoaded !== true) {
             endOffset: svgOffset + match.end,
             rects: matchedRects,
             contextPreview: maskContext(svgText.slice(Math.max(0, match.start - 80), Math.min(svgText.length, match.end + 80))),
-            selected: false, // SVG findings are report-only (no DOM highlight)
+            selected: true, // SVG findings are active and render masks
           } satisfies Finding);
         });
       }
@@ -335,7 +437,9 @@ if (g.__gwRedactionContentLoaded !== true) {
       const captions = extractVideoCaptions(document);
       if (captions.length > 0) {
         const captionText = captions.map((c) => c.text).join("\n");
-        const captionMatches = detect(captionText, settings.enabledCategories, customPatterns);
+        const captionMatches = detect(captionText, settings.enabledCategories, customPatterns).filter(
+          (m) => m.confidence >= threshold(m.category)
+        );
         const captionOffset = combined.length + 2000; // well beyond DOM text
         captionMatches.forEach((match, i) => {
           const value = captionText.slice(match.start, match.end);
@@ -368,7 +472,9 @@ if (g.__gwRedactionContentLoaded !== true) {
       });
       attrScan = buildAttrScan(collected.records);
       attrChars = attrScan.combined.length;
-      const attrMatches = detect(attrScan.combined, settings.enabledCategories, customPatterns);
+      const attrMatches = detect(attrScan.combined, settings.enabledCategories, customPatterns).filter(
+        (m) => m.confidence >= threshold(m.category)
+      );
       const attrFindings = attrMatches.map((match, i) => {
         const value = attrScan!.combined.slice(match.start, match.end);
         const pad = 120;
@@ -393,6 +499,7 @@ if (g.__gwRedactionContentLoaded !== true) {
       // Attribute collection is best-effort reporting; never fail the scan.
       attrScan = null;
     }
+    findings = findings.filter((f) => f.confidence >= threshold(f.category));
     touchSession();
 
     // ── Layers 2–5: Build visual-capture and PDF queues ───────────────────
@@ -557,12 +664,18 @@ if (g.__gwRedactionContentLoaded !== true) {
             break;
           }
           case "REMOVE_MASKS": {
-            if (msg.sessionId !== sessionId) {
+            // Allow removing manual masks without an active scan session
+            const hasManualMasks = manualSelectionRanges.length > 0;
+            if (msg.sessionId !== sessionId && !hasManualMasks) {
               sendResponse({ ok: false, error: "Stale session" });
               break;
             }
             findings = findings.map((f) => ({ ...f, selected: false }));
-            overlay?.clear();
+            manualSelectionRanges = [];
+            if (overlay) {
+              overlay.clear();
+              overlay.setRecalculator?.(() => {});
+            }
             touchSession();
             sendResponse({ ok: true });
             break;
@@ -601,11 +714,15 @@ if (g.__gwRedactionContentLoaded !== true) {
             } catch {
               // Ignore
             }
-            const enabledCategories = msg.settings?.enabledCategories ?? [
+            const enabledCategories: FindingCategory[] = msg.settings?.enabledCategories ?? [
               "email", "phone", "ssn", "dob", "medical_record_number",
-              "member_id", "npi", "dea", "mbi", "address", "payment_card", "secrets", "possible_name"
+              "member_id", "npi", "dea", "mbi", "address", "payment_card", "secrets", "possible_name",
+              "canadian_sin", "uk_nhs", "aadhaar", "pan_india", "australian_tfn", "cpf", "custom"
             ];
-            const matches = detect(selText, enabledCategories, customPatterns);
+            const threshold = (cat: FindingCategory) => msg.settings?.confidenceThresholds?.[cat] ?? 0;
+            const matches = detect(selText, enabledCategories, customPatterns).filter(
+              (m) => m.confidence >= threshold(m.category)
+            );
             let redacted = selText;
             const sorted = [...matches].sort((a, b) => b.start - a.start);
             for (const m of sorted) {
@@ -637,20 +754,46 @@ if (g.__gwRedactionContentLoaded !== true) {
             placeholdersEnabled = msg.settings?.maskPlaceholders ?? false;
             const range = sel.getRangeAt(0);
             const rects = range.getClientRects();
-            const items: Array<{ kind: "highlight" | "mask"; label: string; placeholder?: string; x: number; y: number; width: number; height: number }> = [];
             const padding = 4;
-            for (const r of rects) {
-              items.push({
-                kind: "mask",
-                label: "Selected text",
-                ...(placeholdersEnabled ? { placeholder: "[REDACTED]" } : {}),
+            // Store for recalculation on scroll/resize
+            manualSelectionRanges.push({
+              range,
+              rects,
+              label: "Selected text",
+              ...(placeholdersEnabled ? { placeholder: "[REDACTED]" } : {}),
+            });
+            const items = manualSelectionRanges.flatMap((msr) =>
+              Array.from(msr.rects).map((r) => ({
+                kind: "mask" as const,
+                label: msr.label,
+                ...(msr.placeholder ? { placeholder: msr.placeholder } : {}),
                 x: r.x - padding,
                 y: r.y - padding,
                 width: r.width + padding * 2,
                 height: r.height + padding * 2,
+              }))
+            );
+            if (overlay) {
+              overlay.render(items);
+              // Set recalculator to update manual masks on scroll/resize
+              const currentOverlay = overlay;
+              currentOverlay.setRecalculator?.(() => {
+                const updated = manualSelectionRanges.flatMap((msr) => {
+                  const freshRects = msr.range.getClientRects();
+                  if (freshRects.length === 0) return [];
+                  return Array.from(freshRects).map((r) => ({
+                    kind: "mask" as const,
+                    label: msr.label,
+                    ...(msr.placeholder ? { placeholder: msr.placeholder } : {}),
+                    x: r.x - padding,
+                    y: r.y - padding,
+                    width: r.width + padding * 2,
+                    height: r.height + padding * 2,
+                  }));
+                });
+                return updated;
               });
             }
-            overlay.render(items);
             touchSession();
             sendResponse({ ok: true });
             break;
@@ -670,11 +813,51 @@ if (g.__gwRedactionContentLoaded !== true) {
    * redacted form of the current selection so plain copy/cut cannot leak
    * masked values. The DOM is never mutated; the redacted text is derived
    * from the scan state. With no selected findings, copy behaves normally.
+   * For input/textarea, preserves native newlines and selection.
    */
   function onClipboard(event: ClipboardEvent): void {
     if (!sessionId) return;
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+
+    const activeElement = document.activeElement;
+    const isInputOrTextarea =
+      activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement;
+
+    // If selection is inside an input/textarea, use native value with preserved newlines
+    if (isInputOrTextarea && activeElement === sel.anchorNode?.parentElement) {
+      const input = activeElement;
+      const start = input.selectionStart;
+      const end = input.selectionEnd;
+      if (
+        start !== null &&
+        end !== null &&
+        start !== end &&
+        start >= 0 &&
+        end <= input.value.length
+      ) {
+        const selectedText = input.value.slice(start, end);
+        const active = findings.filter(
+          (f) => f.selected && f.startOffset < end && f.endOffset > start
+        );
+        if (active.length > 0) {
+          // Redact using the same logic but on the native string
+          const chars = Array.from(selectedText);
+          for (const f of active) {
+            const fs = Math.max(start, f.startOffset);
+            const fe = Math.min(end, f.endOffset);
+            if (fe <= fs) continue;
+            for (let i = fs - start; i < fe - start; i++) chars[i] = "\u2588";
+          }
+          event.clipboardData?.setData("text/plain", chars.join(""));
+          event.preventDefault();
+          touchSession();
+        }
+        return;
+      }
+    }
+
+    // Fallback: combined scan text approach (may flatten newlines across segments)
     const range = sel.getRangeAt(0) as unknown as RangeLike<Text>;
     const span = selectionCombinedSpan(
       range,
@@ -738,13 +921,27 @@ if (g.__gwRedactionContentLoaded !== true) {
       findings = findings.filter((f) => !findingsToRemove.has(f.id));
     }
 
+    const removedIndices: number[] = [];
     for (const nodeId of affectedNodeIds) {
       const idx = segmentIndexById.get(nodeId);
       if (idx !== undefined) {
-        segments.splice(idx, 1);
+        removedIndices.push(idx);
         nodeIds.delete(nodeId);
         segmentIndexById.delete(nodeId);
       }
+    }
+    if (removedIndices.length > 0) {
+      removedIndices.sort((a, b) => b - a);
+      for (const idx of removedIndices) {
+        segments.splice(idx, 1);
+      }
+      segmentIndexById.clear();
+      for (let i = 0; i < segments.length; i++) {
+        segmentIndexById.set(segments[i].nodeId, i);
+      }
+      const rebuilt = buildScanText(segments);
+      segmentStarts = rebuilt.segmentStarts;
+      combined = rebuilt.combined;
     }
 
     for (const node of batch.addedNodes) {
@@ -770,22 +967,35 @@ if (g.__gwRedactionContentLoaded !== true) {
               combinedEndOffset: offset + newBuilt.segmentStarts[i] + seg.text.length,
             };
             segments.push(newSeg);
-            nodeIds.set(newSeg.nodeId, node as Node);
+            const targetNode = newNodeIds.get(seg.nodeId) ?? (node as Node);
+            nodeIds.set(newSeg.nodeId, targetNode);
             segmentIndexById.set(newSeg.nodeId, segments.length - 1);
           }
           combined += (combined.length > 0 ? "\n" : "") + newBuilt.combined;
           segmentStarts.push(...newBuilt.segmentStarts.map((s) => s + offset));
-        }
-      }
-    }
 
-    if (segments.length > 0) {
-      const rawMatches = detect(combined, currentSettings.enabledCategories, currentCustomPatterns);
-      const newFindings = buildFindings(rawMatches, currentSettings.enabledCategories, currentCustomPatterns);
-      const existingIds = new Set(findings.map((f) => f.id));
-      for (const nf of newFindings) {
-        if (!existingIds.has(nf.id)) {
-          findings.push(nf);
+          // Run delta scan on newBuilt.combined only
+          if (currentSettings) {
+            const settings = currentSettings;
+            const threshold = (cat: FindingCategory) => settings.confidenceThresholds?.[cat] ?? 0;
+            const deltaMatches = detect(newBuilt.combined, settings.enabledCategories, currentCustomPatterns).filter(
+              (m) => m.confidence >= threshold(m.category)
+            );
+            if (deltaMatches.length > 0) {
+              const adjustedMatches = deltaMatches.map((m) => ({
+                ...m,
+                start: m.start + offset,
+                end: m.end + offset,
+              }));
+              const newFindings = buildFindings(adjustedMatches, settings.enabledCategories, currentCustomPatterns);
+              const existingIds = new Set(findings.map((f) => f.id));
+              for (const nf of newFindings) {
+                if (!existingIds.has(nf.id) && nf.confidence >= threshold(nf.category)) {
+                  findings.push(nf);
+                }
+              }
+            }
+          }
         }
       }
     }
@@ -802,11 +1012,6 @@ if (g.__gwRedactionContentLoaded !== true) {
 
       const affectedCount = batch.addedNodes.length + batch.removedNodes.length + batch.mutatedTextNodes.length;
       if (affectedCount === 0) return;
-
-      if (affectedCount > 50) {
-        clearSession();
-        return;
-      }
 
       pendingMutationBatch = batch;
 
@@ -839,4 +1044,5 @@ interface ScanSettings {
   maxNodeChars: number;
   maskPlaceholders: boolean;
   sessionTimeoutMs: number;
+  confidenceThresholds?: Record<FindingCategory, number>;
 }

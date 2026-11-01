@@ -157,8 +157,10 @@ export function extractVisibleText(
       truncated = true;
     }
     const slice = trimmed.slice(0, maxNodeChars);
-    const startOffset = 0;
-    const endOffset = slice.length;
+
+    const lead = raw.length - raw.replace(/^[\s\u00a0\u200b]+/, "").length;
+    const startOffset = lead;
+    const endOffset = Math.min(raw.length, lead + slice.length);
 
     const nodeId = `seg_${counter++}`;
     nodeIds.set(nodeId, el);

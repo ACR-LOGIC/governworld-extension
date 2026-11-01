@@ -25,6 +25,7 @@ export interface OverlayController {
   setBlocking(blocking: boolean): void;
   clear(): void;
   destroy(): void;
+  setRecalculator?(fn: () => OverlayRect[] | void): void;
 }
 
 const HIGHLIGHT_COLOR = "rgba(255, 193, 7, 0.35)";
@@ -35,7 +36,10 @@ const MASK_BORDER = "1px solid #000";
 /** Caps the longest placeholder so tiny spans degrade gracefully instead of overflowing. */
 const MAX_PLACEHOLDER_WIDTH = 120;
 
-export function createOverlay(root: Document): OverlayController {
+export function createOverlay(
+  root: Document,
+  onRecalculate?: () => OverlayRect[] | void
+): OverlayController {
   const existing = root.querySelector(`body > [${OVERLAY_ATTR}]`);
   if (existing) existing.remove();
 
@@ -49,18 +53,6 @@ export function createOverlay(root: Document): OverlayController {
     pointerEvents: "none",
   } as Partial<CSSStyleDeclaration>);
 
-  // CLOSED, not open. With an open root, page JavaScript could read every mask
-  // rect, its category and its label straight out of `host.shadowRoot` — which
-  // hands a third-party script a map of exactly where the PII on this page is,
-  // a disclosure the user never agreed to and cannot see. It could also remove
-  // the host and present the user with an unmasked page while the extension still
-  // reported masks applied, which is the false assurance this tool exists to
-  // avoid.
-  //
-  // Closing the root costs nothing here: `layer` is captured below, so painting
-  // never goes back through the host. The host element itself stays in the light
-  // DOM and keeps `data-gw-scan-overlay`, which is what lets the test harnesses
-  // confirm the overlay exists without being able to read inside it.
   const shadow = host.attachShadow({ mode: "closed" });
   const layer = root.createElement("div");
   Object.assign(layer.style, {
@@ -75,6 +67,7 @@ export function createOverlay(root: Document): OverlayController {
   let blocking = false;
   let raf = 0;
   let destroyed = false;
+  let recalculator: (() => OverlayRect[] | void) | undefined = onRecalculate;
 
   const applyStyle = (el: HTMLElement, rect: OverlayRect) => {
     Object.assign(el.style, {
@@ -142,14 +135,36 @@ export function createOverlay(root: Document): OverlayController {
     schedulePaint();
   };
 
-  const onScroll = () => schedule();
-  const onResize = () => schedule();
+  const triggerRecalculate = () => {
+    if (recalculator) {
+      try {
+        const updated = recalculator();
+        if (Array.isArray(updated)) {
+          rects = updated;
+        }
+      } catch {
+        // Safe fallback if target nodes detached
+      }
+    }
+  };
+
+  const onScroll = () => {
+    triggerRecalculate();
+    schedule();
+  };
+  const onResize = () => {
+    triggerRecalculate();
+    schedule();
+  };
 
   root.defaultView?.addEventListener("scroll", onScroll, { passive: true, capture: true });
   root.defaultView?.addEventListener("resize", onResize, { passive: true });
 
   const observer = typeof ResizeObserver !== "undefined"
-    ? new ResizeObserver(schedule)
+    ? new ResizeObserver(() => {
+        triggerRecalculate();
+        schedule();
+      })
     : null;
   observer?.observe(root.body);
 
@@ -163,6 +178,9 @@ export function createOverlay(root: Document): OverlayController {
     setBlocking(value: boolean) {
       blocking = value;
       paint();
+    },
+    setRecalculator(fn) {
+      recalculator = fn;
     },
     clear() {
       rects = [];

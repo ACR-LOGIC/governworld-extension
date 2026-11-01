@@ -67,7 +67,12 @@ export interface PatternTestResult {
 
 const MAX_PATTERN_LENGTH = 512;
 const ALLOWED_FLAGS_RE = /^[gim]*$/;
-const SAFE_REGEX_GRAMMAR = /^(?:(?:\\[^\r\n]|[A-Za-z0-9_./:#@,;'"~!$%&+=-]|\[(?:\\.|[^\]\r\n])*\])(?:[*+?]|\{\d+(?:,\d*)?\})?)+$/;
+const SAFE_ATOM = String.raw`(?:\\[^\r\n]|[A-Za-z0-9_./:#@,;'"~!$%&+=-]|\[(?:\\.|[^\]\r\n])*\])`;
+const SAFE_QUANTIFIER = String.raw`(?:[*+?]|\{\d+(?:,\d*)?\})`;
+const SAFE_GROUP = String.raw`\((?:${SAFE_ATOM}${SAFE_QUANTIFIER}?)+\)`;
+const SAFE_REGEX_GRAMMAR = new RegExp(
+  `^(?:(?:${SAFE_ATOM}${SAFE_QUANTIFIER}?)|${SAFE_GROUP})+$`
+);
 
 function hasRiskyQuantifiedGroup(source: string): boolean {
   const groups: number[] = [];
@@ -134,11 +139,23 @@ function hasBackreferenceOrLookaround(source: string): boolean {
   return false;
 }
 
+function hasOverlappingAlternations(source: string): boolean {
+  // Catch alternations in repeated/quantified groups e.g. (a|ab)+ or (ab|a)*
+  const repAltMatch = /\(([^()]+)\)(?:[+*]|\{\d+(?:,\d*)?\})/.exec(source);
+  if (repAltMatch) {
+    const branches = repAltMatch[1].split("|");
+    if (branches.length > 1) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function isSafeRegex(source: string, flags: string = "g"): boolean {
   if (!source || source.length > MAX_PATTERN_LENGTH) return false;
   if (!SAFE_REGEX_GRAMMAR.test(source)) return false;
   if (!ALLOWED_FLAGS_RE.test(flags)) return false;
-  if (hasRiskyQuantifiedGroup(source) || hasAdjacentQuantifiers(source) || hasBackreferenceOrLookaround(source)) return false;
+  if (hasRiskyQuantifiedGroup(source) || hasAdjacentQuantifiers(source) || hasBackreferenceOrLookaround(source) || hasOverlappingAlternations(source)) return false;
   try {
     const re = new RegExp(source, flags.replace("g", ""));
     if (re.test("")) return false;
@@ -539,12 +556,19 @@ export function testPattern(
     return testCases.map((_, i) => ({ caseIndex: i, matched: false, matchCount: 0 }));
   }
 
+  const TIME_BUDGET_MS = 50;
+  const startTime = Date.now();
   const results: PatternTestResult[] = [];
   for (let caseIndex = 0; caseIndex < testCases.length; caseIndex++) {
+    if (Date.now() - startTime > TIME_BUDGET_MS) {
+      results.push({ caseIndex, matched: false, matchCount: 0 });
+      continue;
+    }
     re.lastIndex = 0;
     let matchCount = 0;
     let match: RegExpExecArray | null;
     while ((match = re.exec(testCases[caseIndex])) !== null && matchCount < 1000) {
+      if (Date.now() - startTime > TIME_BUDGET_MS) break;
       matchCount += 1;
       if (match[0].length === 0) re.lastIndex += 1;
     }

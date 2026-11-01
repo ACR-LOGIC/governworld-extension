@@ -65,6 +65,9 @@ const CATEGORY_PRIORITY: FindingCategory[] = [
 ];
 
 function priorityOf(category: FindingCategory): number {
+  if (category === "custom") {
+    return CATEGORY_PRIORITY.indexOf("secrets");
+  }
   return CATEGORY_PRIORITY.indexOf(category);
 }
 
@@ -644,8 +647,8 @@ function detectNpis(text: string): RawMatch[] {
     if (!isValidNpi(value)) continue;
     if (isNonProviderBound(text.slice(Math.max(0, m.index - 48), m.index))) continue;
     if (m.index > 0 && /\d/.test(text[m.index - 1])) continue;
-    const before = text.slice(Math.max(0, m.index - 40), m.index);
-    if (/[\s().-]/.test(before)) continue; // phone-shaped punctuation → leave to phone detector
+    const before = text.slice(Math.max(0, m.index - 32), m.index);
+    if (/\b(?:tel|phone|fax|mobile|call|cell)\s*[:#]?\s*$/i.test(before)) continue;
     out.push({ category: "npi", confidence: 0.7, value, start: m.index, end: m.index + value.length });
   }
   return out;
@@ -771,22 +774,46 @@ const SECRET_PATTERNS: { label: string; regex: RegExp; confidence: number }[] = 
 const PLACEHOLDER_SECRET_RE = /^(?:example|sample|test|changeme|your_|xxxx|sk_test_[0-9a-z]{6}|ghp_TEST)/i;
 
 function detectSecrets(text: string): RawMatch[] {
-  const out: RawMatch[] = [];
-  const seen = new Set<number>();
+  const candidates: RawMatch[] = [];
   for (const pat of SECRET_PATTERNS) {
     pat.regex.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = pat.regex.exec(text)) !== null) {
+      const hasCapture = m[1] !== undefined;
       const value = m[1] ?? m[0];
       if (isPlaceholder(pat, value)) continue;
-      const start = m.index + m[0].indexOf(value);
+      let relIdx = 0;
+      if (hasCapture) {
+        const assignIdx = m[0].search(/[:=]/);
+        const subIdx = assignIdx !== -1 ? m[0].slice(assignIdx).indexOf(value) : m[0].indexOf(value);
+        relIdx = assignIdx !== -1 && subIdx !== -1 ? assignIdx + subIdx : Math.max(0, m[0].indexOf(value));
+      }
+      const start = m.index + relIdx;
       const end = start + value.length;
-      if (seen.has(start)) continue;
-      seen.add(start);
-      out.push({ category: "secrets", confidence: pat.confidence, value, start, end });
+      candidates.push({ category: "secrets", confidence: pat.confidence, value, start, end });
     }
   }
-  return out;
+  if (candidates.length <= 1) return candidates;
+  candidates.sort(
+    (a, b) =>
+      a.start - b.start ||
+      b.confidence - a.confidence ||
+      (b.end - b.start) - (a.end - a.start)
+  );
+  const out: RawMatch[] = [];
+  for (const m of candidates) {
+    const overlapIdx = out.findIndex(
+      (existing) => Math.max(m.start, existing.start) < Math.min(m.end, existing.end)
+    );
+    if (overlapIdx === -1) {
+      out.push(m);
+    } else {
+      if (m.confidence > out[overlapIdx].confidence) {
+        out[overlapIdx] = m;
+      }
+    }
+  }
+  return out.sort((a, b) => a.start - b.start);
 }
 
 /**
@@ -904,6 +931,31 @@ const NAME_LABEL_RE =
   /(?<=^|\n)\b(?:patient(?:\s+name)?|member(?:\s+name)?|full\s+name|name)\s*[:.]\s*(?=\S)|(?<![\w])\b(?:patient(?:\s+name)?|member(?:\s+name)?|full\s+name|name)\s*[:.]\s*(?=\S)/gi;
 const NAME_RE = /\b[A-Z][a-zA-Z.'-]*(?:[ \t]+[A-Z][a-zA-Z.'-]*){1,2}\b/;
 
+const GENERIC_NAME_LABELS = new Set([
+  "first name",
+  "last name",
+  "middle name",
+  "full name",
+  "given name",
+  "family name",
+  "sur name",
+  "surname",
+  "user name",
+  "username",
+  "account name",
+  "company name",
+  "enter name",
+  "your name",
+  "placeholder",
+  "not provided",
+  "not applicable",
+  "required",
+  "optional",
+  "select one",
+  "required field",
+  "not specified",
+]);
+
 function detectNames(text: string): RawMatch[] {
   const out: RawMatch[] = [];
   for (const m of text.matchAll(NAME_LABEL_RE)) {
@@ -913,6 +965,7 @@ function detectNames(text: string): RawMatch[] {
     const nameMatch = (lineEnd === -1 ? rest : rest.slice(0, lineEnd)).match(NAME_RE);
     if (!nameMatch) continue;
     const value = nameMatch[0];
+    if (GENERIC_NAME_LABELS.has(value.toLowerCase().trim())) continue;
     const nameStart = nameMatch.index ?? 0;
     if (value.length < 3) continue;
     out.push({
@@ -976,9 +1029,9 @@ export function resolveOverlaps(matches: RawMatch[]): RawMatch[] {
   const better = (a: RawMatch, b: RawMatch): number => {
     const pri = priorityOf(a.category) - priorityOf(b.category);
     if (pri !== 0) return pri;
-    const len = b.end - b.start - (a.end - a.start);
-    if (len !== 0) return len;
-    return b.confidence - a.confidence;
+    const conf = b.confidence - a.confidence;
+    if (conf !== 0) return conf;
+    return (b.end - b.start) - (a.end - a.start);
   };
 
   const flush = () => {
@@ -1005,24 +1058,60 @@ export function resolveOverlaps(matches: RawMatch[]): RawMatch[] {
 export function runCustomPatterns(text: string, patterns: CustomPattern[]): RawMatch[] {
   const matches: RawMatch[] = [];
   if (!text || text.length > 100_000 || !Array.isArray(patterns)) return matches;
+  const TIME_BUDGET_MS = 150;
+  const startTime = Date.now();
   for (const pat of patterns) {
+    if (Date.now() - startTime > TIME_BUDGET_MS) break;
     if (!isSafeRegex(pat.pattern, pat.flags)) continue;
     try {
-      const flags = pat.flags.includes("g") ? pat.flags : `${pat.flags}g`;
-      const re = new RegExp(pat.pattern, flags);
+      const baseFlags = pat.flags.includes("g") ? pat.flags : `${pat.flags}g`;
+      const flags = baseFlags.includes("d") ? baseFlags : `${baseFlags}d`;
+      let re: RegExp;
+      try {
+        re = new RegExp(pat.pattern, flags);
+      } catch {
+        re = new RegExp(pat.pattern, baseFlags);
+      }
       let m: RegExpExecArray | null;
       let count = 0;
       while ((m = re.exec(text)) !== null && count++ < 1000) {
+        if (Date.now() - startTime > TIME_BUDGET_MS) break;
         if (!m[0]) {
           re.lastIndex += 1;
           continue;
         }
+        let value = m[0];
+        let start = m.index;
+        let end = m.index + m[0].length;
+        if (pat.captureGroup !== undefined && pat.captureGroup > 0) {
+          const captured = m[pat.captureGroup];
+          if (captured === undefined) continue;
+          value = captured;
+          const indices = (m as any).indices?.[pat.captureGroup];
+          if (Array.isArray(indices) && typeof indices[0] === "number" && typeof indices[1] === "number") {
+            start = indices[0];
+            end = indices[1];
+          } else {
+            const relOffset = m[0].indexOf(captured);
+            start = m.index + (relOffset >= 0 ? relOffset : 0);
+            end = start + captured.length;
+          }
+        }
+        if (pat.minLength !== undefined && value.length < pat.minLength) continue;
+        if (pat.maxLength !== undefined && value.length > pat.maxLength) continue;
+        if (Array.isArray(pat.contextCues) && pat.contextCues.length > 0) {
+          const windowStart = Math.max(0, start - 120);
+          const windowEnd = Math.min(text.length, end + 120);
+          const windowText = text.slice(windowStart, windowEnd).toLowerCase();
+          const hasCue = pat.contextCues.some((cue) => cue && windowText.includes(cue.toLowerCase()));
+          if (!hasCue) continue;
+        }
         matches.push({
           category: pat.category,
           confidence: pat.confidence,
-          value: m[0],
-          start: m.index,
-          end: m.index + m[0].length,
+          value,
+          start,
+          end,
         });
       }
     } catch {
@@ -1061,9 +1150,9 @@ export function detect(
   if (!norm.changed) return resolved;
   return resolved.map((m) => {
     const start = mapNormalizedToOriginalOffset(norm.mappings, m.start);
-    // Exclusive end: map the last normalized char, then step past it. A naive
-    // map of m.end lands on a stripped char's slot and truncates the value.
-    const end = mapNormalizedToOriginalOffset(norm.mappings, Math.max(m.start, m.end - 1)) + 1;
+    // Exclusive end: map the last normalized char with isEnd: true to advance
+    // by character length (avoiding surrogate pair splitting).
+    const end = mapNormalizedToOriginalOffset(norm.mappings, Math.max(m.start, m.end - 1), true);
     const safeEnd = Math.max(end, start + 1);
     return { ...m, start, end: safeEnd, value: text.slice(start, safeEnd) };
   });

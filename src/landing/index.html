@@ -537,8 +537,8 @@
             <a class="btn btn--ghost" href="https://github.com/ACR-LOGIC/governworld-extension" target="_blank" rel="noopener noreferrer">View the project</a>
           </div>
           <div class="hero__stats">
-            <div class="stat"><div class="stat__value">13</div><div class="stat__label">detection categories</div></div>
-            <div class="stat"><div class="stat__value">0</div><div class="stat__label">host permissions</div></div>
+            <div class="stat"><div class="stat__value">19+</div><div class="stat__label">detection categories</div></div>
+            <div class="stat"><div class="stat__value">0</div><div class="stat__label">host permissions by default</div></div>
             <div class="stat"><div class="stat__value">100%</div><div class="stat__label">on-device scanning</div></div>
           </div>
         </div>
@@ -750,7 +750,7 @@
                 <tr><td>Version</td><td>0.2.0</td></tr>
                 <tr><td>Manifest</td><td>MV3</td></tr>
                 <tr><td>Permissions</td><td><code>activeTab</code>, <code>scripting</code>, <code>storage</code>, <code>downloads</code>, <code>offscreen</code>, <code>sidePanel</code> + optional <code>notifications</code></td></tr>
-                <tr><td>Host permissions</td><td>None</td></tr>
+                <tr><td>Host permissions</td><td>Optional <code>http://*/*</code>, <code>https://*/*</code> (granted at runtime for always-on mode; revocable)</td></tr>
                 <tr><td>Data</td><td>Fully on-device; no raw content stored or uploaded</td></tr>
                 <tr><td>Source</td><td><a href="https://github.com/ACR-LOGIC/governworld-extension" target="_blank" rel="noopener noreferrer">github.com/ACR-LOGIC/governworld-extension</a></td></tr>
               </tbody>
@@ -775,6 +775,13 @@
               <div class="feature"><strong>Payment card</strong><span>PAN (Luhn-validated)</span></div>
               <div class="feature"><strong>API keys &amp; secrets</strong><span>OpenAI, Stripe, GitHub, AWS, JWT, private keys &amp; more</span></div>
               <div class="feature"><strong>Possible name</strong><span>Name-like tokens</span></div>
+              <div class="feature"><strong>Custom patterns</strong><span>User-defined regex</span></div>
+              <div class="feature"><strong>Canadian SIN</strong><span>Social Insurance Number</span></div>
+              <div class="feature"><strong>UK NHS</strong><span>NHS Number</span></div>
+              <div class="feature"><strong>Aadhaar</strong><span>Indian ID</span></div>
+              <div class="feature"><strong>PAN India</strong><span>Indian PAN</span></div>
+              <div class="feature"><strong>Australian TFN</strong><span>Tax File Number</span></div>
+              <div class="feature"><strong>CPF</strong><span>Brazilian ID</span></div>
             </div>
           </div>
         </section>

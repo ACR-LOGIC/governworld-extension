@@ -35,7 +35,7 @@ export type FindingCategory =
   | "australian_tfn"
   | "cpf";
 
-export type FindingSource = "local-rules" | "local-model" | "gateway" | "attr" | "custom-pattern";
+export type FindingSource = "local-rules" | "local-model" | "gateway" | "attr" | "custom-pattern" | "selection";
 
 /** Document kinds the offscreen pipeline can process. */
 export type DocKind = "pdf" | "image" | "docx";
@@ -250,6 +250,7 @@ export interface ScanSettingsMessage {
   maskPlaceholders: boolean;
   /** Session timeout in milliseconds, or 0 for "never". */
   sessionTimeoutMs: number;
+  confidenceThresholds?: Record<FindingCategory, number>;
 }
 
 export type WorkerMessage =

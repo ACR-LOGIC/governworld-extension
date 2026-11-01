@@ -30,6 +30,7 @@ import {
   type UnscannableRegion,
   type PageInventory,
 } from "./normalization/pageInventory.js";
+import { getAccessibleShadowRoot } from "./normalization/shadow.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -232,6 +233,7 @@ export function buildMediaQueue(
         // Skip DRM-protected videos (already marked unscannable in inventory).
         if (!video.mediaKeys && video.readyState >= 2) {
           let dataUrl: string | undefined;
+          let securityBlocked = false;
           try {
             const tmp = rootDoc.createElement("canvas");
             tmp.width = Math.min(video.videoWidth || rect.width, 1280);
@@ -243,18 +245,29 @@ export function buildMediaQueue(
               if (raw.length > 200) dataUrl = raw;
             }
           } catch {
-            // Cross-origin video or SecurityError — SW will use captureVisibleTab crop.
+            securityBlocked = true;
+            newUnscannableRegions.push({
+              sourceType: "video",
+              cssSelector: selector,
+              resourceUrl: video.currentSrc || video.src || undefined,
+              visibility,
+              reason: "cross-origin-isolation",
+              detail: "Cross-origin video cannot be extracted via canvas due to browser security restrictions.",
+              boundingRect: cropRect,
+            });
           }
-          allVisual.push({
-            sourceId: `video-${++counter}`,
-            sourceType: "video-frame-ocr",
-            cssSelector: selector,
-            elementTag: "video",
-            resourceUrl: video.currentSrc || video.src || undefined,
-            dataUrl,
-            cropRect,
-            visibility,
-          });
+          if (!securityBlocked) {
+            allVisual.push({
+              sourceId: `video-${++counter}`,
+              sourceType: "video-frame-ocr",
+              cssSelector: selector,
+              elementTag: "video",
+              resourceUrl: video.currentSrc || video.src || undefined,
+              dataUrl,
+              cropRect,
+              visibility,
+            });
+          }
         }
       }
 
@@ -278,11 +291,15 @@ export function buildMediaQueue(
     node = walker.nextNode();
   }
 
-  // ── Viewport-first sort + per-pass cap ─────────────────────────────────
+  // ── Viewport-first sort + area prioritization + per-pass cap ───────────
   allVisual.sort((a, b) => {
-    if (a.visibility === b.visibility) return 0;
-    if (a.visibility === "VISIBLE_IN_VIEWPORT") return -1;
-    return 1;
+    if (a.visibility !== b.visibility) {
+      if (a.visibility === "VISIBLE_IN_VIEWPORT") return -1;
+      if (b.visibility === "VISIBLE_IN_VIEWPORT") return 1;
+    }
+    const areaA = (a.cropRect?.width ?? 0) * (a.cropRect?.height ?? 0);
+    const areaB = (b.cropRect?.width ?? 0) * (b.cropRect?.height ?? 0);
+    return areaB - areaA;
   });
 
   const deferredCount = Math.max(0, allVisual.length - maxVisualQueue);
@@ -302,6 +319,40 @@ export interface VideoCaptionSegment {
   visibility: VisibilityState;
 }
 
+function collectAllVideos(root: Document | Element | ShadowRoot, out: HTMLVideoElement[], visited = new Set<unknown>(), depth = 0): void {
+  if (depth > 10 || visited.has(root)) return;
+  visited.add(root);
+
+  if (typeof (root as Document).querySelectorAll === "function") {
+    try {
+      const videos = (root as Document).querySelectorAll("video");
+      for (const v of Array.from(videos)) {
+        out.push(v as HTMLVideoElement);
+      }
+    } catch {}
+
+    try {
+      const allEls = (root as Document).querySelectorAll("*");
+      for (const el of Array.from(allEls)) {
+        const shadow = getAccessibleShadowRoot(el) ?? (el as unknown as { shadowRoot?: unknown })?.shadowRoot;
+        if (shadow && !visited.has(shadow)) {
+          collectAllVideos(shadow as unknown as ShadowRoot, out, visited, depth + 1);
+        }
+        if (el.tagName && (el.tagName.toLowerCase() === "iframe" || el.tagName.toLowerCase() === "frame")) {
+          try {
+            const frameDoc = (el as HTMLIFrameElement).contentDocument;
+            if (frameDoc && !visited.has(frameDoc)) {
+              collectAllVideos(frameDoc, out, visited, depth + 1);
+            }
+          } catch {
+            // Cross-origin iframe
+          }
+        }
+      }
+    } catch {}
+  }
+}
+
 /**
  * Extracts all currently loaded WebVTT/SRT caption cues from every <video>
  * element in the document. Returns deterministic text (confidence 1.0) that
@@ -309,7 +360,8 @@ export interface VideoCaptionSegment {
  */
 export function extractVideoCaptions(rootDoc: Document = document): VideoCaptionSegment[] {
   const results: VideoCaptionSegment[] = [];
-  const videos = rootDoc.querySelectorAll("video");
+  const videos: HTMLVideoElement[] = [];
+  collectAllVideos(rootDoc, videos);
 
   for (const video of videos) {
     const visibility = computeElementVisibility(video);
