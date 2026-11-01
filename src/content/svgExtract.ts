@@ -13,6 +13,7 @@
  */
 
 import { computeElementVisibility, buildTraceableSelector } from "./normalization/pageInventory.js";
+import { getAccessibleShadowRoot } from "./normalization/shadow.js";
 
 export interface SvgTextSegment {
   text: string;
@@ -24,6 +25,40 @@ export interface SvgTextSegment {
 
 const SVG_TEXT_TAGS = new Set(["text", "tspan", "title", "desc"]);
 
+function collectAllSvgs(root: Document | Element | ShadowRoot, out: SVGElement[], visited = new Set<unknown>(), depth = 0): void {
+  if (depth > 10 || visited.has(root)) return;
+  visited.add(root);
+
+  if (typeof (root as Document).querySelectorAll === "function") {
+    try {
+      const svgs = (root as Document).querySelectorAll("svg");
+      for (const svg of Array.from(svgs)) {
+        out.push(svg);
+      }
+    } catch {}
+
+    try {
+      const allEls = (root as Document).querySelectorAll("*");
+      for (const el of Array.from(allEls)) {
+        const shadow = getAccessibleShadowRoot(el) ?? (el as unknown as { shadowRoot?: unknown })?.shadowRoot;
+        if (shadow && !visited.has(shadow)) {
+          collectAllSvgs(shadow as unknown as ShadowRoot, out, visited, depth + 1);
+        }
+        if (el.tagName && (el.tagName.toLowerCase() === "iframe" || el.tagName.toLowerCase() === "frame")) {
+          try {
+            const frameDoc = (el as HTMLIFrameElement).contentDocument;
+            if (frameDoc && !visited.has(frameDoc)) {
+              collectAllSvgs(frameDoc, out, visited, depth + 1);
+            }
+          } catch {
+            // Cross-origin iframe
+          }
+        }
+      }
+    } catch {}
+  }
+}
+
 /**
  * Extracts text from all inline <svg> elements in the document.
  * Returns segments with their on-page bounding rectangles for overlay
@@ -33,13 +68,15 @@ export function extractSvgText(rootDoc: Document = document): SvgTextSegment[] {
   const results: SvgTextSegment[] = [];
   const seenKeys = new Set<string>();
 
-  const svgs = rootDoc.querySelectorAll("svg");
+  const svgs: SVGElement[] = [];
+  collectAllSvgs(rootDoc, svgs);
   for (const svg of svgs) {
     // Skip decorative SVGs that are too small to hold legible text
     const svgRect = svg.getBoundingClientRect();
     if (svgRect.width < 24 || svgRect.height < 14) continue;
 
-    const walker = rootDoc.createTreeWalker(svg, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+    const doc = svg.ownerDocument || rootDoc;
+    const walker = doc.createTreeWalker(svg, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
     let node: Node | null = walker.currentNode;
 
     while (node) {

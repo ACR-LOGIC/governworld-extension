@@ -4,7 +4,7 @@ import {
   MAX_MESSAGE_BYTES,
   MESSAGE_TYPES,
 } from "./types.js";
-import type { DocKind, ExtensionMessage, Finding, ScanMode, DocPageMeta, RedactionOptions, RedactionStyle, DocRedactionStage } from "./types.js";
+import type { DocKind, ExtensionMessage, Finding, ScanMode, DocPageMeta, RedactionOptions, RedactionStyle, DocRedactionStage, ScanSettingsMessage } from "./types.js";
 import type { RedactionVerifyMethod } from "../document-pipeline/verify.js";
 import { isAllowedGatewayOrigin, isCategory } from "./settings.js";
 import { isPageImageKey, isPreviewKey } from "./docStore.js";
@@ -171,7 +171,8 @@ function isFinding(value: unknown): value is Finding {
     value.source !== "local-model" &&
     value.source !== "gateway" &&
     value.source !== "attr" &&
-    value.source !== "custom-pattern"
+    value.source !== "custom-pattern" &&
+    value.source !== "selection"
   ) return false;
   if (typeof value.preview !== "string" || !isMaskedPreview(value.category, value.preview)) return false;
   if (
@@ -428,7 +429,16 @@ function withinSizeLimit(raw: Record<string, unknown>): boolean {
   }
 }
 
-function isScanSettings(value: unknown): value is { enabledCategories: FindingCategory[]; maxVisibleChars: number; maxNodeChars: number; maskPlaceholders: boolean; sessionTimeoutMs: number } {
+function isConfidenceThresholds(value: unknown): value is Record<FindingCategory, number> {
+  if (!isRecord(value)) return false;
+  for (const [k, v] of Object.entries(value)) {
+    if (!isCategory(k)) return false;
+    if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 1) return false;
+  }
+  return true;
+}
+
+export function isScanSettings(value: unknown): value is ScanSettingsMessage {
   if (!isRecord(value)) return false;
   return (
     Array.isArray(value.enabledCategories) &&
@@ -437,7 +447,8 @@ function isScanSettings(value: unknown): value is { enabledCategories: FindingCa
     typeof value.maxNodeChars === "number" &&
     typeof value.maskPlaceholders === "boolean" &&
     typeof value.sessionTimeoutMs === "number" &&
-    value.sessionTimeoutMs >= 0
+    value.sessionTimeoutMs >= 0 &&
+    (value.confidenceThresholds === undefined || isConfidenceThresholds(value.confidenceThresholds))
   );
 }
 

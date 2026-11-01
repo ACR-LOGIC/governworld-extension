@@ -2,6 +2,7 @@
 import type { Finding } from "../shared/types.js";
 import { IGNORE_ATTR, OVERLAY_ATTR, buildScanText, segmentIndexAt } from "./extract.js";
 import type { TextSegment } from "./extract.js";
+import { getAccessibleShadowRoot } from "./normalization/shadow.js";
 
 /**
  * Accessibility-surface extraction (report-only).
@@ -22,6 +23,8 @@ export interface AttrRecord {
   attributeName: string;
   /** Trimmed, whitespace-collapsed attribute value slice. */
   value: string;
+  /** Start offset in the original raw attribute text, preserving leading whitespace offset. */
+  startOffset?: number;
 }
 
 export interface AttributeSegment extends TextSegment {
@@ -63,6 +66,38 @@ export interface CollectOptions {
   maxPerValue: number;
 }
 
+function collectAllRoots(root: AttrRootLike, visited = new Set<unknown>(), depth = 0): AttrRootLike[] {
+  if (depth > 10 || visited.has(root)) return [];
+  visited.add(root);
+  const result: AttrRootLike[] = [root];
+
+  if (typeof (root as Document).querySelectorAll === "function") {
+    try {
+      const allEls = (root as Document).querySelectorAll("*");
+      for (const el of Array.from(allEls)) {
+        const shadow = getAccessibleShadowRoot(el as Element) ?? (el as unknown as { shadowRoot?: unknown })?.shadowRoot;
+        if (shadow && !visited.has(shadow)) {
+          result.push(...collectAllRoots(shadow as unknown as AttrRootLike, visited, depth + 1));
+        }
+        if (el.tagName && (el.tagName.toLowerCase() === "iframe" || el.tagName.toLowerCase() === "frame")) {
+          try {
+            const frameDoc = (el as HTMLIFrameElement).contentDocument;
+            if (frameDoc && !visited.has(frameDoc)) {
+              result.push(...collectAllRoots(frameDoc as unknown as AttrRootLike, visited, depth + 1));
+            }
+          } catch {
+            // Cross-origin iframe
+          }
+        }
+      }
+    } catch {
+      // Fallback for custom/mock roots
+    }
+  }
+
+  return result;
+}
+
 /**
  * Read accessibility attribute values from the root, honoring scan-exclusion
  * markers and the character budgets. Strictly read-only.
@@ -72,29 +107,37 @@ export function collectAttrRecords(
   options: CollectOptions
 ): { records: AttrRecord[]; truncated: boolean } {
   const selector = SCANNED_ATTRIBUTES.map((a) => `[${a}]`).join(",");
-  const nodes = Array.from(root.querySelectorAll(selector));
+  const allRoots = collectAllRoots(root);
   const records: AttrRecord[] = [];
   let remaining = options.maxTotalChars;
   let truncated = false;
 
-  for (const node of nodes) {
+  for (const r of allRoots) {
     if (remaining <= 0) {
       truncated = true;
       break;
     }
-    if (node.closest(`[${OVERLAY_ATTR}]`) || node.closest(`[${IGNORE_ATTR}]`)) continue;
-    for (const name of SCANNED_ATTRIBUTES) {
+    const nodes = Array.from(r.querySelectorAll(selector));
+    for (const node of nodes) {
       if (remaining <= 0) {
         truncated = true;
         break;
       }
-      const raw = node.getAttribute(name);
-      if (raw === null) continue;
-      const value = normalizeValue(raw).slice(0, options.maxPerValue);
-      if (value.length < raw.length) truncated = true;
-      if (value.length === 0) continue;
-      records.push({ attributeName: name, value });
-      remaining -= value.length;
+      if (typeof node.closest === "function" && (node.closest(`[${OVERLAY_ATTR}]`) || node.closest(`[${IGNORE_ATTR}]`))) continue;
+      for (const name of SCANNED_ATTRIBUTES) {
+        if (remaining <= 0) {
+          truncated = true;
+          break;
+        }
+        const raw = node.getAttribute(name);
+        if (raw === null) continue;
+        const lead = raw.length - raw.replace(/^[\s\u00a0\u200b]+/, "").length;
+        const value = normalizeValue(raw).slice(0, options.maxPerValue);
+        if (value.length < raw.length) truncated = true;
+        if (value.length === 0) continue;
+        records.push({ attributeName: name, value, startOffset: lead });
+        remaining -= value.length;
+      }
     }
   }
 
@@ -106,8 +149,8 @@ export function buildAttrScan(records: AttrRecord[]): AttrScan {
   const segments: AttributeSegment[] = records.map((record, i) => ({
     nodeId: `attr_${i}`,
     attributeName: record.attributeName,
-    startOffset: 0,
-    endOffset: record.value.length,
+    startOffset: record.startOffset ?? 0,
+    endOffset: (record.startOffset ?? 0) + record.value.length,
     text: record.value,
   }));
   const { combined, segmentStarts } = buildScanText(segments);
