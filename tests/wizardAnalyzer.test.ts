@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 import { describe, it, expect } from "vitest";
-import { analyzeExamples, testPattern, isSafeRegex } from "../src/shared/wizardAnalyzer.js";
+import { analyzeExamples, testPattern, isSafeRegex, parseSampleLines } from "../src/shared/wizardAnalyzer.js";
 
 describe("wizardAnalyzer", () => {
   describe("isSafeRegex", () => {
@@ -90,6 +90,53 @@ describe("wizardAnalyzer", () => {
       const text = "POL-123456 ".repeat(1500);
       const results = testPattern(pattern, flags, [text]);
       expect(results[0].matchCount).toBe(1000);
+    });
+  });
+
+  describe("parseSampleLines", () => {
+    it("returns empty array for empty or whitespace-only input", () => {
+      expect(parseSampleLines("")).toEqual([]);
+      expect(parseSampleLines("   \n\r\n\t  ")).toEqual([]);
+    });
+
+    it("parses lines with mixed CRLF and LF", () => {
+      const input = "ID-1001\r\nID-1002\nID-1003";
+      expect(parseSampleLines(input)).toEqual(["ID-1001", "ID-1002", "ID-1003"]);
+    });
+
+    it("trims whitespace and ignores blank or comment lines", () => {
+      const input = [
+        "# Header comment",
+        "// Secondary comment",
+        "ACCT-1234",
+        "",
+        "   ACCT-5678   ",
+      ].join("\n");
+      expect(parseSampleLines(input)).toEqual(["ACCT-1234", "ACCT-5678"]);
+    });
+
+    it("deduplicates identical lines preserving order", () => {
+      const input = "USER-1\nUSER-2\nUSER-1\nUSER-3\nUSER-2";
+      expect(parseSampleLines(input)).toEqual(["USER-1", "USER-2", "USER-3"]);
+    });
+
+    it("strips null bytes and control characters", () => {
+      const input = "KEY-\x00\x071234\nSAFE-5678";
+      expect(parseSampleLines(input)).toEqual(["KEY-1234", "SAFE-5678"]);
+    });
+
+    it("rejects abnormally long lines (>256 chars)", () => {
+      const longLine = "A".repeat(257);
+      const input = `VALID-1\n${longLine}\nVALID-2`;
+      expect(parseSampleLines(input)).toEqual(["VALID-1", "VALID-2"]);
+    });
+
+    it("respects maxLines cap", () => {
+      const lines = Array.from({ length: 150 }, (_, i) => `LINE-${i}`);
+      const result = parseSampleLines(lines.join("\n"), 50);
+      expect(result).toHaveLength(50);
+      expect(result[0]).toBe("LINE-0");
+      expect(result[49]).toBe("LINE-49");
     });
   });
 });

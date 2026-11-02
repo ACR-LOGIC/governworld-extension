@@ -1043,8 +1043,13 @@
         <h3 data-i18n="wizard_step1_title">What are you trying to protect?</h3>
         <p class="footnote" data-i18n="wizard_step1_desc">Provide examples of sensitive content. All processing happens locally.</p>
         <div class="form-row">
-          <label for="wizard-pos-input" data-i18n="wizard_positive_label">Positive examples (one per line)</label>
+          <div class="section-header">
+            <label for="wizard-pos-input" data-i18n="wizard_positive_label">Positive examples (one per line)</label>
+            <input id="wizard-file-input" type="file" accept=".txt,.csv,.tsv,.log" class="visually-hidden" aria-label="Import examples file" />
+            <button id="wizard-import-file-btn" type="button" class="help-link help-link--sm" data-i18n="wizard_import_file_btn">Import File ↗</button>
+          </div>
           <textarea id="wizard-pos-input" rows="4" placeholder="CUST-12345&#10;CUST-67890"></textarea>
+          <span id="wizard-import-status" class="footnote" role="status" aria-live="polite" hidden></span>
         </div>
         <div class="form-row">
           <label for="wizard-neg-input" data-i18n="wizard_negative_label">Negative examples (one per line)</label>

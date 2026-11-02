@@ -48,7 +48,7 @@ import type {
   RedactionStyle,
 } from "../shared/types.js";
 import type { CustomPattern, CommunityAccount, CommunityRule } from "../shared/customPatterns.js";
-import type { WizardAnalysis } from "../shared/wizardAnalyzer.js";
+import { parseSampleLines, type WizardAnalysis } from "../shared/wizardAnalyzer.js";
 import type { ImageCandidate } from "../shared/messages.js";
 
 export function isInternalExtensionUrl(url?: string): boolean {
@@ -2863,6 +2863,9 @@ export async function initPopup(): Promise<void> {
 
   const wizardPosInput = document.getElementById("wizard-pos-input") as HTMLTextAreaElement | null;
   const wizardNegInput = document.getElementById("wizard-neg-input") as HTMLTextAreaElement | null;
+  const wizardFileInput = document.getElementById("wizard-file-input") as HTMLInputElement | null;
+  const wizardImportFileBtn = document.getElementById("wizard-import-file-btn") as HTMLButtonElement | null;
+  const wizardImportStatus = document.getElementById("wizard-import-status") as HTMLSpanElement | null;
   const wizardCancel1 = document.getElementById("wizard-cancel-1") as HTMLButtonElement | null;
   const wizardAnalyzeBtn = document.getElementById("wizard-analyze-btn") as HTMLButtonElement | null;
 
@@ -2908,6 +2911,10 @@ export async function initPopup(): Promise<void> {
     wizardTestSample.value = "";
     wizardRuleName.value = "";
     wizardRuleConfidence.value = "0.85";
+    if (wizardImportStatus) {
+      wizardImportStatus.textContent = "";
+      wizardImportStatus.hidden = true;
+    }
     currentProposals = [];
     selectedProposalIndex = 0;
     showWizardStep(1);
@@ -2915,6 +2922,57 @@ export async function initPopup(): Promise<void> {
   });
 
   wizardCancel1?.addEventListener("click", () => wizardDialog?.close());
+
+  wizardImportFileBtn?.addEventListener("click", () => {
+    wizardFileInput?.click();
+  });
+
+  wizardFileInput?.addEventListener("change", () => {
+    const file = wizardFileInput.files?.[0];
+    if (!file || !wizardPosInput) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const text = typeof reader.result === "string" ? reader.result : "";
+        const parsed = parseSampleLines(text);
+        if (parsed.length === 0) {
+          if (wizardImportStatus) {
+            wizardImportStatus.textContent = "No valid lines found in file.";
+            wizardImportStatus.hidden = false;
+          }
+          return;
+        }
+
+        const existingLines = wizardPosInput.value
+          .split("\n")
+          .map((s) => s.trim())
+          .filter(Boolean);
+        const combined = Array.from(new Set([...existingLines, ...parsed]));
+        wizardPosInput.value = combined.join("\n");
+
+        if (wizardImportStatus) {
+          wizardImportStatus.textContent = `Imported ${parsed.length} example${parsed.length === 1 ? "" : "s"}.`;
+          wizardImportStatus.hidden = false;
+        }
+      } catch {
+        if (wizardImportStatus) {
+          wizardImportStatus.textContent = "Could not read sample file.";
+          wizardImportStatus.hidden = false;
+        }
+      } finally {
+        wizardFileInput.value = "";
+      }
+    };
+    reader.onerror = () => {
+      if (wizardImportStatus) {
+        wizardImportStatus.textContent = "Failed to load file.";
+        wizardImportStatus.hidden = false;
+      }
+      wizardFileInput.value = "";
+    };
+    reader.readAsText(file);
+  });
 
   wizardAnalyzeBtn?.addEventListener("click", () => {
     if (!wizardPosInput || !wizardNegInput) return;
