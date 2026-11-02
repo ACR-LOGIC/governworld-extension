@@ -2936,14 +2936,8 @@ export async function initPopup(): Promise<void> {
 
   wizardCancel1?.addEventListener("click", () => wizardDialog?.close());
 
-  wizardImportFileBtn?.addEventListener("click", () => {
-    wizardFileInput?.click();
-  });
-
-  wizardFileInput?.addEventListener("change", () => {
-    const file = wizardFileInput.files?.[0];
-    if (!file || !wizardPosInput) return;
-
+  function handleWizardFile(file: File) {
+    if (!wizardPosInput) return;
     const reader = new FileReader();
     reader.onload = () => {
       try {
@@ -2974,7 +2968,7 @@ export async function initPopup(): Promise<void> {
           wizardImportStatus.hidden = false;
         }
       } finally {
-        wizardFileInput.value = "";
+        if (wizardFileInput) wizardFileInput.value = "";
       }
     };
     reader.onerror = () => {
@@ -2982,9 +2976,77 @@ export async function initPopup(): Promise<void> {
         wizardImportStatus.textContent = "Failed to load file.";
         wizardImportStatus.hidden = false;
       }
-      wizardFileInput.value = "";
+      if (wizardFileInput) wizardFileInput.value = "";
     };
     reader.readAsText(file);
+  }
+
+  // 1. Detect whether we are running inside the ephemeral toolbar popup or persistent sidepanel.
+  const isSidePanelContext =
+    window.location.pathname.toLowerCase().includes("sidepanel") ||
+    new URLSearchParams(window.location.search).get("view") === "sidepanel" ||
+    window.innerHeight > 600;
+
+  // 2. Pre-cache current windowId on load so we don't lose the user gesture on an async tabs.query() call
+  let currentWindowId: number | undefined;
+  if (typeof chrome !== "undefined" && chrome.windows?.getCurrent) {
+    chrome.windows.getCurrent((win) => {
+      currentWindowId = win?.id;
+    });
+  }
+
+  wizardImportFileBtn?.addEventListener("click", async (e) => {
+    e.preventDefault();
+
+    // If we are in the toolbar popup and Side Panel API is available, hand off immediately
+    if (
+      !isSidePanelContext &&
+      typeof chrome !== "undefined" &&
+      chrome.sidePanel?.open &&
+      currentWindowId !== undefined
+    ) {
+      const draftExamples = wizardPosInput?.value || "";
+      const draftNegative = wizardNegInput?.value || "";
+      const ruleNameInput = wizardRuleName?.value || "";
+
+      chrome.storage.local.set({
+        wizardHandoffPending: {
+          step: 1,
+          draftPositiveExamples: draftExamples,
+          draftNegativeExamples: draftNegative,
+          draftRuleName: ruleNameInput,
+          timestamp: Date.now(),
+        },
+      });
+
+      try {
+        await chrome.sidePanel.open({ windowId: currentWindowId });
+        window.close(); // Cleanly close ephemeral toolbar popup once Side Panel opens
+      } catch (err) {
+        console.warn("[GovernWorld] SidePanel open fallback to native picker:", err);
+        wizardFileInput?.click();
+      }
+
+      return;
+    }
+
+    // Already in Side Panel (or fallback/tab): open the OS file picker directly
+    wizardFileInput?.click();
+  });
+
+  wizardFileInput?.addEventListener("change", () => {
+    const file = wizardFileInput.files?.[0];
+    if (file) handleWizardFile(file);
+  });
+
+  wizardPosInput?.addEventListener("dragover", (e) => {
+    e.preventDefault();
+  });
+
+  wizardPosInput?.addEventListener("drop", (e) => {
+    e.preventDefault();
+    const file = e.dataTransfer?.files?.[0];
+    if (file) handleWizardFile(file);
   });
 
   wizardAnalyzeBtn?.addEventListener("click", () => {
@@ -3640,6 +3702,75 @@ export async function initPopup(): Promise<void> {
   });
 
   void sendMessage({ type: "POPUP_GET_STATE", requestId: requestId() });
+
+  // Check for Side Panel handoff from toolbar popup
+  async function checkWizardSidePanelHandoff(): Promise<void> {
+    if (typeof chrome === "undefined" || !chrome.storage?.local) return;
+
+    try {
+      const data = await chrome.storage.local.get("wizardHandoffPending");
+      const handoff = data?.wizardHandoffPending as {
+        step?: number;
+        draftPositiveExamples?: string;
+        draftNegativeExamples?: string;
+        draftRuleName?: string;
+        timestamp?: number;
+      } | undefined;
+
+      if (!handoff || typeof handoff !== "object" || Date.now() - (handoff.timestamp ?? 0) > 30_000) return;
+
+      await chrome.storage.local.remove("wizardHandoffPending");
+
+      // 1. Switch to Logic tab
+      document.querySelector<HTMLButtonElement>('.tab-btn[data-tab="logic"]')?.click();
+
+      // 2. Open the Wizard modal to Step 1
+      if (wizardDialog && !wizardDialog.open) {
+        showWizardStep(1);
+        wizardDialog.showModal();
+      }
+
+      // 3. Restore any draft inputs the user typed before clicking Import File
+      if (wizardPosInput && handoff.draftPositiveExamples) {
+        wizardPosInput.value = handoff.draftPositiveExamples;
+        wizardPosInput.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      if (wizardNegInput && handoff.draftNegativeExamples) {
+        wizardNegInput.value = handoff.draftNegativeExamples;
+        wizardNegInput.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      if (wizardRuleName && handoff.draftRuleName) {
+        wizardRuleName.value = handoff.draftRuleName;
+      }
+
+      // 4. Guide the user immediately to the import button & dropzone in the Side Panel
+      if (wizardImportStatus) {
+        wizardImportStatus.textContent = 'Side Panel active — click "Import File ↗" or drag your file below.';
+        wizardImportStatus.hidden = false;
+      }
+
+      if (wizardImportFileBtn) {
+        wizardImportFileBtn.classList.add("wizard-handoff-highlight");
+        wizardPosInput?.classList.add("wizard-dropzone-highlight");
+
+        wizardImportFileBtn.focus({ preventScroll: true });
+        wizardImportFileBtn.scrollIntoView({ behavior: "smooth", block: "center" });
+
+        const clearHighlight = (): void => {
+          wizardImportFileBtn.classList.remove("wizard-handoff-highlight");
+          wizardPosInput?.classList.remove("wizard-dropzone-highlight");
+        };
+
+        wizardImportFileBtn.addEventListener("click", clearHighlight, { once: true });
+        wizardPosInput?.addEventListener("drop", clearHighlight, { once: true });
+        window.setTimeout(clearHighlight, 4200);
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
+  void checkWizardSidePanelHandoff();
 
   // Readiness marker for the automated harnesses, set only once every listener
   // above is bound.

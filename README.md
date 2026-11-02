@@ -26,6 +26,7 @@ The **GovernWorld Extension** is a fully functional, local-first browser protect
   - [Arc Browser](#7-arc-browser)
   - [Apple Safari (macOS)](#8-apple-safari-macos)
 - [Local-First Architecture & Privacy Guarantees](#local-first-architecture--privacy-guarantees)
+  - [Provable Local Processing: Wire-Level Network Inspection](#provable-local-processing-wire-level-network-inspection)
 - [What Data Remains on Your Device](#what-data-remains-on-your-device)
 - [Detection Categories & Global Compliance Presets](#detection-categories--global-compliance-presets)
 - [Accessibility & Disability Assistive Features](#accessibility--disability-assistive-features)
@@ -34,6 +35,7 @@ The **GovernWorld Extension** is a fully functional, local-first browser protect
 - ["Paste & Prompt" Shield (on-demand)](#paste--prompt-shield-on-demand-chat--llm-guard)
 - [Right-Click Context Menus](#right-click-context-menus)
 - [Interactive Redaction Wizard](#interactive-redaction-wizard)
+  - [Rule Persistence & Video Walkthrough](#rule-persistence--video-walkthrough)
 - [Document Processing & Redaction Workflow](#document-processing--redaction-workflow)
 - [Cloud & API Status (Locked by Default)](#cloud--api-status-locked-by-default)
 - [Browser Permissions & Justifications](#browser-permissions--justifications)
@@ -237,6 +239,20 @@ flowchart TD
 - **Zero Remote Code Execution:** Strict Manifest V3 Content Security Policy (`script-src 'self' 'wasm-unsafe-eval'`). All scripts, WebAssembly binaries, and OCR models are bundled locally.
 - **Zero Automatic Host Access:** Declares **zero `host_permissions`**. The extension cannot automatically observe or access network traffic or website origins.
 
+### Provable Local Processing: Wire-Level Network Inspection
+
+Local processing in GovernWorld is **provable at the network wire layer**, not merely an unverified marketing claim. To facilitate rigorous security review and provide transparent privacy assurances, the codebase includes an automated wire-level network inspection test:
+
+```bash
+npm run test:network-inspection
+```
+
+#### What This Test Verifies:
+1. **Zero External Egress:** Spawns an isolated local test harness and executes full page DOM scanning, custom logic wizard generation, interactive regex testing, and selection redactions against high-sensitivity synthetic canaries (never-issued SSN, test payment cards, confidential emails, medical PHI diagnoses, system passwords, and API keys).
+2. **Wire-Level Traffic Auditing:** Intercepts every HTTP/HTTPS request, WebSocket connection, `fetch()`, `XMLHttpRequest`, and beacon emitted across the renderer, background service worker, and extension pages.
+3. **Leak-Free Assertions:** Asserts that **0 requests** are made to external hosts or cloud endpoints, **0 analytics or telemetry calls** are dispatched, and **0 sensitive canaries** appear in any URL query string, request header, or payload body.
+4. **Offline Asset Integrity:** Proves that local WebAssembly runtimes (`tesseract-core.wasm`), language models (`eng.traineddata.gz`), and PDF worker scripts are resolved exclusively from local extension storage via `chrome.runtime.getURL`.
+
 ---
 
 ## What Data Remains on Your Device
@@ -381,6 +397,13 @@ The **Redaction Wizard** enables users to construct custom detection logic local
 3. **Sandbox Test:** Test candidate patterns against interactive sample text in real time.
 4. **Save Locally:** Save rules directly into `chrome.storage.local` for immediate use in scans and document redactions.
 
+### Rule Persistence & Video Walkthrough
+
+Rules created via the Logic Wizard are saved directly into `chrome.storage.local` under the `customPatterns` key and are instantly activated for subsequent page scans, document redactions, and selection masks whenever the user wants them:
+- **Automatic Category Activation:** Saving a custom rule automatically ensures its category is enabled in active settings.
+- **Immediate Detection:** Subsequent scans and mutation-observer delta passes immediately load the saved custom rules to highlight and mask target entities.
+- **Automated Verification & Video Recording:** Run `npm run test:wizard-flow` to execute the full automated browser journey (example input -> regex analysis -> sandbox test -> rule persistence -> live webpage scan) and record a clean demonstration video saved to `recordings/logic-wizard-demo.webm`.
+
 ---
 
 ## Document Processing & Redaction Workflow
@@ -469,6 +492,8 @@ npm run build
 The codebase includes an extensive automated test suite covering all detection algorithms, redaction output integrity, wizard behavior, manifest compliance, and audit trails:
 
 - **Unit & Integration Tests:** the full Vitest suite via `npm test`, with the current pass count reported by the CI badge above. Counts are not hard-coded here on purpose - a stale number in a README is worse than no number.
+- **Wire-Level Network Inspection:** Automated protocol-level audit asserting zero sensitive data egress, zero external requests, and zero telemetry during scans and wizard operations (`npm run test:network-inspection`).
+- **Logic Wizard E2E & Video Walkthrough:** End-to-end browser test verifying rule creation, local persistence, and live webpage redaction with automated video capture (`npm run test:wizard-flow`).
 - **Browser Automation Verification:** Real Chromium browser validation (`npm run verify:browser`).
 - **Photo OCR & Coordinate Mapping E2E:** End-to-end verification of document OCR, coordinate mapping, and pixel flattening (`npm run test:photo-e2e`).
 - **Cross-Browser Verification:** Tests verifying compatibility across Chrome, Edge, Firefox, Safari, and Brave (`tests/cross-browser-compatibility.test.ts`).

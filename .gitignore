@@ -20,6 +20,7 @@ release/*.tar.gz
 
 # Test & coverage
 coverage/
+recordings/
 .tmp*
 *.log
 *.traineddata
