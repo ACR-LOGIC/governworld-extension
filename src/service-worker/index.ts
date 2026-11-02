@@ -2331,6 +2331,17 @@ async function handleApiSubmitLogic(patternId: string, requestId: string): Promi
     return;
   }
 
+  // Location-only rules are not contributable as text patterns.
+  if (target.strategy === "location" || !target.pattern || !target.flags) {
+    notifyPopup({
+      type: "POPUP_API_SUBMIT_RESULT",
+      requestId,
+      success: false,
+      error: "This rule type cannot be contributed as a text pattern.",
+    });
+    return;
+  }
+
   const tokens = await getStoredTokens();
   const client = new GovernWorldApiClient(await getApiUrl());
   const res = await submitLogic(
@@ -2338,7 +2349,7 @@ async function handleApiSubmitLogic(patternId: string, requestId: string): Promi
     {
       rule_name: target.name,
       category: target.category,
-      pattern: target.pattern,
+       pattern: target.pattern,
       cues: target.contextCues ?? [],
       description: target.name,
     },

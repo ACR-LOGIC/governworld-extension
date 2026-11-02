@@ -1349,6 +1349,9 @@ export function runCustomPatterns(text: string, patterns: CustomPattern[]): RawM
   const startTime = Date.now();
   for (const pat of patterns) {
     if (Date.now() - startTime > TIME_BUDGET_MS) break;
+    // Location-only rules have no regex; they are handled by a separate
+    // location pass and never execute here.
+    if (!pat.pattern || !pat.flags) continue;
     if (!isSafeRegex(pat.pattern, pat.flags)) continue;
     try {
       const baseFlags = pat.flags.includes("g") ? pat.flags : `${pat.flags}g`;
