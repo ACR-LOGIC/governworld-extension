@@ -133,7 +133,9 @@ describe("popup / sidepanel DOM contract", () => {
     // mentioning a dead class is unsatisfiable. The 4-destination IA rewrite left
     // ~40 such rules behind; this stops them accumulating again.
     //   node --experimental-strip-types scripts/prune-dead-css.mts --check
-    const live = new Set<string>([...classNamesIn(POPUP), ...runtimeClasses()]);
+    // popup.css is shared byte-for-byte with the side panel, whose generated
+    // markup carries sidepanel-only classes such as `category-fieldset`.
+    const live = new Set<string>([...classNamesIn(POPUP), ...classNamesIn(SIDE), ...runtimeClasses()]);
     const stripped = CSS.replace(/\/\*[\s\S]*?\*\//g, " ");
 
     const dead = new Set<string>();

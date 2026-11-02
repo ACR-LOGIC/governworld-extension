@@ -135,6 +135,13 @@ function isMaskedPreview(category: FindingCategory, preview: string): boolean {
       return /^(?:\*{3}-\*{3}-\d{2,3}|[\s*]+)$/.test(preview);
     case "cpf":
       return /^(?:\*{3}\.\*{3}\.\*{3}-\d{2}|[\s*]+)$/.test(preview);
+    case "bank_account":
+      return /^(?:\*{4}\d{4}|[\s*]+)$/.test(preview);
+    case "username":
+      return /^(?:[^\s*]\*{3,}|[\s*]+)$/.test(preview);
+    case "ip_address":
+    case "financial":
+      return ALL_MASKED_PREVIEW_RE.test(preview);
     case "possible_name":
     case "medical_record_number":
     case "member_id":

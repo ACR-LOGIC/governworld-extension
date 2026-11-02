@@ -107,6 +107,10 @@ export const ALL_CATEGORIES: FindingCategory[] = [
   "pan_india",
   "australian_tfn",
   "cpf",
+  "ip_address",
+  "username",
+  "bank_account",
+  "financial",
 ];
 
 export type PresetId =
@@ -134,6 +138,7 @@ export const PRESET_CATEGORIES: Record<Exclude<PresetId, "custom">, FindingCateg
     "phone",
     "email",
     "possible_name",
+    "ip_address",
   ],
   pci: [
     "payment_card",
@@ -151,6 +156,10 @@ export const PRESET_CATEGORIES: Record<Exclude<PresetId, "custom">, FindingCateg
     "possible_name",
     "medical_record_number",
     "member_id",
+    "ip_address",
+    "username",
+    "bank_account",
+    "financial",
   ],
   developer: [
     "secrets",
@@ -165,6 +174,9 @@ export const PRESET_CATEGORIES: Record<Exclude<PresetId, "custom">, FindingCateg
     "dob",
     "possible_name",
     "payment_card",
+    "ip_address",
+    "username",
+    "bank_account",
   ],
   uk_gdpr: [
     "uk_nhs",
@@ -176,6 +188,10 @@ export const PRESET_CATEGORIES: Record<Exclude<PresetId, "custom">, FindingCateg
     "medical_record_number",
     "member_id",
     "payment_card",
+    "ip_address",
+    "username",
+    "bank_account",
+    "financial",
   ],
   india_dpdp: [
     "aadhaar",
@@ -186,6 +202,9 @@ export const PRESET_CATEGORIES: Record<Exclude<PresetId, "custom">, FindingCateg
     "dob",
     "possible_name",
     "payment_card",
+    "ip_address",
+    "username",
+    "bank_account",
   ],
   australia_privacy: [
     "australian_tfn",
@@ -195,6 +214,9 @@ export const PRESET_CATEGORIES: Record<Exclude<PresetId, "custom">, FindingCateg
     "dob",
     "possible_name",
     "payment_card",
+    "ip_address",
+    "username",
+    "bank_account",
   ],
   brazil_lgpd: [
     "cpf",
@@ -204,6 +226,9 @@ export const PRESET_CATEGORIES: Record<Exclude<PresetId, "custom">, FindingCateg
     "dob",
     "possible_name",
     "payment_card",
+    "ip_address",
+    "username",
+    "bank_account",
   ],
 };
 
@@ -316,6 +341,10 @@ export const DEFAULT_SETTINGS: Settings = {
     "pan_india",
     "australian_tfn",
     "cpf",
+    "ip_address",
+    "username",
+    "bank_account",
+    "financial",
   ],
   confidenceThresholds: defaultThresholds(),
   maskPadding: 4,

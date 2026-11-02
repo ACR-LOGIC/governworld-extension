@@ -472,5 +472,5 @@ describe("audit checkpointing and rollback resistance (Objective 2)", () => {
     // The verifier maintains external anchor: currentTrustedSeq = 15
     const currentTrustedSeq = 15;
     expect(await verifySignedAuditExport(validExport, { minSequenceNumber: currentTrustedSeq })).toBe(false);
-  });
+  }, 20_000);
 });

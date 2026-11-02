@@ -1457,9 +1457,9 @@ describe("Tier 1: Feature Coverage — 19 Master Issue Categories", () => {
       expect(manifest.optional_host_permissions).toContain("https://*/*");
     });
 
-    it("F30.1: ALL_CATEGORIES count includes all 19 built-in detection categories plus custom", () => {
-      // 13 base + 6 regional = 19 built-in, + 1 custom = 20 total
-      expect(ALL_CATEGORIES.length).toBe(20);
+    it("F30.1: ALL_CATEGORIES count includes all 23 built-in detection categories plus custom", () => {
+      // 13 base + 6 regional + 4 network/account = 23 built-in, + 1 custom = 24 total
+      expect(ALL_CATEGORIES.length).toBe(24);
     });
 
     it("F30.2: DEFAULT_SETTINGS contains all base categories and respects configured defaults", () => {

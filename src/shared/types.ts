@@ -33,7 +33,11 @@ export type FindingCategory =
   | "aadhaar"
   | "pan_india"
   | "australian_tfn"
-  | "cpf";
+  | "cpf"
+  | "ip_address"
+  | "username"
+  | "bank_account"
+  | "financial";
 
 export type FindingSource = "local-rules" | "local-model" | "gateway" | "attr" | "custom-pattern" | "selection";
 

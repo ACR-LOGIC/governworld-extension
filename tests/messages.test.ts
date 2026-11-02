@@ -75,6 +75,42 @@ describe("validateMessage", () => {
     expect(result.ok).toBe(false);
   });
 
+  it("accepts masked previews for the network and account categories", () => {
+    for (const [category, preview] of [
+      ["ip_address", "************"],
+      ["username", "a***"],
+      ["bank_account", "****6789"],
+      ["financial", "***********"],
+    ] as const) {
+      const result = validateMessage({
+        type: "SCAN_RESULT",
+        requestId: "r",
+        sessionId: "s",
+        findings: [sampleFinding({ category, preview })],
+        stats: { visibleChars: 1, truncated: false },
+      });
+      expect(result.ok, `${category} preview should be accepted`).toBe(true);
+    }
+  });
+
+  it("rejects raw values for the network and account categories", () => {
+    for (const [category, preview] of [
+      ["ip_address", "192.168.1.20"],
+      ["username", "alex"],
+      ["bank_account", "000123456789"],
+      ["financial", "$120,000.00"],
+    ] as const) {
+      const result = validateMessage({
+        type: "SCAN_RESULT",
+        requestId: "r",
+        sessionId: "s",
+        findings: [sampleFinding({ category, preview })],
+        stats: { visibleChars: 1, truncated: false },
+      });
+      expect(result.ok, `${category} raw value should be rejected`).toBe(false);
+    }
+  });
+
   it("rejects non-canonical finding metadata", () => {
     const invalidAttribute = validateMessage({
       type: "SCAN_RESULT",

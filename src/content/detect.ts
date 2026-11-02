@@ -44,6 +44,7 @@ export interface RawMatch {
 const CATEGORY_PRIORITY: FindingCategory[] = [
   "payment_card",
   "ssn",
+  "bank_account",
   "canadian_sin",
   "uk_nhs",
   "aadhaar",
@@ -54,9 +55,12 @@ const CATEGORY_PRIORITY: FindingCategory[] = [
   "dea",
   "mbi",
   "secrets",
+  "ip_address",
   "email",
   "phone",
+  "username",
   "dob",
+  "financial",
   "medical_record_number",
   "member_id",
   "address",
@@ -124,8 +128,25 @@ export function maskValue(category: FindingCategory, value: string): string {
     }
     case "payment_card": {
       const digits = value.replace(/\D/g, "");
-      if (digits.length < 4) return value.replace(/./g, "*");
+      // Only a real card number keeps its last four digits. A labeled CVV or
+      // expiry is also payment_card, and revealing "the last four" of a
+      // four-digit value would show the whole thing.
+      if (digits.length < 13) return value.replace(/./g, "*");
       return `************${digits.slice(-4)}`;
+    }
+    case "bank_account": {
+      const digits = value.replace(/\D/g, "");
+      // A four-digit account is common; showing "the last four" would show the
+      // whole number, so short accounts are masked completely.
+      if (digits.length <= 4) return value.replace(/./g, "*");
+      return `****${digits.slice(-4)}`;
+    }
+    case "ip_address":
+    case "financial":
+      return value.replace(/\S/g, "*");
+    case "username": {
+      const head = value[0] ?? "";
+      return head ? `${head}***` : "***";
     }
     case "npi": {
       const digits = value.replace(/\D/g, "");
@@ -191,6 +212,10 @@ export function placeholderLabelFor(category: FindingCategory): string {
     case "pan_india": return "PAN";
     case "australian_tfn": return "TFN";
     case "cpf": return "CPF";
+    case "ip_address": return "IP ADDRESS";
+    case "username": return "USERNAME";
+    case "bank_account": return "BANK ACCT";
+    case "financial": return "FINANCIAL";
   }
 }
 
@@ -533,6 +558,213 @@ function detectCpf(text: string): RawMatch[] {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// Network, account and compensation identifiers.
+//
+// These four categories were added after a synthetic disclosure test pack
+// showed a documentation-range IP, a labeled login, an ABA routing number and a
+// labeled salary surviving a scan. Each detector stays label-bound (or range-
+// bound, for IPs) because their raw shapes are ordinary text: every dotted
+// version string looks like IPv4, every 9-digit number can look like a routing
+// number, and a bare currency amount is a price, not personal data.
+
+const IPV4_RE = /\b(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\b/g;
+const IPV6_RE = /(?<![\w:])(?:[0-9A-Fa-f]{1,4}:){2,7}[0-9A-Fa-f]{0,4}(?::[0-9A-Fa-f]{1,4}){0,4}(?![\w:])/g;
+const IP_CUE_RE =
+  /\b(?:ip(?:\s*addr(?:ess)?)?|ipv4|ipv6|client\s+ip|remote\s+ip|source\s+ip|server\s+ip|host\s+addr(?:ess)?)\b/i;
+const VERSION_CUE_RE = /\b(?:v|version|ver\.?)\s*$/i;
+
+function parseIpv4(value: string): number[] | null {
+  const parts = value.split(".").map(Number);
+  if (parts.length !== 4) return null;
+  if (parts.some((p) => !Number.isInteger(p) || p < 0 || p > 255)) return null;
+  return parts;
+}
+
+/** Ranges that are not a host's public address: private, loopback, CGNAT,
+ * link-local, benchmarking and the RFC 5737 documentation blocks. */
+function isNonPublicIpv4(parts: number[]): boolean {
+  const [a, b, c] = parts;
+  if (a === 10 || a === 127) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 192 && b === 0 && c === 2) return true;
+  if (a === 198 && (b === 18 || b === 19)) return true;
+  if (a === 198 && b === 51 && c === 100) return true;
+  if (a === 203 && b === 0 && c === 113) return true;
+  return false;
+}
+
+function detectIpAddresses(text: string): RawMatch[] {
+  const out: RawMatch[] = [];
+  for (const m of text.matchAll(IPV4_RE)) {
+    const parts = parseIpv4(m[0]);
+    if (!parts) continue;
+    const [a] = parts;
+    // 0.0.0.0/8 is "this network", 224/4 is multicast and 255.255.255.255 is
+    // broadcast: none identifies a host.
+    if (a === 0 || a >= 224) continue;
+    const before = text.slice(Math.max(0, m.index - 40), m.index);
+    // "v1.2.3.4" is a version, not an address. A bare public IPv4 without a
+    // label is not reported either, because dotted section numbers are common
+    // and a real public address in a log almost always sits beside an IP cue.
+    if (VERSION_CUE_RE.test(before)) continue;
+    const hasCue = IP_CUE_RE.test(before);
+    const nonPublic = isNonPublicIpv4(parts);
+    if (!hasCue && !nonPublic) continue;
+    out.push({
+      category: "ip_address",
+      confidence: hasCue ? 0.9 : 0.8,
+      value: m[0],
+      start: m.index,
+      end: m.index + m[0].length,
+    });
+  }
+  for (const m of text.matchAll(IPV6_RE)) {
+    const value = m[0];
+    // A clock ("12:30:45") is colon-separated too. Require either compression
+    // ("::") or a hex letter, and always require an IP cue.
+    if (!value.includes("::") && !/[A-Fa-f]/.test(value)) continue;
+    const before = text.slice(Math.max(0, m.index - 40), m.index);
+    if (!IP_CUE_RE.test(before)) continue;
+    out.push({
+      category: "ip_address",
+      confidence: 0.88,
+      value,
+      start: m.index,
+      end: m.index + value.length,
+    });
+  }
+  return out;
+}
+
+const USERNAME_LABEL_RE =
+  /\b(?:user\s*name|username|login(?:\s*(?:name|id))?|user\s*id|handle|nick(?:name)?|screen\s*name|account\s*name)\b[^\n:]{0,16}[:=]\s*([A-Za-z0-9._@-]{3,64})\b/gi;
+const USERNAME_STOPWORDS = new Set([
+  "username",
+  "user",
+  "login",
+  "userid",
+  "user-id",
+  "account",
+  "accountname",
+  "email",
+  "name",
+  "password",
+  "required",
+  "optional",
+  "none",
+  "example",
+  "notprovided",
+  "not-applicable",
+  "enterusername",
+  "yourusername",
+]);
+
+function detectUsernames(text: string): RawMatch[] {
+  const out: RawMatch[] = [];
+  for (const m of text.matchAll(USERNAME_LABEL_RE)) {
+    const value = m[1];
+    if (!value) continue;
+    const normalized = value.toLowerCase().replace(/[\s_]+/g, "");
+    if (USERNAME_STOPWORDS.has(normalized)) continue;
+    const start = m.index + m[0].length - value.length;
+    out.push({
+      category: "username",
+      confidence: 0.82,
+      value,
+      start,
+      end: start + value.length,
+    });
+  }
+  return out;
+}
+
+const ABA_LABEL_RE =
+  /\b(?:routing|aba|transit)(?:\s*(?:number|no|#))?\b[^\n:]{0,16}[:=]?\s*(\d{9})\b/gi;
+const ACCOUNT_LABEL_RE =
+  /\b(?:bank\s+account|checking\s+account|savings\s+account|account\s*(?:number|no|#)|acct\.?\s*(?:number|no|#)?)\b[^\n:]{0,16}[:=]?\s*(\d[\d -]{3,19})/gi;
+
+/** ABA routing checksum: 3-7-1 weights over the nine digits. */
+function isValidAbaRouting(value: string): boolean {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length !== 9) return false;
+  const d = digits.split("").map(Number);
+  const sum = 3 * (d[0] + d[3] + d[6]) + 7 * (d[1] + d[4] + d[7]) + (d[2] + d[5] + d[8]);
+  return sum % 10 === 0;
+}
+
+function detectBankAccounts(text: string): RawMatch[] {
+  const out: RawMatch[] = [];
+  for (const m of text.matchAll(ABA_LABEL_RE)) {
+    const value = m[1];
+    if (!value || !isValidAbaRouting(value)) continue;
+    const start = m.index + m[0].length - value.length;
+    out.push({
+      category: "bank_account",
+      confidence: 0.9,
+      value,
+      start,
+      end: start + value.length,
+    });
+  }
+  for (const m of text.matchAll(ACCOUNT_LABEL_RE)) {
+    const raw = m[1];
+    if (!raw) continue;
+    const value = raw.trim();
+    if (!value) continue;
+    const digits = value.replace(/\D/g, "");
+    if (digits.length < 4 || digits.length > 17) continue;
+    // The capture class can end in a space or hyphen, so anchor the offset to
+    // the raw capture and then step past any leading whitespace. Subtracting
+    // the trimmed length from the end would shift the box right by one and
+    // leave the first digit uncovered.
+    const start = m.index + m[0].length - raw.length + (raw.length - raw.trimStart().length);
+    out.push({
+      category: "bank_account",
+      confidence: 0.82,
+      value,
+      start,
+      end: start + value.length,
+    });
+  }
+  return out;
+}
+
+const FINANCIAL_LABEL =
+  "(?:salary|compensation|total\\s+compensation|annual\\s+(?:salary|pay|compensation|income)|base\\s+(?:salary|pay)|gross\\s+(?:pay|income)|net\\s+(?:pay|income)|hourly\\s+(?:rate|pay|wage)|pay\\s+rate|wage|remuneration|bonus)";
+const FINANCIAL_RE = new RegExp(
+  `\\b${FINANCIAL_LABEL}\\b(?:[^\\n:]{0,24}[:=]|\\s+(?:of|is|was|at)?\\s*)\\s*([$€£¥]?\\s?\\d[\\d,]*(?:\\.\\d{1,2})?)`,
+  "gi"
+);
+
+function detectFinancial(text: string): RawMatch[] {
+  const out: RawMatch[] = [];
+  for (const m of text.matchAll(FINANCIAL_RE)) {
+    const raw = m[1];
+    if (!raw) continue;
+    const value = raw.trim();
+    if (!value) continue;
+    const digits = value.replace(/\D/g, "");
+    // "salary: 5" is not a compensation disclosure; require at least three
+    // digits so short counts do not become findings. A bare four-digit year
+    // is a date reference, not an amount.
+    if (digits.length < 3) continue;
+    if (/^(?:19|20)\d{2}$/.test(value)) continue;
+    const start = m.index + m[0].length - raw.length + (raw.length - raw.trimStart().length);
+    out.push({
+      category: "financial",
+      confidence: 0.85,
+      value,
+      start,
+      end: start + value.length,
+    });
+  }
+  return out;
+}
+
 const DOB_RE =
   /\b(0[1-9]|1[0-2])[\/\-](0[1-9]|[12][0-9]|3[01])[\/\-](\d{4}|\d{2})\b|\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\b|\b(19|20)\d{2}[\/\-](0[1-9]|1[0-2])[\/\-](0[1-9]|[12][0-9]|3[01])\b/g;
 const DOB_CUE_RE = /\b(?:dob|date\s+of\s+birth|born|birth\s*date|birthday|birthdate)\b/i;
@@ -707,7 +939,13 @@ const SECRET_PATTERNS: { label: string; regex: RegExp; confidence: number }[] = 
   { label: "OpenAI API key", regex: /\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b/g, confidence: 0.95 },
   { label: "Anthropic API key", regex: /\bsk-ant-[A-Za-z0-9_\-]{20,}\b/g, confidence: 0.95 },
   { label: "Google API key", regex: /\bAIza[0-9A-Za-z_\-]{35}\b/g, confidence: 0.95 },
-  { label: "Stripe API key", regex: /\b(?:rk|sk|pk)_(?:live|test)_[A-Za-z0-9]{24,48}\b/g, confidence: 0.99 },
+  // Stripe secret parts are alphanumeric in real keys (24–99 characters), but
+  // synthetic fixtures and documentation also use underscore-separated forms.
+  // The old {24,48} bound rejected both: it stopped at the first underscore and
+  // its 48-character ceiling could not match a modern 99-character key. A
+  // test-mode key is still a credential — it can read a sandbox — so masking it
+  // is the safe error.
+  { label: "Stripe API key", regex: /\b(?:rk|sk|pk)_(?:live|test)_[A-Za-z0-9_]{12,99}\b/g, confidence: 0.99 },
   { label: "GitHub token", regex: /\b(?:ghp_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59})\b/g, confidence: 0.99 },
   // Slack tokens are hyphen-separated groups: xoxb-<team>-<bot>-<secret>. The
   // single-segment form matched only the first group and left the rest of the
@@ -820,11 +1058,12 @@ function detectSecrets(text: string): RawMatch[] {
  * Decide whether a match is documentation filler rather than a real credential.
  *
  * Only the two low-confidence generic rules can be filtered. A structurally
- * specific rule (Stripe, GitHub, AWS key IDs, Slack webhooks) constrains its
- * own shape so tightly that a placeholder cannot match it — and applying a
- * prefix filter to those would silently drop a genuine secret that happened to
- * begin with "test" or "example", which is the one failure a redaction tool
- * must never have.
+ * specific rule (GitHub, AWS key IDs, Slack webhooks) constrains its own shape
+ * so tightly that ordinary prose cannot match it — and applying a prefix filter
+ * to those would silently drop a genuine secret that happened to begin with
+ * "test" or "example", which is the one failure a redaction tool must never
+ * have. Stripe test-mode keys are included on purpose: they are still
+ * credentials, so the fixture in the test pack must be masked, not excused.
  *
  * For the generic rules, over-flagging is the safe error: masking
  * `postgres://example:example@localhost/db` in a README costs nothing, while
@@ -847,8 +1086,11 @@ function isPlaceholder(pat: { confidence: number }, value: string): boolean {
   return false;
 }
 
+// "Plaza" and the other suffixes after it were missing, so a labeled office
+// address like "500 Training Plaza, Sampleville, TX 00000" produced no street
+// match at all and the whole address stayed visible.
 const STREET_RE =
-  /(?<![\dA-Za-z])\d{1,5}[^\S\n]+[A-Za-z][A-Za-z0-9.'-]*(?:[^\S\n]+[A-Za-z0-9.'-]+)*[^\S\n]+(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Dr|Drive|Ln|Lane|Ct|Court|Pl|Place|Way|Ter|Terrace|Cir|Circle|Pkwy|Parkway)(?:\.)?\b/g;
+  /(?<![\dA-Za-z])\d{1,5}[^\S\n]+[A-Za-z][A-Za-z0-9.'-]*(?:[^\S\n]+[A-Za-z0-9.'-]+)*[^\S\n]+(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Dr|Drive|Ln|Lane|Ct|Court|Pl|Place|Plaza|Way|Ter|Terrace|Cir|Circle|Pkwy|Parkway|Sq|Square|Hwy|Highway|Trl|Trail|Loop)(?:\.)?\b/g;
 // Optional apt/unit, then city, then state, then ZIP — each bounded by commas
 // so the city clause cannot swallow the state abbreviation.
 //
@@ -905,6 +1147,12 @@ const CARD_RE = new RegExp(
   "g"
 );
 const CARD_BRAND_RE = /\b(?:visa|mastercard|amex|american\s+express|discover|card)\b/i;
+// A CVV and an expiry are cardholder data even when the card number itself is
+// not present. They are reported only when a label names them: a bare "123" or
+// "12/30" is ordinary text, but "CVV placeholder: 123" is not.
+const CVV_LABEL_RE = /\b(?:cvv2?|cvc2?|csc)\b[^\n:]{0,24}[:=]\s*(\d{3,4})\b/gi;
+const CARD_EXPIRY_LABEL_RE =
+  /\b(?:exp(?:iry|iration)?|expires)\b[^\n:]{0,24}[:=]\s*((?:0[1-9]|1[0-2])\s*\/\s*(?:\d{2}|\d{4}))(?!\d|\/)/gi;
 
 function detectCards(text: string): RawMatch[] {
   const out: RawMatch[] = [];
@@ -917,19 +1165,43 @@ function detectCards(text: string): RawMatch[] {
     const confidence = CARD_BRAND_RE.test(before) ? 0.97 : 0.95;
     out.push({ category: "payment_card", confidence, value, start: m.index, end: m.index + value.length });
   }
+  for (const re of [CVV_LABEL_RE, CARD_EXPIRY_LABEL_RE]) {
+    re.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) {
+      const value = m[1];
+      if (!value) continue;
+      const start = m.index + m[0].length - value.length;
+      out.push({ category: "payment_card", confidence: 0.9, value, start, end: start + value.length });
+    }
+  }
   return out;
 }
 
 // A name label is either (a) at line start, which is how table/field labels
 // appear in the extracted text (e.g. "Patient name\nJane Doe"), or (b) a
 // mid-line label followed by a colon (e.g. "Patient name: Jane Doe").
-const NAME_LABEL_RE =
+//
+// "Provider" and "Employee" were missing, so "Provider: Dr. Taylor
+// Placeholder" and "Employee: Morgan Demo" stayed visible. "Customer number"
+// and "Provider phone" still are not names: the label must be followed
+// directly by the separator, and "number"/"phone" sits between.
+const NAME_LABEL_WORDS =
+  "(?:patient(?:\\s+name)?|member(?:\\s+name)?|full\\s+name|name|provider|employee|customer|client|contact|physician|doctor|clinician|guardian|subscriber|insured)";
+const NAME_LABEL_RE = new RegExp(
   // A line-start label without a separator is a heading word, not a label
   // ("Patient Intake Note" is not "Patient: <name>"). The separator is required;
   // the name must also sit on the label's own line, since letting NAME_RE skip
   // ahead across newlines turned later headings ("Full Name:") into "names".
-  /(?<=^|\n)\b(?:patient(?:\s+name)?|member(?:\s+name)?|full\s+name|name)\s*[:.]\s*(?=\S)|(?<![\w])\b(?:patient(?:\s+name)?|member(?:\s+name)?|full\s+name|name)\s*[:.]\s*(?=\S)/gi;
+  `(?<=^|\\n)\\b${NAME_LABEL_WORDS}\\s*[:.]\\s*(?=\\S)|(?<![\\w])\\b${NAME_LABEL_WORDS}\\s*[:.]\\s*(?=\\S)`,
+  "gi",
+);
 const NAME_RE = /\b[A-Z][a-zA-Z.'-]*(?:[ \t]+[A-Z][a-zA-Z.'-]*){1,2}\b/;
+// A name in prose directly followed by a parenthetical identifier is a strong
+// clinical-note signal ("Casey Fictional (DOB ...; MRN ...)"). It does not sit
+// after a field label, so NAME_LABEL_RE cannot see it.
+const NAME_BEFORE_IDENTIFIER_RE =
+  /\b([A-Z][a-zA-Z.'-]*(?:[ \t]+[A-Z][a-zA-Z.'-]*){1,2})[ \t]*\((?=\s*(?:DOB|MRN|Date of Birth|date of birth|Member ID|member id)\b)/g;
 
 const GENERIC_NAME_LABELS = new Set([
   "first name",
@@ -976,6 +1248,17 @@ function detectNames(text: string): RawMatch[] {
       end: valueStart + nameStart + value.length,
     });
   }
+  for (const m of text.matchAll(NAME_BEFORE_IDENTIFIER_RE)) {
+    const value = m[1];
+    if (!value || GENERIC_NAME_LABELS.has(value.toLowerCase().trim())) continue;
+    out.push({
+      category: "possible_name",
+      confidence: 0.6,
+      value,
+      start: m.index,
+      end: m.index + value.length,
+    });
+  }
   return out;
 }
 
@@ -999,6 +1282,10 @@ const DETECTORS: Partial<Record<FindingCategory, (text: string) => RawMatch[]>> 
   pan_india: detectPanIndia,
   australian_tfn: detectAustralianTfn,
   cpf: detectCpf,
+  ip_address: detectIpAddresses,
+  username: detectUsernames,
+  bank_account: detectBankAccounts,
+  financial: detectFinancial,
 };
 
 /**

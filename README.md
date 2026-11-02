@@ -255,9 +255,9 @@ flowchart TD
 
 The engine includes deterministic, algorithmic detectors for all primary regulatory and compliance categories:
 
-- **PII:** US SSN, ITIN, passport numbers, email addresses, phone numbers, physical addresses, dates of birth.
-- **Financial:** Payment card numbers (Luhn checksum validation + BIN classification), IBAN, ABA routing numbers.
-- **PHI / Healthcare:** National Provider Identifiers (NPI checksum), DEA registration numbers, Medicare Beneficiary Identifiers (CMS MBI), Medical Record Numbers (MRN), LOINC codes.
+- **PII:** US SSN/ITIN, email addresses, phone numbers, physical addresses, dates of birth, IP addresses (IPv4/IPv6), usernames and login handles.
+- **Financial:** Payment card numbers (Luhn checksum validation), bank account and ABA routing numbers (checksum validated), salary and compensation amounts.
+- **PHI / Healthcare:** National Provider Identifiers (NPI checksum), DEA registration numbers, Medicare Beneficiary Identifiers (CMS MBI), Medical Record Numbers (MRN).
 - **International Identifiers:** Canadian SIN (Luhn check), UK NHS Number (Mod-11 check), Indian Aadhaar (Verhoeff check) & PAN, Australian TFN (Mod-11 check), Brazilian CPF (Dual checksum).
 - **Secrets & Credentials:** API keys, AWS access keys, JWT tokens, Bearer tokens, private SSH/RSA keys, database connection strings.
 - **Custom:** User-defined rules created via the Redaction Wizard.
