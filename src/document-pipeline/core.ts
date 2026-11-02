@@ -5,6 +5,7 @@ import { maskContext, maskValue } from "../content/detect.js";
 import { detect } from "../content/detect.js";
 import type { OcrPageResult, OcrToken } from "./ocr.js";
 import { tokenSpans as computeTokenSpans, type TokenSpan } from "./offsets.js";
+import { mergeOverlappingRects, sortReadingOrder } from "./spatial.js";
 
 /**
  * Pure document-analysis logic shared by preview and redact paths. Runs inside
@@ -55,11 +56,16 @@ function unionRect(rects: Rect[]): Rect {
 
 /**
  * Merge matched token boxes into one or more rects, splitting on line changes
- * so a multi-line match yields separate redaction boxes.
+ * so a multi-line match yields separate redaction boxes. Boxes are emitted in
+ * reading order (top-to-bottom, left-to-right) and overlapping boxes from
+ * adjacent OCR line groups are unioned into a single block.
  */
 function rectsForSpans(spans: TokenSpan<OcrToken>[]): Rect[] {
+  // Reading order first so each line group emits left-to-right and lines emit
+  // top-to-bottom, regardless of the order OCR returned tokens.
+  const ordered = sortReadingOrder(spans);
   const groups: TokenSpan<OcrToken>[][] = [];
-  for (const span of spans) {
+  for (const span of ordered) {
     const last = groups[groups.length - 1];
     if (last && span.token.lineIndex === last[0].token.lineIndex) {
       last.push(span);
@@ -83,8 +89,9 @@ function rectsForSpans(spans: TokenSpan<OcrToken>[]): Rect[] {
     }
     out.push(...merged);
   }
-  // Prune pathological rects (e.g. zero-area) and merge anything that still overlaps.
-  return out.filter((r) => r.width > 0 && r.height > 0);
+  // Prune pathological rects (e.g. zero-area) and merge anything that still
+  // overlaps across line groups into one block.
+  return mergeOverlappingRects(out.filter((r) => r.width > 0 && r.height > 0));
 }
 
 function maskedContext(fullText: string, start: number, end: number): string {
