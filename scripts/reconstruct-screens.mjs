@@ -830,7 +830,7 @@ try {
       </div>
       <div class="card__body">
         <strong>Presets &amp; 20 Detection Categories</strong>
-        <span>Compliance presets: HIPAA, PCI DSS, GDPR, PIPEDA, UK GDPR, India DPDP, Australia Privacy, Brazil LGPD, Developer Secrets. Checkboxes for all 20 built-in detectors.</span>
+        <span>Compliance presets: HIPAA, PCI DSS, GDPR, PIPEDA, UK GDPR, India DPDP, Australia Privacy, Brazil LGPD, Developer Secrets. Checkboxes for all 23 built-in detectors.</span>
         <div class="tag-row">
           <span class="tag">#preset-select</span>
           <span class="tag">#category-list</span>

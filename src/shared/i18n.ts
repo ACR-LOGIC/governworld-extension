@@ -137,6 +137,10 @@ export const CATEGORY_TRANSLATIONS: Record<LanguageCode, Record<string, string>>
     pan_india: "Indian PAN Card",
     australian_tfn: "Australian Tax File Number (TFN)",
     cpf: "Brazilian CPF Number",
+    ip_address: "IP address",
+    username: "Username / login",
+    bank_account: "Bank account / routing number",
+    financial: "Salary / compensation",
   },
   es: {
     "page_protection": "Page protection",
@@ -250,6 +254,10 @@ export const CATEGORY_TRANSLATIONS: Record<LanguageCode, Record<string, string>>
     pan_india: "Tarjeta PAN de la India",
     australian_tfn: "Número de archivo fiscal de Australia (TFN)",
     cpf: "Número de CPF de Brasil",
+    ip_address: "Dirección IP",
+    username: "Nombre de usuario / inicio de sesión",
+    bank_account: "Cuenta bancaria / número de ruta",
+    financial: "Salario / compensación",
   },
   fr: {
     "page_protection": "Page protection",
@@ -363,6 +371,10 @@ export const CATEGORY_TRANSLATIONS: Record<LanguageCode, Record<string, string>>
     pan_india: "Carte PAN indienne",
     australian_tfn: "Numéro TFN australien",
     cpf: "Numéro de CPF brésilien",
+    ip_address: "Adresse IP",
+    username: "Nom d'utilisateur / identifiant",
+    bank_account: "Compte bancaire / numéro de routage",
+    financial: "Salaire / rémunération",
   },
   de: {
     "page_protection": "Page protection",
@@ -476,6 +488,10 @@ export const CATEGORY_TRANSLATIONS: Record<LanguageCode, Record<string, string>>
     pan_india: "Indische PAN-Karte",
     australian_tfn: "Australische Steuernummer (TFN)",
     cpf: "Brasilianische CPF-Nummer",
+    ip_address: "IP-Adresse",
+    username: "Benutzername / Login",
+    bank_account: "Bankkonto / Routing-Nummer",
+    financial: "Gehalt / Vergütung",
   },
   ja: {
     "page_protection": "Page protection",
@@ -589,6 +605,10 @@ export const CATEGORY_TRANSLATIONS: Record<LanguageCode, Record<string, string>>
     pan_india: "インド・PANカード番号",
     australian_tfn: "豪州納税者番号 (TFN)",
     cpf: "ブラジルCPF納税者番号",
+    ip_address: "IPアドレス",
+    username: "ユーザー名 / ログイン",
+    bank_account: "銀行口座・ABA番号",
+    financial: "給与・報酬",
   },
   pt: {
     "page_protection": "Page protection",
@@ -702,6 +722,10 @@ export const CATEGORY_TRANSLATIONS: Record<LanguageCode, Record<string, string>>
     pan_india: "Cartão PAN da Índia",
     australian_tfn: "Número de Arquivo Fiscal Australiano (TFN)",
     cpf: "Cadastro de Pessoas Físicas (CPF)",
+    ip_address: "Endereço IP",
+    username: "Nome de usuário / login",
+    bank_account: "Conta bancária / número de roteamento",
+    financial: "Salário / remuneração",
   },
   zh: {
     "page_protection": "Page protection",
@@ -815,6 +839,10 @@ export const CATEGORY_TRANSLATIONS: Record<LanguageCode, Record<string, string>>
     pan_india: "印度 PAN 税务卡号",
     australian_tfn: "澳大利亚税号 (TFN)",
     cpf: "巴西联邦税号 (CPF)",
+    ip_address: "IP 地址",
+    username: "用户名 / 登录名",
+    bank_account: "银行账户 / 路由号码",
+    financial: "薪资 / 报酬",
   },
 };
 

@@ -74,6 +74,9 @@ const CASES: Case[] = [
   // Google keys are AIza plus exactly 35 characters.
   { label: "Google API key", value: fx("AIza", "SyD1234567890abcdefghijklmnopqrstuv"), minConfidence: 0.95 },
   { label: "Stripe live key", value: fx("sk_live_", "4eC39HqLyjWDarjtT1zdp7dc"), minConfidence: 0.99 },
+  // Modern Stripe secrets are up to 99 characters; the old {24,48} bound
+  // stopped matching them entirely.
+  { label: "Stripe live key (99-character secret)", value: fx("sk_live_", "a".repeat(99)), minConfidence: 0.99 },
   { label: "GitHub PAT", value: fx("ghp_", "16C7e42F292c6912E7710c838347Ae178B4a"), minConfidence: 0.99 },
   // Slack: three hyphen-delimited groups. Must be captured whole.
   {

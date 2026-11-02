@@ -66,7 +66,7 @@ describe("i18n Multi-Language Module", () => {
     expect(t("en", "non_existent_key_xyz")).toBe("non_existent_key_xyz");
   });
 
-  it("getCategoryLabel translates all 20 categories across languages", () => {
+  it("getCategoryLabel translates every category across languages", () => {
     const codes = SUPPORTED_LANGUAGES.map((l) => l.code);
     for (const cat of ALL_CATEGORIES) {
       for (const lang of codes) {

@@ -17,7 +17,7 @@ The E2E test suite provides opaque-box, requirement-driven verification covering
 ### Test Files Created
 | File Path | Description | Test Count |
 |-----------|-------------|:----------:|
-| `tests/e2e-audit-tier1-features.test.ts` | Tier 1: Feature Isolation Coverage (all 19 categories) | 98 |
+| `tests/e2e-audit-tier1-features.test.ts` | Tier 1: Feature Isolation Coverage (all categories) | 98 |
 | `tests/e2e-audit-tier2-boundaries.test.ts` | Tier 2: Boundary Value Analysis & Corner Cases | 95 |
 | `tests/e2e-audit-tier3-combinations.test.ts` | Tier 3: Pairwise Cross-Feature Interactions | 16 |
 | `tests/e2e-audit-tier4-scenarios.test.ts` | Tier 4: Real-World End-to-End Application Scenarios | 5 |

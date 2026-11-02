@@ -466,10 +466,10 @@ describe("Tier 3: Pairwise Cross-Feature Interactions", () => {
       expect(manifest.permissions).toContain("storage");
     });
 
-    it("I9.2: ALL_CATEGORIES count (20) includes all 19 built-in detection categories", () => {
-      expect(ALL_CATEGORIES).toHaveLength(20);
+    it("I9.2: ALL_CATEGORIES count (24) includes all 23 built-in detection categories", () => {
+      expect(ALL_CATEGORIES).toHaveLength(24);
       const builtins = ALL_CATEGORIES.filter((c) => c !== "custom");
-      expect(builtins).toHaveLength(19);
+      expect(builtins).toHaveLength(23);
     });
   });
 });

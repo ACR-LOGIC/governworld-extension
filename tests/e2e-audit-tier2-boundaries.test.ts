@@ -1000,10 +1000,10 @@ describe("Tier 2: Boundary Value Analysis & Corner Cases — 19 Master Issue Cat
       expect(manifest.background.type).toBe("module");
     });
 
-    it("B19.3: ALL_CATEGORIES has exactly 20 categories with unique names", () => {
-      expect(ALL_CATEGORIES).toHaveLength(20);
+    it("B19.3: ALL_CATEGORIES has exactly 24 categories with unique names", () => {
+      expect(ALL_CATEGORIES).toHaveLength(24);
       const unique = new Set(ALL_CATEGORIES);
-      expect(unique.size).toBe(20);
+      expect(unique.size).toBe(24);
     });
 
     it("B19.4: buildOcrWorkerOptions langPath points to tessdata directory", () => {

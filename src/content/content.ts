@@ -717,7 +717,8 @@ if (g.__gwRedactionContentLoaded !== true) {
             const enabledCategories: FindingCategory[] = msg.settings?.enabledCategories ?? [
               "email", "phone", "ssn", "dob", "medical_record_number",
               "member_id", "npi", "dea", "mbi", "address", "payment_card", "secrets", "possible_name",
-              "canadian_sin", "uk_nhs", "aadhaar", "pan_india", "australian_tfn", "cpf", "custom"
+              "canadian_sin", "uk_nhs", "aadhaar", "pan_india", "australian_tfn", "cpf",
+              "ip_address", "username", "bank_account", "financial", "custom"
             ];
             const threshold = (cat: FindingCategory) => msg.settings?.confidenceThresholds?.[cat] ?? 0;
             const matches = detect(selText, enabledCategories, customPatterns).filter(

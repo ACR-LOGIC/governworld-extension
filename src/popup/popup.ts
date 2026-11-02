@@ -140,6 +140,10 @@ export const CATEGORY_LABELS: Record<string, string> = {
   pan_india: "Indian PAN Card",
   australian_tfn: "Australian TFN",
   cpf: "Brazilian CPF",
+  ip_address: "IP address",
+  username: "Username / login",
+  bank_account: "Bank account / routing number",
+  financial: "Salary / compensation",
   custom: "Custom pattern",
 };
 
@@ -156,6 +160,7 @@ export const HEALTHCARE_CATEGORIES: FindingCategory[] = [
   "email",
   "possible_name",
   "uk_nhs",
+  "ip_address",
 ];
 
 export const INTERNATIONAL_CATEGORIES: FindingCategory[] = [
@@ -180,6 +185,8 @@ export const FINANCIAL_CATEGORIES: FindingCategory[] = [
   "pan_india",
   "australian_tfn",
   "cpf",
+  "bank_account",
+  "financial",
   "address",
   "phone",
   "email",
@@ -352,7 +359,12 @@ export async function renderCategories(settings: {
   if (!list) return;
   const lang = settings.language || currentLang || "en";
   const locked = new Set<FindingCategory>(settings.lockedCategories ?? []);
+  // The sidepanel transform moves the "Protection Categories" heading into a
+  // <legend> inside this fieldset. replaceChildren() would delete it and leave
+  // the generated sidepanel with an unlabelled checkbox group.
+  const legend = list.querySelector(":scope > legend");
   list.replaceChildren();
+  if (legend) list.appendChild(legend);
   for (const category of ALL_CATEGORIES) {
     const label = el("label");
     const check = document.createElement("input");

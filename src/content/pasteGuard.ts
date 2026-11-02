@@ -37,6 +37,16 @@ export const CATEGORY_LABELS: Record<string, string> = {
   secrets: "API Key / Secret",
   possible_name: "Personal Name",
   custom: "Custom Pattern",
+  canadian_sin: "Canadian SIN",
+  uk_nhs: "UK NHS Number",
+  aadhaar: "Indian Aadhaar",
+  pan_india: "Indian PAN Card",
+  australian_tfn: "Australian TFN",
+  cpf: "Brazilian CPF",
+  ip_address: "IP Address",
+  username: "Username",
+  bank_account: "Bank Account / Routing Number",
+  financial: "Salary / Compensation",
 };
 
 /** Specific secret label resolver to make the preview dialog crystal clear */

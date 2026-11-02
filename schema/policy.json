@@ -41,7 +41,11 @@
           "aadhaar",
           "pan_india",
           "australian_tfn",
-          "cpf"
+          "cpf",
+          "ip_address",
+          "username",
+          "bank_account",
+          "financial"
         ]
       }
     }
