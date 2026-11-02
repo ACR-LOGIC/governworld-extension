@@ -33,6 +33,7 @@ beforeAll(() => {
 
 const { buildOcrWorkerOptions } = await import("../src/document-pipeline/ocr.js");
 const { BUNDLED_OCR_CODES, traineddataFile } = await import("../src/shared/ocrLanguages.js");
+const { langDataPresent } = await import("../src/document-pipeline/ocr.js");
 
 describe("OCR worker configuration has no remote path", () => {
   it("points worker, core, and language data at packaged assets", () => {
@@ -65,7 +66,7 @@ describe("OCR worker configuration has no remote path", () => {
     expect(opts.logger("secret text" as never)).toBeUndefined();
   });
 
-  it("does not reintroduce a CDN fallback anywhere in the OCR source", () => {
+it("does not reintroduce a CDN fallback anywhere in the OCR source", () => {
     const src = readFileSync(join(extRoot, "src/document-pipeline/ocr.ts"), "utf8");
     // Only allowed in a comment explaining what is being overridden.
     const codeLines = src
