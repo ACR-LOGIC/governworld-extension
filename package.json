@@ -43,7 +43,9 @@
     "test:invocation": "node scripts/verify-invocation-feedback.mjs",
     "test:review": "node scripts/verify-review-surface.mjs",
     "test:doc-window": "node scripts/verify-doc-window.mjs",
-    "lint:security": "eslint scripts/ build.mjs"
+    "lint:security": "eslint scripts/ build.mjs",
+    "test:network-inspection": "node scripts/verify-network-inspection.mjs",
+    "test:wizard-flow": "node scripts/record-wizard-demo.mjs"
   },
   "dependencies": {
     "mammoth": "^1.13.0",

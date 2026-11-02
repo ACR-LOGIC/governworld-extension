@@ -1820,6 +1820,65 @@ body[data-reduced-motion="true"] *::after {
   gap: 6px;
 }
 
+/* ==========================================================================
+   Logic Wizard — Side Panel Handoff Attention Pulse
+   ========================================================================== */
+
+@keyframes wizardHandoffPulse {
+  0% {
+    box-shadow: 
+      0 0 0 0 rgba(56, 189, 248, 0.75),
+      0 0 12px rgba(56, 189, 248, 0.35);
+    border-color: #38bdf8;
+    transform: translateY(0) scale(1);
+  }
+  35% {
+    box-shadow: 
+      0 0 0 7px rgba(56, 189, 248, 0),
+      0 0 18px rgba(56, 189, 248, 0.55);
+    border-color: #7dd3fc;
+    transform: translateY(-1px) scale(1.03);
+  }
+  70% {
+    box-shadow: 
+      0 0 0 0 rgba(56, 189, 248, 0),
+      0 0 12px rgba(56, 189, 248, 0.25);
+    border-color: #38bdf8;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    box-shadow: 
+      0 0 0 0 rgba(56, 189, 248, 0),
+      0 0 0 rgba(56, 189, 248, 0);
+    transform: translateY(0) scale(1);
+  }
+}
+
+.wizard-handoff-highlight {
+  position: relative;
+  z-index: 2;
+  color: #f8fafc !important;
+  background: linear-gradient(135deg, rgba(14, 165, 233, 0.24), rgba(56, 189, 248, 0.12)) !important;
+  border: 1px solid #38bdf8 !important;
+  border-radius: 6px;
+  padding: 2px 8px;
+  animation: wizardHandoffPulse 1.35s cubic-bezier(0.22, 1, 0.36, 1) 3;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.wizard-dropzone-highlight {
+  border-color: rgba(56, 189, 248, 0.65) !important;
+  box-shadow: inset 0 0 14px rgba(56, 189, 248, 0.12), 0 0 10px rgba(56, 189, 248, 0.18) !important;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wizard-handoff-highlight {
+    animation: none;
+    box-shadow: 0 0 0 2px #38bdf8, 0 0 12px rgba(56, 189, 248, 0.45);
+  }
+}
+
 /* The status hero that used to be animated here was removed; the reduced-motion
    override went with it. Other animated indicators remain opted out below. */
 body[data-reduced-motion="true"] *,
