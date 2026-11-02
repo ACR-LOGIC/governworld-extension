@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 import { describe, it, expect } from "vitest";
-import { analyzeExamples, testPattern, isSafeRegex } from "../src/shared/wizardAnalyzer.js";
+import { analyzeExamples, testPattern, isSafeRegex, parseSampleLines } from "../src/shared/wizardAnalyzer.js";
 import {
   parseCustomPattern,
   buildContributionPayload,
@@ -179,5 +179,22 @@ describe("Logic Wizard & Community Contribution — 13 Privacy Invariants E2E Su
 
   it("Invariant 13: Audit trail immutability — custom pattern category integrates with settings and audit data types", () => {
     expect(DEFAULT_SETTINGS.enabledCategories).toContain("email");
+  });
+
+  it("Invariant 14: Sample line ingestion safety — parseSampleLines normalizes, strips control characters, ignores comments, and bounds max count", () => {
+    const rawSample = [
+      "# Internal sample list",
+      "// Confidential identifiers",
+      "DOC-001",
+      "DOC-002\x00",
+      "DOC-001",
+      "",
+      "DOC-003",
+    ].join("\n");
+    const parsed = parseSampleLines(rawSample, 10);
+    expect(parsed).toEqual(["DOC-001", "DOC-002", "DOC-003"]);
+    const analysis = analyzeExamples(parsed, "custom");
+    expect(analysis.proposedPattern).toBe("\\b[A-Z][A-Z][A-Z]-\\d\\d\\d{1}\\b");
+    expect(analysis.qualityScore).toBe(1);
   });
 });

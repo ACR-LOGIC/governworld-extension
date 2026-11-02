@@ -576,3 +576,37 @@ export function testPattern(
   }
   return results;
 }
+
+/**
+ * Safely parse and sanitize sample text lines from user input or imported files.
+ *
+ * - Normalizes newlines (\r\n, \r, \n)
+ * - Strips null bytes and non-printable control characters
+ * - Trims whitespace
+ * - Drops empty lines and comments (# or //)
+ * - Drops oversized lines (>256 characters) to protect memory/ReDoS
+ * - Deduplicates while preserving discovery order
+ * - Bounded by maxLines (defaults to 100)
+ */
+export function parseSampleLines(rawText: string, maxLines = 100): string[] {
+  if (!rawText || typeof rawText !== "string") return [];
+
+  const sanitized = rawText.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "");
+  const rawLines = sanitized.split(/\r\n|\r|\n/);
+  const seen = new Set<string>();
+  const results: string[] = [];
+
+  for (const rawLine of rawLines) {
+    const trimmed = rawLine.trim();
+    if (!trimmed) continue;
+    if (trimmed.startsWith("#") || trimmed.startsWith("//")) continue;
+    if (trimmed.length > 256) continue;
+    if (!seen.has(trimmed)) {
+      seen.add(trimmed);
+      results.push(trimmed);
+      if (results.length >= maxLines) break;
+    }
+  }
+
+  return results;
+}
