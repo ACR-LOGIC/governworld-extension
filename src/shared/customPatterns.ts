@@ -21,6 +21,7 @@ import {
   luhnValid,
 } from "../validators/index.js";
 import type { FindingCategory } from "./types.js";
+import type { LocationRule } from "./locationAwareWizard.js";
 
 /**
  * Custom user-authored detection patterns for the Logic Wizard.
@@ -36,6 +37,9 @@ import type { FindingCategory } from "./types.js";
 
 export type CustomPatternCategory = FindingCategory | "custom";
 
+/** Detection strategy for a custom rule. Defaults to "text" for backwards compat. */
+export type CustomPatternStrategy = "text" | "location" | "hybrid";
+
 export type ContributionStatus =
   | "local_only"
   | "submitted"
@@ -50,10 +54,14 @@ export interface CustomPattern {
   name: string;
   /** Which category lane this pattern serves. */
   category: CustomPatternCategory;
-  /** Regex source string (max 512 chars, user-reviewed). */
-  pattern: string;
-  /** Allowed flags: g, i, m only. */
-  flags: string;
+  /** Detection strategy. Defaults to "text" for legacy regex-only rules. */
+  strategy?: CustomPatternStrategy;
+  /** Regex source string (max 512 chars, user-reviewed). Required for text/hybrid. */
+  pattern?: string;
+  /** Allowed flags: g, i, m only. Required for text/hybrid. */
+  flags?: string;
+  /** Normalized page-region rule for location/hybrid strategies. */
+  location?: LocationRule;
   /** Which capture group holds the sensitive value (0 = full match). */
   captureGroup?: number;
   /** 0..1 — user-set after testing. */
@@ -177,6 +185,28 @@ export type ParseCustomPatternResult =
   | { ok: true; pattern: CustomPattern }
   | { ok: false; error: string };
 
+function isLocationRule(value: unknown): value is LocationRule {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Partial<LocationRule>;
+  if (v.version !== 1) return false;
+  if (v.strategy !== "location") return false;
+  if (typeof v.sampleCount !== "number" || !Number.isInteger(v.sampleCount) || v.sampleCount < 3) return false;
+  if (typeof v.pageAspectRatio !== "number" || !Number.isFinite(v.pageAspectRatio) || v.pageAspectRatio <= 0) return false;
+  if (typeof v.confidence !== "number" || !Number.isFinite(v.confidence)) return false;
+  if (v.requiresReview !== true) return false;
+  if (typeof v.region !== "object" || v.region === null) return false;
+  const r = v.region as Partial<LocationRule["region"]>;
+  for (const n of [r.x, r.y, r.width, r.height]) {
+    if (typeof n !== "number" || !Number.isFinite(n)) return false;
+  }
+  if (typeof v.tolerance !== "object" || v.tolerance === null) return false;
+  const t = v.tolerance as Partial<LocationRule["tolerance"]>;
+  for (const n of [t.center, t.sizeRatio]) {
+    if (typeof n !== "number" || !Number.isFinite(n)) return false;
+  }
+  return true;
+}
+
 export function parseCustomPattern(raw: unknown): ParseCustomPatternResult {
   if (!isRecord(raw)) return { ok: false, error: "Not an object" };
 
@@ -193,29 +223,60 @@ export function parseCustomPattern(raw: unknown): ParseCustomPatternResult {
   if (!isCustomCategory(raw.category))
     return { ok: false, error: `Unknown category: ${String(raw.category)}` };
 
-  if (
-    typeof raw.pattern !== "string" ||
-    raw.pattern.length === 0 ||
-    raw.pattern.length > MAX_PATTERN_SOURCE
-  )
-    return {
-      ok: false,
-      error: `pattern must be 1–${MAX_PATTERN_SOURCE} chars`,
-    };
+  const strategy: CustomPatternStrategy =
+    raw.strategy === "location" || raw.strategy === "hybrid" || raw.strategy === "text"
+      ? raw.strategy
+      : "text";
 
-  if (typeof raw.flags !== "string" || !isValidFlags(raw.flags))
-    return {
-      ok: false,
-      error: "flags must contain only g, i, m (no s, u, d, v)",
-    };
+  // Location-only rules do not carry a regex; text/hybrid rules do.
+  const needsPattern = strategy === "text" || strategy === "hybrid";
 
-  try {
-    new RegExp(raw.pattern, raw.flags);
-  } catch {
-    return { ok: false, error: "pattern is not a valid regular expression" };
+  let pattern: string | undefined;
+  let flags: string | undefined;
+  if (needsPattern) {
+    if (
+      typeof raw.pattern !== "string" ||
+      raw.pattern.length === 0 ||
+      raw.pattern.length > MAX_PATTERN_SOURCE
+    )
+      return {
+        ok: false,
+        error: `pattern must be 1–${MAX_PATTERN_SOURCE} chars`,
+      };
+    if (typeof raw.flags !== "string" || !isValidFlags(raw.flags))
+      return {
+        ok: false,
+        error: "flags must contain only g, i, m (no s, u, d, v)",
+      };
+    try {
+      new RegExp(raw.pattern, raw.flags);
+    } catch {
+      return { ok: false, error: "pattern is not a valid regular expression" };
+    }
+    if (!isSafeRegex(raw.pattern, raw.flags)) {
+      return { ok: false, error: "pattern is not safe to execute" };
+    }
+    pattern = raw.pattern;
+    flags = raw.flags;
+  } else {
+    // Location-only: ignore any supplied pattern/flags.
+    pattern = undefined;
+    flags = undefined;
   }
-  if (!isSafeRegex(raw.pattern, raw.flags)) {
-    return { ok: false, error: "pattern is not safe to execute" };
+
+  // Validate the location rule shape when present.
+  let location: LocationRule | undefined;
+  if (raw.location !== undefined) {
+    if (!isLocationRule(raw.location)) {
+      return { ok: false, error: "location must be a valid location rule" };
+    }
+    location = raw.location as LocationRule;
+  }
+  if (strategy === "location" && !location) {
+    return { ok: false, error: "location strategy requires a location rule" };
+  }
+  if (strategy === "hybrid" && (!location || !pattern)) {
+    return { ok: false, error: "hybrid strategy requires both a pattern and a location rule" };
   }
 
   const captureGroup =
@@ -309,8 +370,10 @@ export function parseCustomPattern(raw: unknown): ParseCustomPatternResult {
       id: raw.id,
       name: raw.name,
       category: raw.category as CustomPatternCategory,
-      pattern: raw.pattern,
-      flags: raw.flags,
+      strategy,
+      ...(pattern !== undefined ? { pattern } : {}),
+      ...(flags !== undefined ? { flags } : {}),
+      ...(location !== undefined ? { location } : {}),
       captureGroup,
       confidence: raw.confidence,
       ...(contextCues ? { contextCues } : {}),
@@ -379,6 +442,9 @@ export interface ContributionBlocked {
 export function screenContributionPayload(
   pattern: CustomPattern
 ): ContributionScreenResult | ContributionBlocked {
+  if (pattern.strategy === "location" || !pattern.pattern || !pattern.flags) {
+    return { safe: false, field: "pattern", kind: "location_rule_not_contributable" };
+  }
   const screened: Array<{ field: string; text: string }> = [
     { field: "name", text: pattern.name },
     { field: "pattern", text: pattern.pattern },
@@ -502,8 +568,8 @@ export function buildContributionPayload(
   const payload: ContributionPayload = {
     name: pattern.name,
     category: pattern.category,
-    pattern: pattern.pattern,
-    flags: pattern.flags,
+    pattern: pattern.pattern!,
+    flags: pattern.flags!,
     captureGroup: pattern.captureGroup ?? 0,
     confidence: pattern.confidence,
   };
