@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 // The document pipeline is the one part of this extension that must have no
 // network path: it is handed raw document bytes and image pixels, and a remote
 // fetch from inside it would mean protected content could reach a third party

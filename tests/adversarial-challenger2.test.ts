@@ -1,3 +1,4 @@
+// Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 import { describe, it, expect } from "vitest";
 import { detect } from "../src/content/detect.js";
 import { normalizeUnicodeWithMapping, mapNormalizedToOriginalOffset } from "../src/content/normalization/unicode.js";
