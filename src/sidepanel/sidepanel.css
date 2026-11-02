@@ -73,6 +73,16 @@ body {
   overflow-x: hidden;
 }
 
+/* Scrollbar polish */
+::-webkit-scrollbar {
+  width: 6px;
+  background: #0a0a0a;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2a2a;
+  border-radius: 3px;
+}
+
 body {
   min-height: 100vh;
   background:
@@ -1050,15 +1060,18 @@ body[data-reduced-motion="true"] *::after {
 /* ---------- App header ---------- */
 .app-header {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
+  text-align: center;
   gap: 10px;
+  padding: 16px 12px 12px;
 }
 
 .brand {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -1069,11 +1082,11 @@ body[data-reduced-motion="true"] *::after {
    two stack. */
 .brand-icon {
   display: block;
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-sm);
-  flex: none;
+  width: 68px;
+  height: 68px;
+  border-radius: 14px;
   object-fit: contain;
+  flex: none;
 }
 
 .brand-text {
@@ -1085,22 +1098,24 @@ body[data-reduced-motion="true"] *::after {
 
 .brand-text h1 {
   margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-size: 1.25rem;
+  font-weight: 700;
 }
 
 .brand-subtitle {
   color: var(--text-muted);
-  font-size: 11px;
-  letter-spacing: 0.04em;
+  font-size: 0.8rem;
+  opacity: 0.75;
 }
 
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex: none;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 .header-sidepanel-btn {
