@@ -982,7 +982,13 @@ async function openFullScreenReview(
     name: doc.name,
     mimeType: doc.mimeType,
     kind: doc.kind,
-    pages: doc.pages,
+    pages: doc.pages.map((p) => ({
+      ...p,
+      findings: p.findings.map((f) => ({
+        ...f,
+        selected: selectedDocFindingIds.has(f.id),
+      })),
+    })),
     // The review page shows the document at full size, so it is also where a
     // user decides whether the scan covered the document. It needs the same
     // window facts the popup has, or it would imply a partial pass was whole.
@@ -1298,6 +1304,7 @@ function renderDocFindings(): void {
       check.setAttribute("aria-label", `Select ${getCategoryLabel(currentLang, finding.category)} finding on page ${page.index + 1}`);
       check.addEventListener("change", () => {
         check.setAttribute("aria-checked", check.checked ? "true" : "false");
+        finding.selected = check.checked;
         if (check.checked) selectedDocFindingIds.add(finding.id);
         else selectedDocFindingIds.delete(finding.id);
         updateDocRedactBtn();
@@ -1587,16 +1594,16 @@ function renderDoc(state: DocUiState): void {
 
 function buildDocBoxes(): { pageIndex: number; rects: Rect[] }[] {
   if (!lastDoc) return [];
-  const byId = new Map<string, { pageIndex: number; rects: Rect[] }>();
+  const byPage = new Map<number, Rect[]>();
   for (const page of lastDoc.pages) {
     for (const finding of page.findings) {
       if (!selectedDocFindingIds.has(finding.id)) continue;
-      const entry = byId.get(finding.id) ?? { pageIndex: page.index, rects: [] };
-      entry.rects.push(...finding.rects);
-      byId.set(finding.id, entry);
+      const list = byPage.get(page.index) ?? [];
+      list.push(...finding.rects);
+      byPage.set(page.index, list);
     }
   }
-  return [...byId.values()];
+  return Array.from(byPage.entries()).map(([pageIndex, rects]) => ({ pageIndex, rects }));
 }
 
 function clearDocUi(): void {
@@ -2082,9 +2089,15 @@ export async function initPopup(): Promise<void> {
     const allFindings = lastDoc.pages.flatMap((p) => p.findings);
     const anyUnselected = allFindings.some((f) => !selectedDocFindingIds.has(f.id));
     if (anyUnselected) {
-      for (const f of allFindings) selectedDocFindingIds.add(f.id);
+      for (const f of allFindings) {
+        selectedDocFindingIds.add(f.id);
+        f.selected = true;
+      }
     } else {
       selectedDocFindingIds.clear();
+      for (const f of allFindings) {
+        f.selected = false;
+      }
     }
     renderDocFindings();
     redrawAllOverlays();

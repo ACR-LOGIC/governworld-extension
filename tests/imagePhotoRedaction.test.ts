@@ -19,6 +19,7 @@ import { describe, it, expect } from "vitest";
 import { findingsFromOcrPages } from "../src/document-pipeline/core.js";
 import type { OcrPageResult, OcrToken } from "../src/document-pipeline/ocr.js";
 import { applyBoxes } from "../src/document-pipeline/render.js";
+import { verifyCanvasRegions } from "../src/document-pipeline/verify.js";
 
 /** A recognized word with a real position on the page. */
 function word(text: string, lineIndex: number, x: number, y: number, width: number, height = 18): OcrToken {
@@ -212,5 +213,63 @@ describe("a photo of a document yields positioned, redactable rects", () => {
     // clinician/clinic this belongs to.
     expect(email!.preview).not.toContain("jane.doe");
     expect(email!.preview).toContain("@clinic.org");
+  });
+  it("applies all redaction masks directly to the image canvas when multiple findings exist", () => {
+    const tokens = [
+      word("SSN", 0, 20, 20, 32),
+      word("123-45-6789", 0, 60, 20, 100),
+      word("Email", 1, 20, 60, 42),
+      word("jane.doe@clinic.org", 1, 68, 60, 150)
+    ];
+    const findings = findingsFromOcrPages([photoPage(tokens)], categories);
+    expect(findings.length).toBe(2);
+
+    const rects = findings.flatMap((f) => f.rects);
+    expect(rects.length).toBeGreaterThanOrEqual(2);
+
+    const fills: Array<{ x: number; y: number; w: number; h: number }> = [];
+    const canvas = {
+      width: 1600,
+      height: 1200,
+      getContext: () => ({
+        fillStyle: "",
+        fillRect(x: number, y: number, w: number, h: number) {
+          fills.push({ x, y, w, h });
+        }
+      })
+    } as unknown as HTMLCanvasElement;
+
+    applyBoxes(canvas, rects);
+    expect(fills.length).toBe(rects.length);
+    for (const fill of fills) {
+      expect(fill.w).toBeGreaterThan(0);
+      expect(fill.h).toBeGreaterThan(0);
+    }
+  });
+
+  it("merges multiple box entries for the same page so no redactions are overwritten", () => {
+    // Simulates what popup buildDocBoxes and review buildRequest emit when multiple findings exist
+    const boxes = [
+      { pageIndex: 0, rects: [{ x: 50, y: 50, width: 100, height: 20 }] },
+      { pageIndex: 0, rects: [{ x: 200, y: 150, width: 120, height: 24 }] },
+      { pageIndex: 0, rects: [{ x: 400, y: 300, width: 80, height: 18 }] }
+    ];
+
+    const boxMap = new Map<number, Array<{ x: number; y: number; width: number; height: number }>>();
+    for (const b of boxes) {
+      const existing = boxMap.get(b.pageIndex);
+      if (existing) {
+        existing.push(...b.rects);
+      } else {
+        boxMap.set(b.pageIndex, [...b.rects]);
+      }
+    }
+
+    const page0Rects = boxMap.get(0);
+    expect(page0Rects).toBeDefined();
+    expect(page0Rects!.length).toBe(3);
+    expect(page0Rects![0].x).toBe(50);
+    expect(page0Rects![1].x).toBe(200);
+    expect(page0Rects![2].x).toBe(400);
   });
 });

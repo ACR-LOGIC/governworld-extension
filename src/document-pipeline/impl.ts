@@ -305,8 +305,16 @@ export async function runDocumentRedact(
    */
   pageOffset = 0
 ): Promise<RedactOutput> {
-  const { pages, flattenToPdf } = await loadPages(input, maxPages, pageOffset);  const boxMap = new Map<number, Rect[]>();
-  for (const b of boxes) boxMap.set(b.pageIndex, b.rects);
+  const { pages, flattenToPdf } = await loadPages(input, maxPages, pageOffset);
+  const boxMap = new Map<number, Rect[]>();
+  for (const b of boxes) {
+    const existing = boxMap.get(b.pageIndex);
+    if (existing) {
+      existing.push(...b.rects);
+    } else {
+      boxMap.set(b.pageIndex, [...b.rects]);
+    }
+  }
 
   // Verify the page bitmaps as they are painted. For flattened output these are
   // the exact pixels that end up on each output page, so a painter that silently

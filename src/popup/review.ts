@@ -475,13 +475,16 @@ async function hydrateFromSession(): Promise<void> {
 
 function buildRequest(): { boxes: { pageIndex: number; rects: Rect[] }[]; findingIds: string[] } | null {
   if (!session) return null;
-  const boxes: { pageIndex: number; rects: Rect[] }[] = [];
+  const byPage = new Map<number, Rect[]>();
   const findingIds: string[] = [];
   for (const finding of findings) {
     if (!selected.has(finding.id)) continue;
-    boxes.push({ pageIndex: finding.pageIndex, rects: finding.rects });
+    const list = byPage.get(finding.pageIndex) ?? [];
+    list.push(...finding.rects);
+    byPage.set(finding.pageIndex, list);
     findingIds.push(finding.id);
   }
+  const boxes = Array.from(byPage.entries()).map(([pageIndex, rects]) => ({ pageIndex, rects }));
   return { boxes, findingIds };
 }
 

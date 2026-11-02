@@ -375,7 +375,20 @@ export async function redactDocument(
     .filter((page) => page.rects.length > 0);
 
   const targetBoxes = explicitBoxes.length > 0 ? explicitBoxes : derivedBoxes;
-  if (targetBoxes.length === 0) {
+  const groupedTargetBoxesMap = new Map<number, Rect[]>();
+  for (const b of targetBoxes) {
+    const existing = groupedTargetBoxesMap.get(b.pageIndex);
+    if (existing) {
+      existing.push(...b.rects);
+    } else {
+      groupedTargetBoxesMap.set(b.pageIndex, [...b.rects]);
+    }
+  }
+  const mergedTargetBoxes = Array.from(groupedTargetBoxesMap.entries()).map(([pageIndex, rects]) => ({
+    pageIndex,
+    rects,
+  }));
+  if (mergedTargetBoxes.length === 0) {
     throw new Error("The selected findings have no redactable regions.");
   }
 
@@ -397,7 +410,7 @@ export async function redactDocument(
       categories: session.categories,
       options,
     },
-    targetBoxes,
+    mergedTargetBoxes,
     options
   );
   // A windowed pass produces a file that covers only part of the document, so
@@ -409,7 +422,7 @@ export async function redactDocument(
     outputBytes: result.outputBytes,
     outputMimeType: result.outputMimeType,
     verification: result.verification,
-    redactedRegions: targetBoxes.reduce((n, b) => n + b.rects.length, 0),
+    redactedRegions: mergedTargetBoxes.reduce((n, b) => n + b.rects.length, 0),
     printRef: result.printRef ?? null
   };
 }
