@@ -56,6 +56,7 @@ you cover them up:
   recorded as metadata-only audit entries, and exported logs are ECDSA-signed so an edit to an export is detectable.
   Generates an exportable, printable HTML Compliance Certificate for compliance recordkeeping.
 - **Custom rule migration.** Export and import user-authored detection patterns directly in the Logic tab as offline JSON files, with built-in schema validation and ReDoS protection.
+- **Policy Studio DLP governance.** Create and enforce site-specific rules (e.g. chatgpt.com, slack.com) to strictly block, auto-redact, or warn on sensitive data categories like PHI, PCI, or API keys before submission.
 
 **Privacy by design.**
 

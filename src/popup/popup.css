@@ -1327,6 +1327,7 @@ body[data-reduced-motion="true"] *::after {
 .results-section,
 .doc-findings-section,
 .custom-patterns-section,
+.policy-studio-section,
 .community-section,
 .logic-actions,
 .dropzone-section,
@@ -1344,6 +1345,7 @@ body[data-reduced-motion="true"] *::after {
 .coverage-section h3,
 .activity-section h3,
 .custom-patterns-section h3,
+.policy-studio-section h3,
 .community-section h3 {
   margin: 0;
   font-size: 12px;

@@ -31,6 +31,17 @@ import {
   type AlwaysOnCapability,
 } from "../shared/siteAccess.js";
 import { recordAudit } from "../shared/audit.js";
+import {
+  loadSitePolicies,
+  saveSitePolicies,
+  saveSitePolicy,
+  deleteSitePolicy,
+  toggleSitePolicy,
+  parseSitePolicy,
+  type SitePolicy,
+  type PolicyScope,
+  type PolicyAction,
+} from "../shared/policyStudio.js";
 import { BUNDLED_OCR_LANGUAGES } from "../shared/ocrLanguages.js";
 import { t, getCategoryLabel, getPresetLabel } from "../shared/i18n.js";
 import { MAX_DOC_PAGES, MAX_DOC_BYTES, MAX_DOC_BYTES_LABEL, MAX_DOCX_CHARS, resolvePageWindow, pageWindowLabel } from "../shared/docLimits.js";
@@ -3303,6 +3314,242 @@ export async function initPopup(): Promise<void> {
       customPatternsList.appendChild(item);
     }
   }
+
+
+  // ---------- Policy Studio Controller ----------
+  const openPolicyBtn = document.getElementById("open-policy-btn") as HTMLButtonElement | null;
+  const exportPoliciesBtn = document.getElementById("export-policies-btn") as HTMLButtonElement | null;
+  const importPoliciesBtn = document.getElementById("import-policies-btn") as HTMLButtonElement | null;
+  const importPoliciesFile = document.getElementById("import-policies-file") as HTMLInputElement | null;
+  const policiesList = document.getElementById("policies-list") as HTMLUListElement | null;
+  const noPolicies = document.getElementById("no-policies") as HTMLParagraphElement | null;
+
+  const policyDialog = document.getElementById("policy-dialog") as HTMLDialogElement | null;
+  const policyNameInput = document.getElementById("policy-name-input") as HTMLInputElement | null;
+  const policyUrlInput = document.getElementById("policy-url-input") as HTMLInputElement | null;
+  const policyScopeSelect = document.getElementById("policy-scope-select") as HTMLSelectElement | null;
+  const policyActionSelect = document.getElementById("policy-action-select") as HTMLSelectElement | null;
+  const policyDialogError = document.getElementById("policy-dialog-error") as HTMLParagraphElement | null;
+  const cancelPolicyBtn = document.getElementById("cancel-policy-btn") as HTMLButtonElement | null;
+  const savePolicyBtn = document.getElementById("save-policy-btn") as HTMLButtonElement | null;
+
+  function renderSitePolicies(policies: SitePolicy[]) {
+    if (!policiesList || !noPolicies) return;
+    policiesList.replaceChildren();
+    if (!policies || policies.length === 0) {
+      noPolicies.hidden = false;
+      return;
+    }
+    noPolicies.hidden = true;
+    for (const pol of policies) {
+      const item = document.createElement("li");
+      item.className = "finding";
+      item.style.flexDirection = "column";
+      item.style.alignItems = "stretch";
+
+      const topRow = document.createElement("div");
+      topRow.style.display = "flex";
+      topRow.style.justifyContent = "space-between";
+      topRow.style.alignItems = "center";
+
+      const titleGroup = document.createElement("div");
+      titleGroup.style.display = "flex";
+      titleGroup.style.alignItems = "center";
+      titleGroup.style.gap = "6px";
+
+      const nameSpan = document.createElement("strong");
+      nameSpan.textContent = pol.name;
+      nameSpan.style.fontSize = "12px";
+
+      const actionBadge = document.createElement("span");
+      actionBadge.className = "finding__severity";
+      actionBadge.textContent = pol.action.toUpperCase();
+      actionBadge.dataset.level = pol.action === "block" ? "critical" : pol.action === "redact" ? "high" : "low";
+
+      titleGroup.append(nameSpan, actionBadge);
+
+      const actionsDiv = document.createElement("div");
+      actionsDiv.style.display = "flex";
+      actionsDiv.style.gap = "6px";
+      actionsDiv.style.alignItems = "center";
+
+      const toggleBtn = document.createElement("button");
+      toggleBtn.className = "btn btn--ghost btn--sm";
+      toggleBtn.textContent = pol.enabled ? "Disable" : "Enable";
+      toggleBtn.addEventListener("click", async () => {
+        const updated = await toggleSitePolicy(pol.id);
+        const current = await loadSettings();
+        renderSitePolicies(updated);
+        speakAnnouncement(pol.enabled ? `Policy ${pol.name} disabled` : `Policy ${pol.name} enabled`, current);
+      });
+
+      const delBtn = document.createElement("button");
+      delBtn.className = "btn btn--ghost btn--sm";
+      delBtn.textContent = "Delete";
+      delBtn.addEventListener("click", async () => {
+        const updated = await deleteSitePolicy(pol.id);
+        await recordAudit({
+          ts: new Date().toISOString(),
+          action: "policy_deleted",
+          policyId: pol.id,
+          outcome: "ok",
+        });
+        const current = await loadSettings();
+        renderSitePolicies(updated);
+        speakAnnouncement(`Policy ${pol.name} deleted`, current);
+      });
+
+      actionsDiv.append(toggleBtn, delBtn);
+      topRow.append(titleGroup, actionsDiv);
+
+      const metaRow = document.createElement("div");
+      metaRow.style.display = "flex";
+      metaRow.style.justifyContent = "space-between";
+      metaRow.style.fontSize = "11px";
+      metaRow.style.color = "var(--text-muted)";
+      metaRow.style.marginTop = "4px";
+
+      const urlCode = document.createElement("code");
+      urlCode.textContent = pol.urlPattern;
+
+      const scopeSpan = document.createElement("span");
+      const scopeText = typeof pol.scope === "string" ? pol.scope.toUpperCase() : pol.scope.join(", ");
+      scopeSpan.textContent = `Scope: ${scopeText}`;
+
+      metaRow.append(urlCode, scopeSpan);
+      item.append(topRow, metaRow);
+      policiesList.appendChild(item);
+    }
+  }
+
+  openPolicyBtn?.addEventListener("click", () => {
+    if (!policyNameInput || !policyUrlInput || !policyDialog) return;
+    policyNameInput.value = "";
+    policyUrlInput.value = "";
+    if (policyScopeSelect) policyScopeSelect.value = "phi";
+    if (policyActionSelect) policyActionSelect.value = "block";
+    if (policyDialogError) {
+      policyDialogError.hidden = true;
+      policyDialogError.textContent = "";
+    }
+    policyDialog.showModal();
+    policyNameInput.focus();
+  });
+
+  cancelPolicyBtn?.addEventListener("click", () => {
+    policyDialog?.close();
+  });
+
+  savePolicyBtn?.addEventListener("click", async () => {
+    if (!policyNameInput || !policyUrlInput || !policyScopeSelect || !policyActionSelect) return;
+    const name = policyNameInput.value.trim();
+    const urlPattern = policyUrlInput.value.trim();
+    const scope = policyScopeSelect.value as PolicyScope;
+    const action = policyActionSelect.value as PolicyAction;
+
+    if (!name) {
+      if (policyDialogError) {
+        policyDialogError.textContent = "Policy name is required";
+        policyDialogError.hidden = false;
+      }
+      return;
+    }
+
+    if (!urlPattern) {
+      if (policyDialogError) {
+        policyDialogError.textContent = "URL pattern is required";
+        policyDialogError.hidden = false;
+      }
+      return;
+    }
+
+    const newPolicy: SitePolicy = {
+      id: crypto.randomUUID(),
+      name,
+      urlPattern,
+      scope,
+      action,
+      enabled: true,
+      createdAt: new Date().toISOString(),
+    };
+
+    const updated = await saveSitePolicy(newPolicy);
+    await recordAudit({
+      ts: new Date().toISOString(),
+      action: "policy_created",
+      policyId: newPolicy.id,
+      policyAction: newPolicy.action,
+      outcome: "ok",
+    });
+
+    renderSitePolicies(updated);
+    policyDialog?.close();
+
+    const current = await loadSettings();
+    speakAnnouncement(`Site policy ${name} saved`, current);
+  });
+
+  exportPoliciesBtn?.addEventListener("click", async () => {
+    const policies = await loadSitePolicies();
+    const current = await loadSettings();
+    if (policies.length === 0) {
+      speakAnnouncement("No site policies to export", current);
+      return;
+    }
+    const json = JSON.stringify(policies, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "governworld-site-policies-" + new Date().toISOString().slice(0, 10) + ".json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    speakAnnouncement(t(current.language, "policies_exported"), current);
+  });
+
+  importPoliciesBtn?.addEventListener("click", () => {
+    importPoliciesFile?.click();
+  });
+
+  importPoliciesFile?.addEventListener("change", async () => {
+    const file = importPoliciesFile.files?.[0];
+    if (!file) return;
+    const current = await loadSettings();
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      if (!Array.isArray(parsed)) {
+        speakAnnouncement(t(current.language, "invalid_policies_file"), current);
+        return;
+      }
+      const valid: SitePolicy[] = [];
+      for (const item of parsed) {
+        const res = parseSitePolicy(item);
+        if (res.ok) valid.push(res.policy);
+      }
+      if (valid.length === 0) {
+        speakAnnouncement(t(current.language, "invalid_policies_file"), current);
+        return;
+      }
+      const existing = await loadSitePolicies();
+      const map = new Map<string, SitePolicy>();
+      for (const p of existing) map.set(p.id, p);
+      for (const p of valid) map.set(p.id, p);
+      const merged = [...map.values()];
+      await saveSitePolicies(merged);
+      renderSitePolicies(merged);
+      speakAnnouncement(t(current.language, "policies_imported"), current);
+    } catch {
+      speakAnnouncement(t(current.language, "invalid_policies_file"), current);
+    } finally {
+      importPoliciesFile.value = "";
+    }
+  });
+
+  const initialPolicies = await loadSitePolicies();
+  renderSitePolicies(initialPolicies);
 
   function renderCommunityAccount(_account: CommunityAccount | null) {
     isCommunityLinked = false;

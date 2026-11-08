@@ -11,6 +11,8 @@ import {
   type EnterprisePolicy,
 } from "../shared/enterprisePolicy.js";
 import type { CustomPattern } from "../shared/customPatterns.js";
+import { recordAudit } from "../shared/audit.js";
+import { evaluateSitePolicies, parseSitePolicy, SITE_POLICIES_KEY, type SitePolicy } from "../shared/policyStudio.js";
 
 /**
  * Feature Area 2: Proactive 'Paste & Prompt' Shield / Chat & LLM Guard.
@@ -267,12 +269,13 @@ export function isPromptOrSendableInput(target: unknown): target is HTMLElement 
 
 export interface PasteGuardDialogCallbacks {
   onSanitize: () => void;
-  onRaw: () => void;
+  onRaw?: () => void;
   onCancel: () => void;
   title?: string;
   subtitle?: string;
   sanitizeLabel?: string;
   rawLabel?: string;
+  policyBlocked?: boolean;
 }
 
 export interface ActiveDialogHandle {
@@ -703,7 +706,16 @@ export function showPasteGuardDialog(
   kbdCancel.textContent = "Esc";
   btnCancel.append(doc.createTextNode("Cancel "), kbdCancel);
 
-  actions.append(btnSanitize, btnRaw, btnCancel);
+  if (callbacks.policyBlocked) {
+    btnCancel.textContent = "Dismiss";
+    actions.append(btnCancel);
+  } else {
+    actions.append(btnSanitize);
+    if (typeof callbacks.onRaw === "function") {
+      actions.append(btnRaw);
+    }
+    actions.append(btnCancel);
+  }
   dialog.append(header, content, actions);
   shadow.append(backdrop, dialog);
 
@@ -725,9 +737,16 @@ export function showPasteGuardDialog(
       close();
       callbacks.onCancel();
     } else if (e.key === "Enter" && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      if (callbacks.policyBlocked) {
+        e.preventDefault();
+        e.stopPropagation();
+        close();
+        callbacks.onCancel();
+        return;
+      }
       // If focus is specifically on btnRaw or btnCancel, activate that button
       const activeEl = shadow.activeElement;
-      if (activeEl === btnRaw) {
+      if (callbacks.onRaw && activeEl === btnRaw) {
         e.preventDefault();
         e.stopPropagation();
         close();
@@ -760,7 +779,7 @@ export function showPasteGuardDialog(
 
   btnRaw.addEventListener("click", () => {
     close();
-    callbacks.onRaw();
+    callbacks.onRaw?.();
   });
 
   btnCancel.addEventListener("click", () => {
@@ -778,7 +797,7 @@ export function showPasteGuardDialog(
 
   const press = (buttonId: keyof typeof ACTIONS): boolean => {
     const button = ACTIONS[buttonId];
-    if (!button) return false;
+    if (!button || !button.parentNode) return false;
     button.click();
     return true;
   };
@@ -789,7 +808,11 @@ export function showPasteGuardDialog(
   // Focus primary button for fast Enter response
   setTimeout(() => {
     try {
-      btnSanitize.focus();
+      if (callbacks.policyBlocked) {
+        btnCancel.focus();
+      } else {
+        btnSanitize.focus();
+      }
     } catch {
       // ignore
     }
@@ -835,6 +858,8 @@ export function isEditableElement(el: unknown): el is HTMLElement {
 export interface InitPasteGuardOptions {
   /** Seed settings (normalized) instead of defaults; storage still overrides. */
   initialSettings?: Settings;
+  /** Seed site policies instead of empty; storage still overrides. */
+  initialSitePolicies?: SitePolicy[];
 }
 
 export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOptions): () => void {
@@ -842,6 +867,7 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
     ? normalizeSettings(opts.initialSettings)
     : { ...DEFAULT_SETTINGS };
   let cachedCustomPatterns: CustomPattern[] = [];
+  let cachedSitePolicies: SitePolicy[] = opts?.initialSitePolicies ? [...opts.initialSitePolicies] : [];
   let cachedPolicy: EnterprisePolicy = { ...NO_ENTERPRISE_POLICY };
   let cachedMode: ProtectionMode = cachedSettings.protectionMode;
   let cachedEnabledCategories: FindingCategory[] = [...cachedSettings.enabledCategories];
@@ -873,12 +899,20 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
   const loadStored = async () => {
     try {
       if (typeof chrome !== "undefined" && chrome.storage?.local) {
-        const stored = await chrome.storage.local.get(["settings", "customPatterns"]);
+        const stored = await chrome.storage.local.get(["settings", "customPatterns", SITE_POLICIES_KEY]);
         if (stored.settings) {
           cachedSettings = normalizeSettings(stored.settings);
         }
         if (Array.isArray(stored.customPatterns)) {
           cachedCustomPatterns = stored.customPatterns;
+        }
+        if (Array.isArray(stored[SITE_POLICIES_KEY])) {
+          const valid: SitePolicy[] = [];
+          for (const item of stored[SITE_POLICIES_KEY]) {
+            const res = parseSitePolicy(item);
+            if (res.ok) valid.push(res.policy);
+          }
+          cachedSitePolicies = valid;
         }
         recompute();
       }
@@ -899,6 +933,14 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
       }
       if (changes.customPatterns && Array.isArray(changes.customPatterns.newValue)) {
         cachedCustomPatterns = changes.customPatterns.newValue;
+      }
+      if (changes[SITE_POLICIES_KEY] && Array.isArray(changes[SITE_POLICIES_KEY].newValue)) {
+        const valid: SitePolicy[] = [];
+        for (const item of changes[SITE_POLICIES_KEY].newValue) {
+          const res = parseSitePolicy(item);
+          if (res.ok) valid.push(res.policy);
+        }
+        cachedSitePolicies = valid;
       }
     } else if (areaName === "managed") {
       void refreshManaged();
@@ -929,9 +971,71 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
       originalEvent.stopPropagation();
     }
 
+    const currentUrl = doc.defaultView?.location?.href || (typeof location !== "undefined" ? location.href : "");
+    const policyEval = evaluateSitePolicies(cachedSitePolicies, currentUrl, matches);
+
+    if (policyEval.hasMatch && policyEval.action === "block") {
+      if (typeof chrome !== "undefined" && chrome.storage?.local) {
+        void recordAudit({
+          ts: new Date().toISOString(),
+          action: "policy_enforced",
+          host: doc.defaultView?.location?.hostname,
+          policyId: policyEval.matchedPolicy?.id,
+          policyAction: "block",
+          outcome: "denied",
+        }).catch(() => {});
+      }
+      isHandlingEvent = true;
+      try {
+        showPasteGuardDialog(doc, target, matches, {
+          title: "GovernWorld — Policy Blocked",
+          subtitle: `Policy "${policyEval.matchedPolicy?.name}" strictly prohibits pasting ${policyEval.matchedCategories.join(", ")} on this site.`,
+          policyBlocked: true,
+          onSanitize: () => {
+            isHandlingEvent = false;
+          },
+          onCancel: () => {
+            isHandlingEvent = false;
+          },
+        });
+        if (cachedSettings.notificationPrefs?.toastEnabled) {
+          showToast({
+            title: "GovernWorld — Policy Blocked",
+            message: `Pasting blocked by policy "${policyEval.matchedPolicy?.name}".`,
+            level: "danger",
+            durationMs: 4000,
+          });
+        }
+      } catch {
+        isHandlingEvent = false;
+      }
+      return;
+    }
+
+    const isRedactOnly = policyEval.hasMatch && policyEval.action === "redact";
+    const isWarnOnly = policyEval.hasMatch && policyEval.action === "warn";
+
+    if (policyEval.hasMatch && (isRedactOnly || isWarnOnly)) {
+      if (typeof chrome !== "undefined" && chrome.storage?.local) {
+        void recordAudit({
+          ts: new Date().toISOString(),
+          action: "policy_enforced",
+          host: doc.defaultView?.location?.hostname,
+          policyId: policyEval.matchedPolicy?.id,
+          policyAction: policyEval.action,
+          outcome: "ok",
+        }).catch(() => {});
+      }
+    }
+
     isHandlingEvent = true;
     try {
       const dHost = showPasteGuardDialog(doc, target, matches, {
+        subtitle: isRedactOnly
+          ? `Policy "${policyEval.matchedPolicy?.name}" enforces redaction of ${policyEval.matchedCategories.join(", ")}.`
+          : isWarnOnly
+          ? `Policy notice: "${policyEval.matchedPolicy?.name}" flagged sensitive data`
+          : undefined,
     /* debug */
         onSanitize: () => {
           isHandlingEvent = false;
@@ -946,7 +1050,7 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
             });
           }
         },
-        onRaw: () => {
+        onRaw: isRedactOnly ? undefined : () => {
           isHandlingEvent = false;
           insertTextIntoElement(target, text);
         },
@@ -1057,11 +1161,72 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
       e.stopPropagation();
     }
 
+    const currentUrl = doc.defaultView?.location?.href || (typeof location !== "undefined" ? location.href : "");
+    const policyEval = evaluateSitePolicies(cachedSitePolicies, currentUrl, matches);
+
+    if (policyEval.hasMatch && policyEval.action === "block") {
+      if (typeof chrome !== "undefined" && chrome.storage?.local) {
+        void recordAudit({
+          ts: new Date().toISOString(),
+          action: "policy_enforced",
+          host: doc.defaultView?.location?.hostname,
+          policyId: policyEval.matchedPolicy?.id,
+          policyAction: "block",
+          outcome: "denied",
+        }).catch(() => {});
+      }
+      isHandlingEvent = true;
+      try {
+        showPasteGuardDialog(doc, target, matches, {
+          title: "GovernWorld — Policy Blocked",
+          subtitle: `Policy "${policyEval.matchedPolicy?.name}" strictly prohibits prompts containing ${policyEval.matchedCategories.join(", ")} on this site.`,
+          policyBlocked: true,
+          onSanitize: () => {
+            isHandlingEvent = false;
+          },
+          onCancel: () => {
+            isHandlingEvent = false;
+          },
+        });
+        if (cachedSettings.notificationPrefs?.toastEnabled) {
+          showToast({
+            title: "GovernWorld — Policy Blocked",
+            message: `Prompt blocked by policy "${policyEval.matchedPolicy?.name}".`,
+            level: "danger",
+            durationMs: 4000,
+          });
+        }
+      } catch {
+        isHandlingEvent = false;
+      }
+      return;
+    }
+
+    const isRedactOnly = policyEval.hasMatch && policyEval.action === "redact";
+    const isWarnOnly = policyEval.hasMatch && policyEval.action === "warn";
+
+    if (policyEval.hasMatch && (isRedactOnly || isWarnOnly)) {
+      if (typeof chrome !== "undefined" && chrome.storage?.local) {
+        void recordAudit({
+          ts: new Date().toISOString(),
+          action: "policy_enforced",
+          host: doc.defaultView?.location?.hostname,
+          policyId: policyEval.matchedPolicy?.id,
+          policyAction: policyEval.action,
+          outcome: "ok",
+        }).catch(() => {});
+      }
+    }
+
     isHandlingEvent = true;
     try {
       showPasteGuardDialog(doc, target, matches, {
         title: "GovernWorld Prompt Shield",
-        subtitle: `${matches.length} sensitive item${matches.length === 1 ? "" : "s"} intercepted before prompt submission`,
+        subtitle: isRedactOnly
+          ? `Policy "${policyEval.matchedPolicy?.name}" enforces sanitization of ${policyEval.matchedCategories.join(", ")}.`
+          : isWarnOnly
+          ? `Policy notice: "${policyEval.matchedPolicy?.name}" flagged sensitive data in prompt`
+          : `${matches.length} sensitive item${matches.length === 1 ? "" : "s"} intercepted before prompt submission`,
         sanitizeLabel: "Sanitize & Send",
         rawLabel: "Send Unchanged",
         onSanitize: () => {
@@ -1077,7 +1242,7 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
             });
           }
         },
-        onRaw: () => {
+        onRaw: isRedactOnly ? undefined : () => {
           isHandlingEvent = false;
         },
         onCancel: () => {
@@ -1140,11 +1305,72 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
       e.stopPropagation();
     }
 
+    const currentUrl = doc.defaultView?.location?.href || (typeof location !== "undefined" ? location.href : "");
+    const policyEval = evaluateSitePolicies(cachedSitePolicies, currentUrl, foundMatches);
+
+    if (policyEval.hasMatch && policyEval.action === "block") {
+      if (typeof chrome !== "undefined" && chrome.storage?.local) {
+        void recordAudit({
+          ts: new Date().toISOString(),
+          action: "policy_enforced",
+          host: doc.defaultView?.location?.hostname,
+          policyId: policyEval.matchedPolicy?.id,
+          policyAction: "block",
+          outcome: "denied",
+        }).catch(() => {});
+      }
+      isHandlingEvent = true;
+      try {
+        showPasteGuardDialog(doc, culpritElement ?? form, foundMatches, {
+          title: "GovernWorld — Policy Blocked",
+          subtitle: `Policy "${policyEval.matchedPolicy?.name}" strictly prohibits form submission containing ${policyEval.matchedCategories.join(", ")} on this site.`,
+          policyBlocked: true,
+          onSanitize: () => {
+            isHandlingEvent = false;
+          },
+          onCancel: () => {
+            isHandlingEvent = false;
+          },
+        });
+        if (cachedSettings.notificationPrefs?.toastEnabled) {
+          showToast({
+            title: "GovernWorld — Policy Blocked",
+            message: `Form submission blocked by policy "${policyEval.matchedPolicy?.name}".`,
+            level: "danger",
+            durationMs: 4000,
+          });
+        }
+      } catch {
+        isHandlingEvent = false;
+      }
+      return;
+    }
+
+    const isRedactOnly = policyEval.hasMatch && policyEval.action === "redact";
+    const isWarnOnly = policyEval.hasMatch && policyEval.action === "warn";
+
+    if (policyEval.hasMatch && (isRedactOnly || isWarnOnly)) {
+      if (typeof chrome !== "undefined" && chrome.storage?.local) {
+        void recordAudit({
+          ts: new Date().toISOString(),
+          action: "policy_enforced",
+          host: doc.defaultView?.location?.hostname,
+          policyId: policyEval.matchedPolicy?.id,
+          policyAction: policyEval.action,
+          outcome: "ok",
+        }).catch(() => {});
+      }
+    }
+
     isHandlingEvent = true;
     try {
       showPasteGuardDialog(doc, culpritElement ?? form, foundMatches, {
         title: "GovernWorld Form Shield",
-        subtitle: `${foundMatches.length} sensitive item${foundMatches.length === 1 ? "" : "s"} detected before form submission`,
+        subtitle: isRedactOnly
+          ? `Policy "${policyEval.matchedPolicy?.name}" enforces sanitization of ${policyEval.matchedCategories.join(", ")}.`
+          : isWarnOnly
+          ? `Policy notice: "${policyEval.matchedPolicy?.name}" flagged sensitive data in form`
+          : `${foundMatches.length} sensitive item${foundMatches.length === 1 ? "" : "s"} detected before form submission`,
         sanitizeLabel: "Sanitize & Submit",
         rawLabel: "Submit Unchanged",
         onSanitize: () => {
@@ -1179,7 +1405,7 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
             // ignore
           }
         },
-        onRaw: () => {
+        onRaw: isRedactOnly ? undefined : () => {
           isHandlingEvent = false;
           try {
             if (typeof form.requestSubmit === "function") {

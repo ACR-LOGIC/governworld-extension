@@ -26,7 +26,10 @@ export type AuditAction =
   | "session_cleared"
   | "preset_applied"
   | "preset_overridden"
-  | "account_linked";
+  | "account_linked"
+  | "policy_created"
+  | "policy_deleted"
+  | "policy_enforced";
 
 /**
  * The authoritative action list.
@@ -50,6 +53,9 @@ export const AUDIT_ACTIONS: readonly AuditAction[] = [
   "preset_applied",
   "preset_overridden",
   "account_linked",
+  "policy_created",
+  "policy_deleted",
+  "policy_enforced",
 ];
 
 export function isAuditAction(value: unknown): value is AuditAction {
@@ -70,6 +76,10 @@ export interface AuditEvent {
   pages?: number;
   /** Preset selected by the user (metadata only, never content). */
   presetId?: string;
+  /** Site policy ID when an action targets or enforces a policy (metadata only). */
+  policyId?: string;
+  /** Site policy action enforced ("block" | "redact" | "warn"). */
+  policyAction?: string;
   /** Gateway origin linked at account_linked time (metadata only, never the key). */
   gatewayOrigin?: string;
   /** Category set active after the change — policy references, never content. */
@@ -93,6 +103,8 @@ export function isAuditEvent(value: unknown): value is AuditEvent {
   if (value.docHash !== undefined && (typeof value.docHash !== "string" || !/^[a-f0-9]{64}$/.test(value.docHash))) return false;
   if (value.pages !== undefined && (typeof value.pages !== "number" || !Number.isInteger(value.pages) || value.pages < 0)) return false;
   if (value.presetId !== undefined && (typeof value.presetId !== "string" || value.presetId.length === 0 || value.presetId.length > 32)) return false;
+  if (value.policyId !== undefined && (typeof value.policyId !== "string" || value.policyId.length === 0 || value.policyId.length > 64)) return false;
+  if (value.policyAction !== undefined && (typeof value.policyAction !== "string" || value.policyAction.length === 0 || value.policyAction.length > 32)) return false;
   if (
     value.gatewayOrigin !== undefined &&
     (typeof value.gatewayOrigin !== "string" ||
@@ -117,7 +129,7 @@ export function isAuditEvent(value: unknown): value is AuditEvent {
 /** Canonical serialization: stable key order so signatures are reproducible. */
 export function canonicalEventLine(event: AuditEvent): string {
   const ordered: Record<string, unknown> = {};
-  for (const key of ["ts", "action", "host", "counts", "docHash", "pages", "presetId", "gatewayOrigin", "enabledCategories", "prevHash", "outcome"] as const) {
+  for (const key of ["ts", "action", "host", "counts", "docHash", "pages", "presetId", "policyId", "policyAction", "gatewayOrigin", "enabledCategories", "prevHash", "outcome"] as const) {
     if (event[key] !== undefined) ordered[key] = event[key];
   }
   return JSON.stringify(ordered);
