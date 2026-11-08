@@ -25,6 +25,8 @@ describe("category surface", () => {
     expect(ALL_CATEGORIES).toContain("secrets");
     expect(DEFAULT_SETTINGS.enabledCategories).toContain("secrets");
     expect(PRESET_CATEGORIES.developer).toContain("secrets");
+    expect(PRESET_CATEGORIES.developer).toContain("ip_address");
+    expect(PRESET_CATEGORIES.developer).toContain("username");
     expect(PRESET_CATEGORIES.hipaa).not.toContain("secrets");
   });
 

@@ -165,6 +165,8 @@ export const PRESET_CATEGORIES: Record<Exclude<PresetId, "custom">, FindingCateg
     "secrets",
     "email",
     "phone",
+    "ip_address",
+    "username",
   ],
   pipeda: [
     "canadian_sin",
