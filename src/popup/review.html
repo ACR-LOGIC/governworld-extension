@@ -50,6 +50,20 @@
             <h2 class="review__h" id="findings-label">Findings</h2>
             <span class="count-badge" id="findings-count">0</span>
           </div>
+          <div class="compliance-card" id="review-compliance-card" hidden>
+            <div class="compliance-card__header">
+              <div class="compliance-card__score-box">
+                <span id="review-compliance-score" class="compliance-card__score">0</span>
+                <span class="compliance-card__score-max">/100</span>
+              </div>
+              <div class="compliance-card__badge-col">
+                <span id="review-compliance-band" class="compliance-card__band compliance-card__band--low">LOW</span>
+                <span id="review-compliance-action" class="compliance-card__action">ALLOW</span>
+              </div>
+            </div>
+            <p id="review-compliance-reason" class="compliance-card__reason"></p>
+            <div id="review-compliance-rules" class="compliance-card__rules"></div>
+          </div>
           <div class="review__row">
             <button type="button" class="btn btn--sm" id="select-all">Select all</button>
             <button type="button" class="btn btn--sm" id="select-none">Clear all</button>

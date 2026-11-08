@@ -42,6 +42,8 @@ import {
   type PolicyScope,
   type PolicyAction,
 } from "../shared/policyStudio.js";
+import { evaluateComplianceScore, type ComplianceAction } from "../shared/complianceScore.js";
+import { classifyDestination } from "../shared/destinationClassifier.js";
 import { BUNDLED_OCR_LANGUAGES } from "../shared/ocrLanguages.js";
 import { t, getCategoryLabel, getPresetLabel } from "../shared/i18n.js";
 import { MAX_DOC_PAGES, MAX_DOC_BYTES, MAX_DOC_BYTES_LABEL, MAX_DOCX_CHARS, resolvePageWindow, pageWindowLabel } from "../shared/docLimits.js";
@@ -121,6 +123,7 @@ export async function ensureContentScriptReady(tabId: number): Promise<boolean> 
 
 
 export let currentLang: LanguageCode = "en";
+export let currentWebTabUrl: string | undefined = undefined;
 
 /**
  * The last scan state seen by the popup.
@@ -475,6 +478,76 @@ export async function applyCategoryFilter(categories: FindingCategory[]): Promis
   await renderCategories({ enabledCategories: merged, language: current.language });
 }
 
+function updateComplianceScorecard(
+  cardEl: HTMLElement | null,
+  scoreEl: HTMLElement | null,
+  bandEl: HTMLElement | null,
+  actionEl: HTMLElement | null,
+  reasonEl: HTMLElement | null,
+  rulesEl: HTMLElement | null,
+  findings: Array<{ category: string; confidence?: number; preview?: string; count?: number }>,
+  url?: string,
+  action: ComplianceAction = "view"
+): void {
+  if (!cardEl || !scoreEl || !bandEl || !actionEl || !reasonEl || !rulesEl) return;
+  if (!findings || findings.length === 0) {
+    cardEl.hidden = true;
+    return;
+  }
+
+  const destination = classifyDestination(url);
+  const evaluation = evaluateComplianceScore(
+    findings.map((f) => ({ category: f.category, confidence: f.confidence, value: f.preview })),
+    destination,
+    action
+  );
+
+  cardEl.hidden = false;
+  scoreEl.textContent = String(evaluation.riskScore);
+
+  bandEl.textContent = evaluation.riskBand;
+  bandEl.className = "compliance-card__band";
+  if (evaluation.riskBand === "CRITICAL") {
+    bandEl.classList.add("compliance-card__band--critical");
+  } else if (evaluation.riskBand === "HIGH") {
+    bandEl.classList.add("compliance-card__band--high");
+  } else if (evaluation.riskBand === "MEDIUM") {
+    bandEl.classList.add("compliance-card__band--medium");
+  } else if (evaluation.riskBand === "LOW") {
+    bandEl.classList.add("compliance-card__band--low");
+  } else {
+    bandEl.classList.add("compliance-card__band--informational");
+  }
+
+  actionEl.textContent = `Action: ${evaluation.decision}`;
+  reasonEl.textContent = evaluation.reason;
+
+  rulesEl.replaceChildren();
+  for (const rule of evaluation.factors.appliedRules) {
+    const pill = document.createElement("span");
+    pill.className = "compliance-card__rule-pill";
+    pill.textContent = rule;
+    rulesEl.appendChild(pill);
+  }
+  if (evaluation.factors.aiLeakageTriggered) {
+    const pill = document.createElement("span");
+    pill.className = "compliance-card__rule-pill";
+    pill.textContent = "AI Leakage Rule";
+    rulesEl.appendChild(pill);
+  }
+  if (destination.isAi) {
+    const pill = document.createElement("span");
+    pill.className = "compliance-card__rule-pill";
+    pill.textContent = `AI: ${destination.serviceName || destination.hostname}`;
+    rulesEl.appendChild(pill);
+  } else if (destination.category === "TRUSTED_INTERNAL") {
+    const pill = document.createElement("span");
+    pill.className = "compliance-card__rule-pill";
+    pill.textContent = `EHR: ${destination.serviceName || destination.hostname}`;
+    rulesEl.appendChild(pill);
+  }
+}
+
 function renderFindings(findings: Finding[]): void {
   const list = document.getElementById("findings-list") as HTMLUListElement | null;
   const count = document.getElementById("results-count") as HTMLSpanElement | null;
@@ -708,7 +781,23 @@ function renderState(state: PopupState): void {
 
   if (resultsSection) {
     resultsSection.hidden = !state.scanned;
-    if (state.scanned) renderFindings(state.findings);
+    if (state.scanned) {
+      renderFindings(state.findings);
+      updateComplianceScorecard(
+        document.getElementById("scan-compliance-card"),
+        document.getElementById("scan-compliance-score"),
+        document.getElementById("scan-compliance-band"),
+        document.getElementById("scan-compliance-action"),
+        document.getElementById("scan-compliance-reason"),
+        document.getElementById("scan-compliance-rules"),
+        state.findings,
+        currentWebTabUrl,
+        "view"
+      );
+    } else {
+      const card = document.getElementById("scan-compliance-card");
+      if (card) card.hidden = true;
+    }
   }
 
   if (cloudNotice) {
@@ -1294,15 +1383,35 @@ function updateDocRedactBtn(): void {
 function renderDocFindings(): void {
   const list = document.getElementById("doc-findings") as HTMLUListElement | null;
   const countBadge = document.getElementById("doc-findings-count") as HTMLSpanElement | null;
+  const docCard = document.getElementById("doc-compliance-card");
+  const docScore = document.getElementById("doc-compliance-score");
+  const docBand = document.getElementById("doc-compliance-band");
+  const docAction = document.getElementById("doc-compliance-action");
+  const docReason = document.getElementById("doc-compliance-reason");
+  const docRules = document.getElementById("doc-compliance-rules");
   if (!list) return;
   list.replaceChildren();
   if (!lastDoc) {
     if (countBadge) countBadge.textContent = "0";
+    if (docCard) docCard.hidden = true;
     updateDocRedactBtn();
     return;
   }
   const totalFindings = lastDoc.pages.reduce((n, p) => n + p.findings.length, 0);
   if (countBadge) countBadge.textContent = `${totalFindings} detected`;
+
+  const allDocFindings = lastDoc.pages.flatMap((p) => p.findings);
+  updateComplianceScorecard(
+    docCard,
+    docScore,
+    docBand,
+    docAction,
+    docReason,
+    docRules,
+    allDocFindings,
+    undefined,
+    "download"
+  );
 
   for (const page of lastDoc.pages) {
     for (const finding of page.findings) {
@@ -1839,6 +1948,12 @@ export async function initPopup(): Promise<void> {
   applyUiLanguage(settings.language);
   applyAccessibilitySettings(settings);
   await refreshProtectionStatus();
+  try {
+    const tab = await getActiveWebTab();
+    if (tab?.url) currentWebTabUrl = tab.url;
+  } catch {
+    // Ignored in headless/test environments
+  }
 
   const scanBtn = document.getElementById("scan-btn") as HTMLButtonElement | null;
   const clearDataBtn = document.getElementById("clear-data-btn") as HTMLButtonElement | null;
