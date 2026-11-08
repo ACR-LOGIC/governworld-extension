@@ -2,6 +2,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   matchesUrlPattern,
+  findMatchingFullSiteBlockPolicy,
   isCategoryInPolicyScope,
   evaluateSitePolicies,
   parseSitePolicy,
@@ -23,6 +24,9 @@ import {
   initPasteGuard,
   detectPasteFindings,
   sanitizePastedText,
+  renderFullSiteBlockShield,
+  removeFullSiteBlockShield,
+  FULL_SITE_BLOCK_HOST_ID,
 } from "../src/content/pasteGuard.js";
 import type { FindingCategory } from "../src/shared/settings.js";
 
@@ -327,8 +331,8 @@ describe("Policy Studio - Schema & Parser Validation", () => {
   });
 });
 
+let mockStorage: Record<string, unknown> = {};
 describe("Policy Studio - Storage & Lifecycle Management", () => {
-  let mockStorage: Record<string, unknown> = {};
 
   beforeEach(() => {
     mockStorage = {};
@@ -404,13 +408,13 @@ describe("Policy Studio - Storage & Lifecycle Management", () => {
   });
 });
 
-describe("Policy Studio - Paste Guard Enforcement Integration", () => {
   function createTestMockElement(tagName: string, props: any = {}) {
     const listeners: Record<string, Function[]> = {};
+    const attrs: any = [];
     const el: any = {
       nodeType: 1,
       tagName: tagName.toUpperCase(),
-      attributes: {},
+      attributes: attrs,
       children: [],
       parentNode: null,
       style: {},
@@ -430,11 +434,20 @@ describe("Policy Studio - Paste Guard Enforcement Integration", () => {
           listeners[type] = listeners[type].filter((f) => f !== fn);
         }
       },
-      setAttribute: (k: string, v: string) => { el.attributes[k] = v; },
-      getAttribute: (k: string) => el.attributes[k] ?? props[k],
+      setAttribute: (k: string, v: string) => {
+        attrs[k] = v;
+        const existing = attrs.find((a: any) => a.name === k);
+        if (existing) existing.value = v;
+        else attrs.push({ name: k, value: v });
+      },
+      getAttribute: (k: string) => attrs[k] ?? props[k],
       appendChild: (c: any) => { c.parentNode = el; el.children.push(c); return c; },
       append: (...cs: any[]) => { cs.forEach((c) => { c.parentNode = el; el.children.push(c); }); },
-      remove: vi.fn(),
+      remove: function() {
+        if (this.parentNode && Array.isArray(this.parentNode.children)) {
+          this.parentNode.children = this.parentNode.children.filter((ch: any) => ch !== this);
+        }
+      },
       attachShadow: () => {
         const shadow = createTestMockElement("shadow-root");
         el.shadowRoot = shadow;
@@ -490,6 +503,7 @@ describe("Policy Studio - Paste Guard Enforcement Integration", () => {
     return doc;
   }
 
+describe("Policy Studio - Paste Guard Enforcement Integration", () => {
   it("strictly blocks pasting when a block policy matches", () => {
     const policy: SitePolicy = {
       id: "99999999-9999-4999-8999-999999999999",
@@ -571,5 +585,108 @@ describe("Policy Studio - Paste Guard Enforcement Integration", () => {
     expect(host).not.toBeNull();
 
     cleanup();
+  });
+});
+
+describe("Policy Studio - Full Website Blocking & Notes", () => {
+  it("parses blockEntireSite and notes correctly", () => {
+    const raw = {
+      id: "11111111-2222-4333-8444-555555555555",
+      name: "Block Dangerous Site",
+      urlPattern: "malicious.test",
+      scope: "all",
+      action: "block",
+      enabled: true,
+      createdAt: new Date().toISOString(),
+      blockEntireSite: true,
+      notes: "Mandated by security bulletin Sec-091",
+    };
+
+    const res = parseSitePolicy(raw);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.policy.blockEntireSite).toBe(true);
+      expect(res.policy.notes).toBe("Mandated by security bulletin Sec-091");
+    }
+  });
+
+  it("truncates notes exceeding 200 characters", () => {
+    const longNote = "A".repeat(300);
+    const raw = {
+      id: "11111111-2222-4333-8444-555555555555",
+      name: "Policy With Long Note",
+      urlPattern: "example.com",
+      scope: "all",
+      action: "block",
+      enabled: true,
+      createdAt: new Date().toISOString(),
+      notes: longNote,
+    };
+
+    const res = parseSitePolicy(raw);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.policy.notes?.length).toBe(200);
+    }
+  });
+
+  it("finds matching full site block policy when enabled and url matches", () => {
+    const policies: SitePolicy[] = [
+      {
+        id: "11111111-1111-4111-8111-111111111111",
+        name: "Standard redact policy",
+        urlPattern: "untrusted.org",
+        scope: "all",
+        action: "redact",
+        enabled: true,
+        createdAt: new Date().toISOString(),
+        blockEntireSite: false,
+      },
+      {
+        id: "22222222-2222-4222-8222-222222222222",
+        name: "Full site block on untrusted",
+        urlPattern: "untrusted.org",
+        scope: "all",
+        action: "block",
+        enabled: true,
+        createdAt: new Date().toISOString(),
+        blockEntireSite: true,
+      },
+    ];
+
+    const match = findMatchingFullSiteBlockPolicy(policies, "https://untrusted.org/login");
+    expect(match).not.toBeNull();
+    expect(match?.id).toBe("22222222-2222-4222-8222-222222222222");
+
+    // When policy is disabled, should not match
+    policies[1].enabled = false;
+    expect(findMatchingFullSiteBlockPolicy(policies, "https://untrusted.org/login")).toBeNull();
+
+    // When URL does not match
+    expect(findMatchingFullSiteBlockPolicy(policies, "https://safe.org/page")).toBeNull();
+  });
+
+  it("injects high-assurance barrier shield when full site block matches in pasteGuard", () => {
+    const policy: SitePolicy = {
+      id: "77777777-7777-4777-8777-777777777777",
+      name: "Restricted Site Barrier",
+      urlPattern: "blocked-domain.com",
+      scope: "all",
+      action: "block",
+      enabled: true,
+      createdAt: new Date().toISOString(),
+      blockEntireSite: true,
+    };
+
+    const doc = createTestMockDocument("https://blocked-domain.com/dashboard");
+    const cleanup = initPasteGuard(doc, {
+      initialSitePolicies: [policy],
+    });
+
+    const host = doc.getElementById(FULL_SITE_BLOCK_HOST_ID);
+    expect(host).not.toBeNull();
+
+    cleanup();
+    expect(doc.getElementById(FULL_SITE_BLOCK_HOST_ID)).toBeNull();
   });
 });
