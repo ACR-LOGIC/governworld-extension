@@ -84,6 +84,16 @@ export interface AuditEvent {
   gatewayOrigin?: string;
   /** Category set active after the change — policy references, never content. */
   enabledCategories?: string[];
+  /** Explainable Compliance Score (0-100), when evaluated. */
+  complianceScore?: number;
+  /** Compliance Risk Band ("INFORMATIONAL" | "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"). */
+  complianceBand?: string;
+  /** Explainable Compliance Reason (e.g. "Blocked because: Patient Name + DOB + AI Destination = 92 Risk"). */
+  complianceReason?: string;
+  /** Destination classification category (e.g. "EXTERNAL_AI" | "PERSONAL_STORAGE" | "TRUSTED_INTERNAL"). */
+  destinationCategory?: string;
+  /** Compliance decision/action enforced ("LOG" | "ALLOW" | "WARN" | "MASK" | "BLOCK"). */
+  complianceAction?: string;
   prevHash?: string;
   outcome: "ok" | "denied" | "error";
 }
@@ -123,13 +133,28 @@ export function isAuditEvent(value: unknown): value is AuditEvent {
   if (value.prevHash !== undefined && (typeof value.prevHash !== "string" || !/^[a-f0-9]{64}$/.test(value.prevHash))) {
     return false;
   }
+  if (value.complianceScore !== undefined && (typeof value.complianceScore !== "number" || !Number.isFinite(value.complianceScore) || value.complianceScore < 0 || value.complianceScore > 100)) {
+    return false;
+  }
+  if (value.complianceBand !== undefined && (typeof value.complianceBand !== "string" || value.complianceBand.length === 0 || value.complianceBand.length > 32)) {
+    return false;
+  }
+  if (value.complianceReason !== undefined && (typeof value.complianceReason !== "string" || value.complianceReason.length === 0 || value.complianceReason.length > 500)) {
+    return false;
+  }
+  if (value.destinationCategory !== undefined && (typeof value.destinationCategory !== "string" || value.destinationCategory.length === 0 || value.destinationCategory.length > 64)) {
+    return false;
+  }
+  if (value.complianceAction !== undefined && (typeof value.complianceAction !== "string" || value.complianceAction.length === 0 || value.complianceAction.length > 32)) {
+    return false;
+  }
   return true;
 }
 
 /** Canonical serialization: stable key order so signatures are reproducible. */
 export function canonicalEventLine(event: AuditEvent): string {
   const ordered: Record<string, unknown> = {};
-  for (const key of ["ts", "action", "host", "counts", "docHash", "pages", "presetId", "policyId", "policyAction", "gatewayOrigin", "enabledCategories", "prevHash", "outcome"] as const) {
+  for (const key of ["ts", "action", "host", "counts", "docHash", "pages", "presetId", "policyId", "policyAction", "gatewayOrigin", "enabledCategories", "complianceScore", "complianceBand", "complianceReason", "destinationCategory", "complianceAction", "prevHash", "outcome"] as const) {
     if (event[key] !== undefined) ordered[key] = event[key];
   }
   return JSON.stringify(ordered);

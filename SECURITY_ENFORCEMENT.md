@@ -120,6 +120,9 @@ process; unit pins in `tests/paste-enforcement.test.ts`):
   point, not just in the UI (checkboxes disabled *and* mandated categories
   re-added on save; content guard merges independently).
 - Policy Studio full website blocking → intercepts matching origins with an isolated, closed Shadow DOM shield (`__governworld-full-site-block-shield`) preventing all interactions, clicks, and underlying DOM leaks.
+- AI Leakage Rule → pasting or uploading PHI (Patient Name, DOB, MRN, Diagnosis, Medications) into external AI platforms (`chatgpt.com`, `claude.ai`, `gemini.google.com`, `perplexity.ai`, `deepseek.com`) triggers an immediate `100 CRITICAL` hard block with non-bypassable rejection (`policyBlocked: true`, no "Paste Unchanged" button).
+- Explainable Compliance Scoring (Risk Formula v1) → replaces opaque heuristics with deterministic mathematical scoring ($0-100$) and explicit human-readable justifications ("Blocked because: Patient Name + DOB + AI Destination = 92 Risk").
+- 8-Layer PHI Evidence Graph → composable clinical evidence accumulation across structured identifiers (MRN, DOB, Insurance, NPI), medical vocabulary density, ICD-10 diagnosis codes, CPT procedure codes, medication dictionaries, clinical note structural markers (HPI, ROS, A&P), and healthcare EHR platform recognition.
 
 Anything on this list that regresses to an unlisted bypass is a release
 blocker until fixed or explicitly documented as an unsupported browser
