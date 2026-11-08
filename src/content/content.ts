@@ -11,6 +11,8 @@ import { initPasteGuard } from "./pasteGuard.js";
 import { showToast } from "./toast.js";
 import { validateMessage } from "../shared/messages.js";
 import type { Finding, FindingCategory, Rect, WorkerMessage } from "../shared/types.js";
+import { ALL_CATEGORIES } from "../shared/settings.js";
+import type { CustomPattern } from "../shared/customPatterns.js";
 import { buildCanonicalDocument } from "./normalization/canonical.js";
 import { observeMutations, getAffectedNodeIds, type MutationObserverHandle, type MutationBatch } from "./normalization/mutation.js";
 import { setDynamicContentMonitored, updateCoverageWithBoundaries } from "./normalization/coverage.js";
@@ -47,7 +49,7 @@ if (g.__gwRedactionContentLoaded !== true) {
   let sessionTimer: ReturnType<typeof setTimeout> | null = null;
   let placeholdersEnabled = false;
   let currentSettings: ScanSettings | null = null;
-  let currentCustomPatterns: any[] = [];
+  let currentCustomPatterns: CustomPattern[] = [];
   /** Manual selection ranges from CONTEXT_MASK_SELECTION (selection, not scan findings). */
   let manualSelectionRanges: Array<{ range: Range; rects: DOMRectList; label: string; placeholder?: string }> = [];
 
@@ -229,7 +231,7 @@ if (g.__gwRedactionContentLoaded !== true) {
 
   function buildFindings(    rawMatches: ReturnType<typeof detect>,
     enabledCategories: string[],
-    customPatterns: any[] = []
+    customPatterns: CustomPattern[] = []
   ): Finding[] {
     return rawMatches.map((match, i) => {
       const rects = findingRects(match.start, match.end);
@@ -718,21 +720,16 @@ if (g.__gwRedactionContentLoaded !== true) {
               sendResponse({ ok: false, error: "No text selected" });
               break;
             }
-            let customPatterns: any[] = [];
+            let customPatterns: CustomPattern[] = [];
             try {
               const stored = await chrome.storage.local.get("customPatterns");
               if (Array.isArray(stored.customPatterns)) {
-                customPatterns = stored.customPatterns;
+                customPatterns = stored.customPatterns as CustomPattern[];
               }
             } catch {
               // Ignore
             }
-            const enabledCategories: FindingCategory[] = msg.settings?.enabledCategories ?? [
-              "email", "phone", "ssn", "dob", "medical_record_number",
-              "member_id", "npi", "dea", "mbi", "address", "payment_card", "secrets", "possible_name",
-              "canadian_sin", "uk_nhs", "aadhaar", "pan_india", "australian_tfn", "cpf",
-              "ip_address", "username", "bank_account", "financial", "custom"
-            ];
+            const enabledCategories: FindingCategory[] = msg.settings?.enabledCategories ?? ALL_CATEGORIES;
             const threshold = (cat: FindingCategory) => msg.settings?.confidenceThresholds?.[cat] ?? 0;
             const matches = detect(selText, enabledCategories, customPatterns).filter(
               (m) => m.confidence >= threshold(m.category)
