@@ -129,6 +129,20 @@
             </button>
           </div>
         </div>
+        <div id="scan-compliance-card" class="compliance-card" hidden>
+          <div class="compliance-card__header">
+            <div class="compliance-card__score-box">
+              <span id="scan-compliance-score" class="compliance-card__score">0</span>
+              <span class="compliance-card__score-max">/100</span>
+            </div>
+            <div class="compliance-card__badge-col">
+              <span id="scan-compliance-band" class="compliance-card__band compliance-card__band--low">LOW</span>
+              <span id="scan-compliance-action" class="compliance-card__action">ALLOW</span>
+            </div>
+          </div>
+          <p id="scan-compliance-reason" class="compliance-card__reason"></p>
+          <div id="scan-compliance-rules" class="compliance-card__rules"></div>
+        </div>
         <ul id="findings-list" class="findings-list"></ul>
         <div class="results-actions">
           <button id="apply-masks-btn" class="btn btn--primary btn--sm" type="button" data-i18n="apply_masks_btn">Apply Masks</button>
@@ -181,6 +195,20 @@
           <div class="section-header">
             <h4 data-i18n="doc_findings_title">Document Findings</h4>
             <span id="doc-findings-count" class="count-badge">0</span>
+          </div>
+          <div id="doc-compliance-card" class="compliance-card" hidden>
+            <div class="compliance-card__header">
+              <div class="compliance-card__score-box">
+                <span id="doc-compliance-score" class="compliance-card__score">0</span>
+                <span class="compliance-card__score-max">/100</span>
+              </div>
+              <div class="compliance-card__badge-col">
+                <span id="doc-compliance-band" class="compliance-card__band compliance-card__band--low">LOW</span>
+                <span id="doc-compliance-action" class="compliance-card__action">ALLOW</span>
+              </div>
+            </div>
+            <p id="doc-compliance-reason" class="compliance-card__reason"></p>
+            <div id="doc-compliance-rules" class="compliance-card__rules"></div>
           </div>
           <ul id="doc-findings" class="findings-list" role="list"></ul>
         </div>

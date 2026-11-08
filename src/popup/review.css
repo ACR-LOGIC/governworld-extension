@@ -329,6 +329,120 @@ input[type="text"] {
   line-height: 1.45;
 }
 
+/* ---------- Compliance Risk Scorecard ---------- */
+.compliance-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+}
+
+.compliance-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.compliance-card__score-box {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.compliance-card__score {
+  font-size: 18px;
+  font-weight: 700;
+  font-family: var(--mono);
+  color: var(--text);
+}
+
+.compliance-card__score-max {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
+.compliance-card__badge-col {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.compliance-card__band {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  text-transform: uppercase;
+}
+
+.compliance-card__band--informational {
+  background: rgba(34, 211, 238, 0.15);
+  color: var(--accent);
+  border: 1px solid rgba(34, 211, 238, 0.3);
+}
+
+.compliance-card__band--low {
+  background: rgba(52, 211, 153, 0.15);
+  color: var(--ok);
+  border: 1px solid rgba(52, 211, 153, 0.3);
+}
+
+.compliance-card__band--medium {
+  background: rgba(251, 191, 36, 0.15);
+  color: var(--warning);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
+.compliance-card__band--high {
+  background: rgba(249, 115, 22, 0.18);
+  color: #fb923c;
+  border: 1px solid rgba(249, 115, 22, 0.35);
+}
+
+.compliance-card__band--critical {
+  background: rgba(248, 113, 113, 0.15);
+  color: var(--danger);
+  border: 1px solid rgba(248, 113, 113, 0.4);
+}
+
+.compliance-card__action {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.compliance-card__reason {
+  margin: 0 0 6px 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--muted);
+}
+
+.compliance-card__rules {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.compliance-card__rule-pill {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
 @media (max-width: 900px) {
   .review {
     grid-template-columns: 1fr;

@@ -11,6 +11,8 @@
 // implementation.
 
 import { previewObjectUrl } from "../shared/docStore.js";
+import { evaluateComplianceScore } from "../shared/complianceScore.js";
+import { classifyDestination } from "../shared/destinationClassifier.js";
 import type { DocKind, DocPageMeta, Finding, Rect, RedactionStyle, RedactionOptions } from "../shared/types.js";
 
 const SESSION_KEY = "reviewSession";
@@ -67,6 +69,12 @@ const dom = {
   textLimitNotice: el<HTMLDivElement>("text-limit-notice"),
   findings: el<HTMLUListElement>("findings"),
   findingsCount: el<HTMLElement>("findings-count"),
+  complianceCard: el<HTMLDivElement>("review-compliance-card"),
+  complianceScore: el<HTMLSpanElement>("review-compliance-score"),
+  complianceBand: el<HTMLSpanElement>("review-compliance-band"),
+  complianceAction: el<HTMLSpanElement>("review-compliance-action"),
+  complianceReason: el<HTMLParagraphElement>("review-compliance-reason"),
+  complianceRules: el<HTMLDivElement>("review-compliance-rules"),
   selectAll: el<HTMLButtonElement>("select-all"),
   selectNone: el<HTMLButtonElement>("select-none"),
   clearDrawn: el<HTMLButtonElement>("clear-drawn"),
@@ -138,6 +146,45 @@ function renderFindingsList(): void {
   if (!dom.findings) return;
   dom.findings.replaceChildren();
   if (dom.findingsCount) dom.findingsCount.textContent = String(findings.length);
+
+  if (findings.length > 0) {
+    if (dom.complianceCard) dom.complianceCard.hidden = false;
+    const destination = classifyDestination(undefined);
+    const evaluation = evaluateComplianceScore(
+      findings.map((f) => ({ category: f.category, confidence: 1.0, value: f.preview })),
+      destination,
+      "download"
+    );
+    if (dom.complianceScore) dom.complianceScore.textContent = String(evaluation.riskScore);
+    if (dom.complianceBand) {
+      dom.complianceBand.textContent = evaluation.riskBand;
+      dom.complianceBand.className = "compliance-card__band";
+      if (evaluation.riskBand === "CRITICAL") dom.complianceBand.classList.add("compliance-card__band--critical");
+      else if (evaluation.riskBand === "HIGH") dom.complianceBand.classList.add("compliance-card__band--high");
+      else if (evaluation.riskBand === "MEDIUM") dom.complianceBand.classList.add("compliance-card__band--medium");
+      else if (evaluation.riskBand === "LOW") dom.complianceBand.classList.add("compliance-card__band--low");
+      else dom.complianceBand.classList.add("compliance-card__band--informational");
+    }
+    if (dom.complianceAction) dom.complianceAction.textContent = `Action: ${evaluation.decision}`;
+    if (dom.complianceReason) dom.complianceReason.textContent = evaluation.reason;
+    if (dom.complianceRules) {
+      dom.complianceRules.replaceChildren();
+      for (const rule of evaluation.factors.appliedRules) {
+        const pill = document.createElement("span");
+        pill.className = "compliance-card__rule-pill";
+        pill.textContent = rule;
+        dom.complianceRules.appendChild(pill);
+      }
+      if (evaluation.factors.aiLeakageTriggered) {
+        const pill = document.createElement("span");
+        pill.className = "compliance-card__rule-pill";
+        pill.textContent = "AI Leakage Rule";
+        dom.complianceRules.appendChild(pill);
+      }
+    }
+  } else {
+    if (dom.complianceCard) dom.complianceCard.hidden = true;
+  }
   for (const finding of findings) {
     const li = document.createElement("li");
     li.className = "finding";

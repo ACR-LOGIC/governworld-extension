@@ -197,7 +197,7 @@ export function matchesDomainPattern(pattern: string, hostname: string): boolean
  * Classifies a destination hostname into category and destination risk score.
  */
 export function classifyDestination(
-  urlOrHost: string,
+  urlOrHost: string = "",
   options: DestinationClassifierOptions = {}
 ): DestinationClassification {
   const host = normalizeHostname(urlOrHost);

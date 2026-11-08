@@ -108,6 +108,7 @@ The **GovernWorld Extension** is a fully functional, local-first browser protect
     - Deterministic, mathematically provable compliance risk scoring ($0-100$) replacing opaque heuristics with auditable explanations.
     - Generates human-readable compliance justifications that auditors and compliance officers trust: `Blocked because: Patient Name + DOB + AI Destination = 92 Risk`.
     - **AI Leakage Rule (Strict Disallow):** When Protected Health Information (PHI) is about to leave toward an external AI system (`chatgpt.com`, `claude.ai`, `gemini.google.com`, `perplexity.ai`, `deepseek.com`, etc.) via paste or upload, it escalates immediately to `CRITICAL (100)` and hard-blocks the action with no raw bypass permitted.
+    - **Interactive Compliance Risk Scorecards:** Integrated directly into the Page Scan results, Document Studio canvas, and Full-Screen Review header, displaying real-time risk scores (0–100), color-coded risk bands (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `INFORMATIONAL`), recommended action pills (`BLOCK`, `MASK`, `WARN`, `ALLOW`), and matched HIPAA combination rule tags.
     - Full classification breakdowns: `WHO`, `WHAT`, `WHERE`, `HOW`, and numerical factor contributions.
 
 12. **8-Layer Evidence-Based PHI Detection Graph & Layered Clinical Engine:**
