@@ -54,17 +54,31 @@ mkdirSync(releaseDir, { recursive: true });
 const outZip = join(releaseDir, `governworld-redaction-${shortSha}.zip`);
 if (existsSync(outZip)) rmSync(outZip);
 
-// Windows: Compress-Archive is built in. Content is zipped so the zip root
-// contains the extension files directly (Chrome Web Store package format).
-execFileSync(
-  "pwsh",
-  [
-    "-NoProfile",
-    "-Command",
-    `Compress-Archive -Path '${distDir}\\*' -DestinationPath '${outZip}'`,
-  ],
-  { cwd: pkgRoot, stdio: "inherit" }
-);
+if (process.platform === "win32") {
+  try {
+    execFileSync(
+      "pwsh",
+      [
+        "-NoProfile",
+        "-Command",
+        `Compress-Archive -Path '${distDir}\\*' -DestinationPath '${outZip}'`,
+      ],
+      { cwd: pkgRoot, stdio: "inherit" }
+    );
+  } catch {
+    execFileSync(
+      "powershell",
+      [
+        "-NoProfile",
+        "-Command",
+        `Compress-Archive -Path '${distDir}\\*' -DestinationPath '${outZip}'`,
+      ],
+      { cwd: pkgRoot, stdio: "inherit" }
+    );
+  }
+} else {
+  execFileSync("zip", ["-r", "-q", outZip, "."], { cwd: distDir, stdio: "inherit" });
+}
 console.log(`Release zip: ${outZip}`);
 
 // Same payload as a gzip tar, for mirrors that prefer it. Built from the same

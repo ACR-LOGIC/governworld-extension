@@ -1,0 +1,142 @@
+name: Release & Multi-Store Publish
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      publish_chrome:
+        description: 'Publish to Chrome Web Store'
+        type: boolean
+        default: true
+      publish_firefox:
+        description: 'Publish to Firefox Add-ons (AMO)'
+        type: boolean
+        default: true
+      publish_edge:
+        description: 'Publish to Microsoft Edge Add-ons'
+        type: boolean
+        default: true
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-verify-publish:
+    name: Build, Verify & Publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # --- Verification Gates ---
+      - name: TypeScript Typecheck
+        run: npm run typecheck
+
+      - name: ESLint Security Linter
+        run: npm run lint:security
+
+      - name: Verify Sidepanel Is In Sync
+        run: npm run sync:sidepanel:check
+
+      - name: Run Test Suite
+        run: npm test
+
+      # --- Multi-Target Production Builds ---
+      - name: Build Extension (Chromium)
+        run: npm run build
+
+      - name: Build Extension (Firefox)
+        run: npm run build:firefox
+
+      - name: Build Extension Payload (Safari)
+        run: npm run build:safari
+
+      - name: Verify Manifests & Offline Assets
+        run: |
+          npx vitest run tests/dist-manifest.test.ts tests/offline-assets.test.ts
+          npx vitest run tests/firefox-package.test.ts tests/firefox-manifest.test.ts
+
+      # --- Package Browser Releases & Checksums ---
+      - name: Package Multi-Browser Releases
+        id: package
+        run: |
+          COMMIT=$(git rev-parse HEAD)
+          npm run release:browsers "$COMMIT"
+          CHROMIUM_ZIP=$(ls release/GovernWorld-Chromium-*.zip | head -n 1)
+          FIREFOX_ZIP=$(ls release/GovernWorld-Firefox-*.zip | head -n 1)
+          echo "chromium_zip=$CHROMIUM_ZIP" >> "$GITHUB_OUTPUT"
+          echo "firefox_zip=$FIREFOX_ZIP" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Packaged Zip Structure
+        run: |
+          node scripts/verify-release-zip.mjs "${{ steps.package.outputs.chromium_zip }}" --check-only
+
+      # --- Store Publishing: Chrome Web Store ---
+      - name: Upload & Publish to Chrome Web Store
+        if: (github.event_name == 'push' || inputs.publish_chrome) && env.CHROME_CLIENT_ID != ''
+        uses: mobilefirstllc/cws-publish@v1.0.4
+        with:
+          action: 'publish'
+          client_id: ${{ secrets.CHROME_CLIENT_ID }}
+          client_secret: ${{ secrets.CHROME_CLIENT_SECRET }}
+          refresh_token: ${{ secrets.CHROME_REFRESH_TOKEN }}
+          extension_id: ${{ secrets.CHROME_EXTENSION_ID }}
+          zip_file: ${{ steps.package.outputs.chromium_zip }}
+        env:
+          CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
+
+      # --- Store Publishing: Firefox AMO ---
+      - name: Sign & Publish to Firefox AMO
+        if: (github.event_name == 'push' || inputs.publish_firefox) && env.FIREFOX_JWT_ISSUER != ''
+        uses: wdzeng/firefox-addon-action@v1
+        with:
+          addon_id: ${{ secrets.FIREFOX_ADDON_ID }}
+          jwt_issuer: ${{ secrets.FIREFOX_JWT_ISSUER }}
+          jwt_secret: ${{ secrets.FIREFOX_JWT_SECRET }}
+          xpi_path: ${{ steps.package.outputs.firefox_zip }}
+          self_hosted: false
+        env:
+          FIREFOX_JWT_ISSUER: ${{ secrets.FIREFOX_JWT_ISSUER }}
+
+      # --- Store Publishing: Microsoft Edge ---
+      - name: Upload to Microsoft Edge Partner Center
+        if: (github.event_name == 'push' || inputs.publish_edge) && env.EDGE_PRODUCT_ID != ''
+        uses: plasmo-corp/edge-addons-action@v1
+        with:
+          product_id: ${{ secrets.EDGE_PRODUCT_ID }}
+          client_id: ${{ secrets.EDGE_CLIENT_ID }}
+          client_secret: ${{ secrets.EDGE_CLIENT_SECRET }}
+          access_token_url: ${{ secrets.EDGE_ACCESS_TOKEN_URL }}
+          zip_path: ${{ steps.package.outputs.chromium_zip }}
+        env:
+          EDGE_PRODUCT_ID: ${{ secrets.EDGE_PRODUCT_ID }}
+
+      # --- GitHub Release Creation ---
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: GovernWorld Extension ${{ github.ref_name }}
+          files: |
+            release/GovernWorld-*.zip
+            release/GovernWorld-*.tar.gz
+            release/BROWSER_SHA256SUMS
+          generate_release_notes: true
+          draft: false
+          prerelease: false
