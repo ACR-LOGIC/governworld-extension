@@ -13,6 +13,8 @@ import {
 import type { CustomPattern } from "../shared/customPatterns.js";
 import { recordAudit } from "../shared/audit.js";
 import { evaluateSitePolicies, findMatchingFullSiteBlockPolicy, parseSitePolicy, SITE_POLICIES_KEY, type SitePolicy } from "../shared/policyStudio.js";
+import { classifyDestination } from "../shared/destinationClassifier.js";
+import { evaluateComplianceScore, extractComplianceFindings } from "../shared/complianceScore.js";
 
 /**
  * Feature Area 2: Proactive 'Paste & Prompt' Shield / Chat & LLM Guard.
@@ -276,6 +278,9 @@ export interface PasteGuardDialogCallbacks {
   sanitizeLabel?: string;
   rawLabel?: string;
   policyBlocked?: boolean;
+  complianceScore?: number;
+  complianceBand?: string;
+  complianceReason?: string;
 }
 
 export interface ActiveDialogHandle {
@@ -640,6 +645,30 @@ export function showPasteGuardDialog(
   titleDiv.id = "gw-pg-title";
   titleDiv.append(doc.createTextNode(callbacks.title ? (callbacks.title + " ") : "GovernWorld Paste Shield "));
 
+  if (typeof callbacks.complianceScore === "number") {
+    const riskBadge = doc.createElement("span");
+    riskBadge.className = "gw-badge gw-badge-risk";
+    const band = callbacks.complianceBand ?? "RISK";
+    riskBadge.textContent = `${band} (${callbacks.complianceScore}/100)`;
+    if (callbacks.complianceScore >= 90) {
+      riskBadge.style.background = "rgba(239, 68, 68, 0.25)";
+      riskBadge.style.color = "#f87171";
+      riskBadge.style.borderColor = "rgba(239, 68, 68, 0.5)";
+    } else if (callbacks.complianceScore >= 70) {
+      riskBadge.style.background = "rgba(249, 115, 22, 0.25)";
+      riskBadge.style.color = "#fb923c";
+      riskBadge.style.borderColor = "rgba(249, 115, 22, 0.5)";
+    } else if (callbacks.complianceScore >= 50) {
+      riskBadge.style.background = "rgba(234, 179, 8, 0.25)";
+      riskBadge.style.color = "#facc15";
+      riskBadge.style.borderColor = "rgba(234, 179, 8, 0.5)";
+    } else {
+      riskBadge.style.background = "rgba(59, 130, 246, 0.25)";
+      riskBadge.style.color = "#60a5fa";
+      riskBadge.style.borderColor = "rgba(59, 130, 246, 0.5)";
+    }
+    titleDiv.appendChild(riskBadge);
+  }
   const badgeSpan = doc.createElement("span");
   badgeSpan.className = "gw-badge";
   badgeSpan.textContent = `${matches.length} Sensitive ${matches.length === 1 ? "Item" : "Items"}`;
@@ -647,7 +676,7 @@ export function showPasteGuardDialog(
 
   const subtitleDiv = doc.createElement("div");
   subtitleDiv.className = "gw-subtitle";
-  subtitleDiv.textContent = callbacks.subtitle ?? "On-device privacy check intercepted sensitive data";
+  subtitleDiv.textContent = callbacks.complianceReason ?? callbacks.subtitle ?? "On-device privacy check intercepted sensitive data";
 
   headerText.append(titleDiv, subtitleDiv);
   header.append(svg, headerText);
@@ -1191,24 +1220,40 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
     }
 
     const currentUrl = doc.defaultView?.location?.href || (typeof location !== "undefined" ? location.href : "");
+    const destination = classifyDestination(currentUrl);
+    const complianceFindings = extractComplianceFindings(text, matches);
+    const complianceEval = evaluateComplianceScore(complianceFindings, destination, "paste");
     const policyEval = evaluateSitePolicies(cachedSitePolicies, currentUrl, matches);
 
-    if (policyEval.hasMatch && policyEval.action === "block") {
+    const isPolicyBlocked = policyEval.hasMatch && policyEval.action === "block";
+    const isComplianceBlocked = complianceEval.decision === "BLOCK";
+
+    if (isPolicyBlocked || isComplianceBlocked) {
       if (typeof chrome !== "undefined" && chrome.storage?.local) {
         void recordAudit({
           ts: new Date().toISOString(),
           action: "policy_enforced",
           host: doc.defaultView?.location?.hostname,
           policyId: policyEval.matchedPolicy?.id,
-          policyAction: "block",
+          policyAction: isPolicyBlocked ? "block" : "compliance_block",
+          complianceScore: complianceEval.riskScore,
+          complianceBand: complianceEval.riskBand,
+          complianceReason: complianceEval.reason,
+          destinationCategory: destination.category,
+          complianceAction: "BLOCK",
           outcome: "denied",
         }).catch(() => {});
       }
       isHandlingEvent = true;
       try {
         showPasteGuardDialog(doc, target, matches, {
-          title: "GovernWorld — Policy Blocked",
-          subtitle: `Policy "${policyEval.matchedPolicy?.name}" strictly prohibits pasting ${policyEval.matchedCategories.join(", ")} on this site.`,
+          title: isPolicyBlocked ? "GovernWorld — Policy Blocked" : "GovernWorld — Compliance Blocked",
+          subtitle: isPolicyBlocked
+            ? `Policy "${policyEval.matchedPolicy?.name}" strictly prohibits pasting ${policyEval.matchedCategories.join(", ")} on this site.`
+            : complianceEval.reason,
+          complianceScore: complianceEval.riskScore,
+          complianceBand: complianceEval.riskBand,
+          complianceReason: complianceEval.reason,
           policyBlocked: true,
           onSanitize: () => {
             isHandlingEvent = false;
@@ -1219,8 +1264,10 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
         });
         if (cachedSettings.notificationPrefs?.toastEnabled) {
           showToast({
-            title: "GovernWorld — Policy Blocked",
-            message: `Pasting blocked by policy "${policyEval.matchedPolicy?.name}".`,
+            title: isPolicyBlocked ? "GovernWorld — Policy Blocked" : "GovernWorld — Compliance Blocked",
+            message: isPolicyBlocked
+              ? `Pasting blocked by policy "${policyEval.matchedPolicy?.name}".`
+              : complianceEval.reason,
             level: "danger",
             durationMs: 4000,
           });
@@ -1254,7 +1301,10 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
           ? `Policy "${policyEval.matchedPolicy?.name}" enforces redaction of ${policyEval.matchedCategories.join(", ")}.`
           : isWarnOnly
           ? `Policy notice: "${policyEval.matchedPolicy?.name}" flagged sensitive data`
-          : undefined,
+          : complianceEval.reason,
+        complianceScore: complianceEval.riskScore,
+        complianceBand: complianceEval.riskBand,
+        complianceReason: complianceEval.reason,
     /* debug */
         onSanitize: () => {
           isHandlingEvent = false;
@@ -1269,7 +1319,7 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
             });
           }
         },
-        onRaw: isRedactOnly ? undefined : () => {
+        onRaw: (isRedactOnly || complianceEval.decision === "MASK") ? undefined : () => {
           isHandlingEvent = false;
           insertTextIntoElement(target, text);
         },
@@ -1381,23 +1431,34 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
     }
 
     const currentUrl = doc.defaultView?.location?.href || (typeof location !== "undefined" ? location.href : "");
+    const destination = classifyDestination(currentUrl);
+    const complianceFindings = extractComplianceFindings(text, matches);
+    const complianceEval = evaluateComplianceScore(complianceFindings, destination, "paste");
     const policyEval = evaluateSitePolicies(cachedSitePolicies, currentUrl, matches);
 
-    if (policyEval.hasMatch && policyEval.action === "block") {
+    const isPolicyBlocked = policyEval.hasMatch && policyEval.action === "block";
+    const isComplianceBlocked = complianceEval.decision === "BLOCK";
+
+    if (isPolicyBlocked || isComplianceBlocked) {
       if (typeof chrome !== "undefined" && chrome.storage?.local) {
         void recordAudit({
           ts: new Date().toISOString(),
           action: "policy_enforced",
           host: doc.defaultView?.location?.hostname,
           policyId: policyEval.matchedPolicy?.id,
-          policyAction: "block",
+          policyAction: isPolicyBlocked ? "block" : "compliance_block",
+          complianceScore: complianceEval.riskScore,
+          complianceBand: complianceEval.riskBand,
+          complianceReason: complianceEval.reason,
+          destinationCategory: destination.category,
+          complianceAction: "BLOCK",
           outcome: "denied",
         }).catch(() => {});
       }
       isHandlingEvent = true;
       try {
         showPasteGuardDialog(doc, target, matches, {
-          title: "GovernWorld — Policy Blocked",
+          title: isPolicyBlocked ? "GovernWorld — Policy Blocked" : "GovernWorld — Compliance Blocked",
           subtitle: `Policy "${policyEval.matchedPolicy?.name}" strictly prohibits prompts containing ${policyEval.matchedCategories.join(", ")} on this site.`,
           policyBlocked: true,
           onSanitize: () => {
@@ -1409,7 +1470,7 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
         });
         if (cachedSettings.notificationPrefs?.toastEnabled) {
           showToast({
-            title: "GovernWorld — Policy Blocked",
+            title: isPolicyBlocked ? "GovernWorld — Policy Blocked" : "GovernWorld — Compliance Blocked",
             message: `Prompt blocked by policy "${policyEval.matchedPolicy?.name}".`,
             level: "danger",
             durationMs: 4000,
@@ -1461,7 +1522,7 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
             });
           }
         },
-        onRaw: isRedactOnly ? undefined : () => {
+        onRaw: (isRedactOnly || complianceEval.decision === "MASK") ? undefined : () => {
           isHandlingEvent = false;
         },
         onCancel: () => {
@@ -1525,23 +1586,35 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
     }
 
     const currentUrl = doc.defaultView?.location?.href || (typeof location !== "undefined" ? location.href : "");
+    const destination = classifyDestination(currentUrl);
+    const combinedFormText = inputs.map((i) => i.value || "").join("\n");
+    const complianceFindings = extractComplianceFindings(combinedFormText, foundMatches);
+    const complianceEval = evaluateComplianceScore(complianceFindings, destination, "share");
     const policyEval = evaluateSitePolicies(cachedSitePolicies, currentUrl, foundMatches);
 
-    if (policyEval.hasMatch && policyEval.action === "block") {
+    const isPolicyBlocked = policyEval.hasMatch && policyEval.action === "block";
+    const isComplianceBlocked = complianceEval.decision === "BLOCK";
+
+    if (isPolicyBlocked || isComplianceBlocked) {
       if (typeof chrome !== "undefined" && chrome.storage?.local) {
         void recordAudit({
           ts: new Date().toISOString(),
           action: "policy_enforced",
           host: doc.defaultView?.location?.hostname,
           policyId: policyEval.matchedPolicy?.id,
-          policyAction: "block",
+          policyAction: isPolicyBlocked ? "block" : "compliance_block",
+          complianceScore: complianceEval.riskScore,
+          complianceBand: complianceEval.riskBand,
+          complianceReason: complianceEval.reason,
+          destinationCategory: destination.category,
+          complianceAction: "BLOCK",
           outcome: "denied",
         }).catch(() => {});
       }
       isHandlingEvent = true;
       try {
         showPasteGuardDialog(doc, culpritElement ?? form, foundMatches, {
-          title: "GovernWorld — Policy Blocked",
+          title: isPolicyBlocked ? "GovernWorld — Policy Blocked" : "GovernWorld — Compliance Blocked",
           subtitle: `Policy "${policyEval.matchedPolicy?.name}" strictly prohibits form submission containing ${policyEval.matchedCategories.join(", ")} on this site.`,
           policyBlocked: true,
           onSanitize: () => {
@@ -1553,7 +1626,7 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
         });
         if (cachedSettings.notificationPrefs?.toastEnabled) {
           showToast({
-            title: "GovernWorld — Policy Blocked",
+            title: isPolicyBlocked ? "GovernWorld — Policy Blocked" : "GovernWorld — Compliance Blocked",
             message: `Form submission blocked by policy "${policyEval.matchedPolicy?.name}".`,
             level: "danger",
             durationMs: 4000,
@@ -1624,7 +1697,7 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
             // ignore
           }
         },
-        onRaw: isRedactOnly ? undefined : () => {
+        onRaw: (isRedactOnly || complianceEval.decision === "MASK") ? undefined : () => {
           isHandlingEvent = false;
           try {
             if (typeof form.requestSubmit === "function") {
@@ -1646,6 +1719,87 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
   };
 
 
+  const onFileInputChange = async (e: Event): Promise<void> => {
+    if (isHandlingEvent || cachedMode === "off") return;
+    const target = e.target as HTMLInputElement | null;
+    if (!target || target.tagName !== "INPUT" || target.type !== "file" || !target.files || target.files.length === 0) {
+      return;
+    }
+    const currentUrl = doc.defaultView?.location?.href || (typeof location !== "undefined" ? location.href : "");
+    const dest = classifyDestination(currentUrl);
+    if (dest.category !== "EXTERNAL_AI" && dest.category !== "PERSONAL_STORAGE") {
+      return;
+    }
+    for (const file of Array.from(target.files)) {
+      if (file.type.startsWith("text/") || /\.(txt|csv|json|md|tsv|log)$/i.test(file.name)) {
+        try {
+          if (typeof file.text === "function") {
+            const fileText = await file.text();
+            if (fileText) {
+              const matches = detectPasteFindings(fileText, cachedEnabledCategories, cachedCustomPatterns);
+              if (matches.length > 0) {
+                const complianceFindings = extractComplianceFindings(fileText, matches);
+                const complianceEval = evaluateComplianceScore(complianceFindings, dest, "upload");
+                if (complianceEval.decision === "BLOCK") {
+                  e.preventDefault();
+                  target.value = "";
+                  if (typeof chrome !== "undefined" && chrome.storage?.local) {
+                    void recordAudit({
+                      ts: new Date().toISOString(),
+                      action: "policy_enforced",
+                      host: doc.defaultView?.location?.hostname,
+                      policyAction: "compliance_block",
+                      complianceScore: complianceEval.riskScore,
+                      complianceBand: complianceEval.riskBand,
+                      complianceReason: complianceEval.reason,
+                      destinationCategory: dest.category,
+                      complianceAction: "BLOCK",
+                      outcome: "denied",
+                    }).catch(() => {});
+                  }
+                  isHandlingEvent = true;
+                  try {
+                    showPasteGuardDialog(doc, target, matches, {
+                      title: "GovernWorld — Upload Blocked",
+                      subtitle: complianceEval.reason,
+                      complianceScore: complianceEval.riskScore,
+                      complianceBand: complianceEval.riskBand,
+                      complianceReason: complianceEval.reason,
+                      policyBlocked: true,
+                      onSanitize: () => {
+                        isHandlingEvent = false;
+                      },
+                      onCancel: () => {
+                        isHandlingEvent = false;
+                      },
+                    });
+                    if (cachedSettings.notificationPrefs?.toastEnabled) {
+                      showToast({
+                        title: "GovernWorld — Upload Blocked",
+                        message: complianceEval.reason,
+                        level: "danger",
+                        durationMs: 4000,
+                      });
+                    }
+                  } catch {
+                    isHandlingEvent = false;
+                  }
+                  return;
+                }
+              }
+            }
+          }
+        } catch {
+          // File read error
+        }
+      }
+    }
+  };
+
+  const handleFileInputEvent = (e: Event): void => {
+    void onFileInputChange(e);
+  };
+
   const attachToRoot = (root: Document | ShadowRoot): void => {
     if (attachedRoots.has(root)) return;
     attachedRoots.add(root);
@@ -1655,6 +1809,7 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
     root.addEventListener("drop", handleDropEvent, true);
     root.addEventListener("keydown", onKeyDown as EventListener, true);
     root.addEventListener("submit", onSubmit as EventListener, true);
+    root.addEventListener("change", handleFileInputEvent, true);
   };
 
   const detachFromRoot = (root: Document | ShadowRoot): void => {
@@ -1663,6 +1818,7 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
     root.removeEventListener("drop", handleDropEvent, true);
     root.removeEventListener("keydown", onKeyDown as EventListener, true);
     root.removeEventListener("submit", onSubmit as EventListener, true);
+    root.removeEventListener("change", handleFileInputEvent, true);
   };
 
   /** Attach to every reachable same-document surface under a scope. */

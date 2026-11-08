@@ -57,6 +57,8 @@ you cover them up:
   Generates an exportable, printable HTML Compliance Certificate for compliance recordkeeping.
 - **Custom rule migration.** Export and import user-authored detection patterns directly in the Logic tab as offline JSON files, with built-in schema validation and ReDoS protection.
 - **Policy Studio DLP governance.** Create and enforce site-specific rules (e.g. chatgpt.com, slack.com) to strictly block, auto-redact, or warn on sensitive data categories like PHI, PCI, or API keys before submission.
+- **Explainable Compliance Score & AI Leakage Prevention.** Replaces opaque heuristics with deterministic 0-100 compliance scoring ("Blocked because: Patient Name + DOB + AI Destination = 92 Risk"). Automatically blocks PHI disclosures to external AI platforms before submission.
+- **8-Layer Evidence-Based PHI Detection Graph.** Composable clinical evidence accumulation spanning structured identifiers (MRN, DOB, Insurance, NPI), medical vocabulary density, ICD-10 diagnosis codes, CPT procedure codes, top 150+ prescribed medication dictionaries, clinical note document signatures (HPI, ROS, A&P), and healthcare EHR platform detection.
 
 **Privacy by design.**
 
