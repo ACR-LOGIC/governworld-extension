@@ -500,7 +500,7 @@ function updateComplianceScorecard(
 
   const destination = classifyDestination(url);
   const evaluation = evaluateComplianceScore(
-    findings.map((f) => ({ category: f.category, confidence: f.confidence, value: f.preview })),
+    findings.map((f: any) => ({ category: f.entityType || f.category, confidence: f.confidence, value: f.preview })),
     destination,
     action
   );

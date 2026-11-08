@@ -26,7 +26,49 @@
  */
 
 import type { DestinationClassification } from "./destinationClassifier.js";
-import { extractPHIEvidenceGraph, FindingType, type PHIEntityGroup } from "./phiEvidence.js";
+
+const COMMON_DIAGNOSIS_KEYWORDS = [
+  "hypertension",
+  "diabetes",
+  "mellitus",
+  "asthma",
+  "copd",
+  "hyperlipidemia",
+  "depression",
+  "anxiety",
+  "pneumonia",
+  "bronchitis",
+  "rash",
+  "allergy",
+  "allergies",
+  "fever",
+  "dyspnea",
+  "failure",
+  "syndrome",
+  "infection",
+  "disease",
+  "disorder",
+  "carcinoma",
+  "cancer",
+  "infarction",
+  "pain",
+];
+
+export function isDiagnosisOrCondition(val: string): boolean {
+  if (!val) return false;
+  const lower = val.toLowerCase();
+  if (/^[A-TV-Z][0-9]{1,2}(?:\.[A-Z0-9]{1,4})?$/i.test(val.trim())) return true;
+  return COMMON_DIAGNOSIS_KEYWORDS.some((kw) => lower.includes(kw));
+}
+
+export function isMedicationValue(val: string): boolean {
+  if (!val) return false;
+  const lower = val.toLowerCase();
+  if (/\b(?:mg|mcg|ml|units?|bid|tid|qid|daily|prn|po|tablets?|capsules?)\b/i.test(val)) return true;
+  return COMMON_MEDICATIONS.some((m) => lower.includes(m.toLowerCase()));
+}
+
+import { extractPHIEvidenceGraph, FindingType, type PHIEntityGroup, COMMON_MEDICATIONS } from "./phiEvidence.js";
 export { extractPHIEvidenceGraph, FindingType, type PHIEntityGroup };
 
 export type ComplianceAction =
@@ -333,11 +375,19 @@ export function extractComplianceFindings(
   text: string,
   baseMatches: Array<{ category: string; confidence?: number; value?: string }> = []
 ): ComplianceFindingInput[] {
-  const findings: ComplianceFindingInput[] = baseMatches.map((m) => ({
-    category: normalizeCategoryName(m.category),
-    confidence: m.confidence ?? 1.0,
-    value: m.value,
-  }));
+  const findings: ComplianceFindingInput[] = baseMatches.map((m) => {
+    let cat = (m as any).entityType || m.category;
+    let norm = normalizeCategoryName(cat);
+    if ((norm === "mrn" || norm === "medical_record_number") && m.value) {
+      if (isDiagnosisOrCondition(m.value)) norm = "diagnosis";
+      else if (isMedicationValue(m.value)) norm = "medication";
+    }
+    return {
+      category: norm,
+      confidence: m.confidence ?? 1.0,
+      value: m.value,
+    };
+  });
 
   if (!text || typeof text !== "string") {
     return findings;
@@ -413,7 +463,11 @@ export function evaluateComplianceScore(
   let phiFound = false;
 
   for (const f of findings) {
-    const norm = normalizeCategoryName(f.category);
+    let norm = normalizeCategoryName(f.category);
+    if ((norm === "mrn" || norm === "medical_record_number") && f.value) {
+      if (isDiagnosisOrCondition(f.value)) norm = "diagnosis";
+      else if (isMedicationValue(f.value)) norm = "medication";
+    }
     const count = f.count && f.count > 0 ? f.count : 1;
     entityCounts[norm] = (entityCounts[norm] ?? 0) + count;
     totalMatches += count;

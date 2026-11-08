@@ -3,6 +3,8 @@ import { describe, expect, it, beforeAll } from "vitest";
 import { detect } from "../src/content/detect.js";
 import { isExcludedElement } from "../src/content/extract.js";
 import { validateMessage } from "../src/shared/messages.js";
+import { evaluateComplianceScore } from "../src/shared/complianceScore.js";
+import { classifyDestination } from "../src/shared/destinationClassifier.js";
 
 type Tab = { id?: number; url?: string; active?: boolean };
 const tab = (id: number, url: string, active = false): Tab => ({ id, url, active });
@@ -171,5 +173,72 @@ describe("Clinical PHI detection enhancements", () => {
     expect(values).toContain("Jane Doe");
     expect(values).toContain("Robert Smith");
     expect(values).toContain("Gregory House");
+  });
+  it("accurately detects all PHI in synthetic clinical SOAP notes and escalates risk score", () => {
+    const text = `
+Discharge Summary / Progress Note (Synthetic Example)
+• Patient Name: [John Doe] (Synthetic)
+• Medical Record Number (MRN): [SYN-9876543]
+• Date of Encounter: [11/08/2026]
+• Attending Physician: [Dr. Jane Smith, MD]
+
+1. Subjective (S)
+• Chief Complaint: Shortness of breath and productive cough for 4 days.
+• History of Present Illness (HPI):
+The patient is a [58-year-old male] who presents with a 4-day history of worsening dyspnea on exertion, low-grade fever (max 101.2°F), and a cough producing green sputum. He denies chest pain, hemoptysis, or recent travel. Reports mild fatigue but is oriented to person, place, and time.
+• Past Medical History (PMH): Hypertension, Type 2 Diabetes Mellitus.
+• Allergies: Penicillin (causes generalized rash).
+• Medications: Lisinopril 10 mg daily, Metformin 500 mg BID.
+
+2. Objective (O)
+• Vital Signs:
+• Blood Pressure: 132/84 mmHg
+`;
+    const matches = detect(text, [
+      "email", "phone", "ssn", "dob", "medical_record_number", "member_id",
+      "npi", "dea", "mbi", "address", "payment_card", "secrets", "possible_name"
+    ]);
+
+    const values = matches.map((m) => m.value);
+    // 1. Patient Name & Physician Name
+    expect(values).toContain("John Doe");
+    expect(values).toContain("Dr. Jane Smith, MD");
+    expect(values).not.toContain("Medical Record Number");
+
+    // 2. MRN
+    expect(values).toContain("SYN-9876543");
+
+    // 3. Date of Encounter (HIPAA Safe Harbor Date)
+    expect(values).toContain("11/08/2026");
+
+    // 4. Diagnoses & PMH
+    expect(values).toContain("Hypertension");
+    expect(values).toContain("Type 2 Diabetes Mellitus");
+    expect(values).toContain("Penicillin (causes generalized rash)");
+
+    // 5. Medications
+    expect(values).toContain("Lisinopril 10 mg daily");
+    expect(values).toContain("Metformin 500 mg BID");
+
+    // 6. Explainable Compliance Scorecard Verification
+    const destination = classifyDestination("https://chat.openai.com");
+    const evaluation = evaluateComplianceScore(
+      matches.map((m) => ({
+        category: m.entityType || m.category,
+        confidence: m.confidence,
+        value: m.value,
+      })),
+      destination,
+      "paste"
+    );
+
+    // AI Leakage + Combined PHI triggers maximum score and BLOCK
+    expect(evaluation.riskScore).toBe(100);
+    expect(evaluation.riskBand).toBe("CRITICAL");
+    expect(evaluation.decision).toBe("BLOCK");
+    expect(evaluation.factors.aiLeakageTriggered).toBe(true);
+    expect(evaluation.factors.appliedRules).toContain("MRN + DOB + Diagnosis");
+    expect(evaluation.factors.appliedRules).toContain("Patient Name + MRN");
+    expect(evaluation.factors.appliedRules).toContain("Patient Name + DOB");
   });
 });

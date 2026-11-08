@@ -195,6 +195,7 @@ function isFinding(value: unknown): value is Finding {
     value.startOffset < 0 ||
     value.endOffset < value.startOffset
   ) return false;
+  if (value.entityType !== undefined && (typeof value.entityType !== "string" || value.entityType.length > 64)) return false;
   if (!Array.isArray(value.rects) || value.rects.length > 1000 || !value.rects.every(isRect)) return false;
   if (value.source === "attr") {
     if (typeof value.attribute !== "string" || !ATTRIBUTE_NAMES.has(value.attribute) || value.selected !== false) return false;
