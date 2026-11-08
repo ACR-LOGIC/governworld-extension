@@ -18,8 +18,8 @@ you cover them up:
 
 - **Scan on demand.** Nothing scans automatically. Open the popup and press
   **Scan this page** to analyze the visible text of the current tab.
-- **Paste protection modes.** Paste Shield guards text you paste into chats,
-  forms, and editors: **Off**, **This tab** (tabs you explicitly authorize —
+- **Paste and prompt protection modes.** Paste Shield guards text you paste or submit into chats,
+  forms, and message composers: **Off**, **This tab** (tabs you explicitly authorize —
   the default, needs no site access), or **Always on** (every site you visit,
   only after you grant site access at runtime; revoking access stops it).
 - **Local only — enforced.** Scanning, detection, OCR, and redaction all run
@@ -52,8 +52,10 @@ you cover them up:
   dialog. The view shows the pages exactly as they were verified on this device,
   at the original page size, and it cannot redact anything itself — a box that
   failed to be applied can never print as a clean page.
-- **Signed audit log.** Every scan, mask, document, and preset change is
+- **Signed audit log & compliance certificate.** Every scan, mask, document, and preset change is
   recorded as metadata-only audit entries, and exported logs are ECDSA-signed so an edit to an export is detectable.
+  Generates an exportable, printable HTML Compliance Certificate for compliance recordkeeping.
+- **Custom rule migration.** Export and import user-authored detection patterns directly in the Logic tab as offline JSON files, with built-in schema validation and ReDoS protection.
 
 **Privacy by design.**
 
