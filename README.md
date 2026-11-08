@@ -92,6 +92,16 @@ The **GovernWorld Extension** is a fully functional, local-first browser protect
    - Client-side JSON export and import for user-authored detection rules in the Logic tab.
    - Comprehensive offline schema validation, ReDoS resistance checking, and duplicate-safe ID merging.
 
+10. **Policy Studio & Site-Specific DLP Governance:**
+    - User-defined URL governance rules allowing granular policy creation, toggling, deletion, export, and import.
+    - URL pattern matching supports wildcards, domain/subdomain rules, and path filters (e.g., `chatgpt.com`, `*.slack.com`, `example.com/api/*`).
+    - Scope options support PHI (HIPAA), PCI DSS / Financial, API Keys & Secrets, PII, and custom category lists.
+    - Enforcement actions:
+      - **Strict Block:** strictly prohibits pasting, prompt submission, or form submission on targeted websites with a clear rejection dialog (no raw bypass permitted).
+      - **Auto-Redact:** enforces mandatory auto-sanitization, stripping bypass actions so sensitive data cannot leave the browser unredacted.
+      - **Warn:** surfaces high-visibility policy notices while permitting user-reviewed transmission.
+    - Fully audited with ECDSA-signed audit records (`policy_created`, `policy_deleted`, `policy_enforced`).
+
 ---
 
 ## Browser Compatibility & Cross-Platform Installation Guide

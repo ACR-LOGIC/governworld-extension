@@ -11,6 +11,7 @@ The GovernWorld Chrome Extension is designed with a **strict local-first, zero-t
 5. **Cryptographic Audit Trail & Compliance Attestation:** Audit logging records metadata-only, ECDSA P-256 signed event chains. Standalone, printable Verifiable Compliance Certificates (`governworld-compliance-certificate-*.html`) attest to zero-egress local processing and key authenticity without exposing raw sensitive values.
 6. **No Remote Code Execution:** The extension strictly enforces Manifest V3 Content Security Policy (`script-src 'self' 'wasm-unsafe-eval'`). No remote scripts, `eval()`, or dynamic code injection from untrusted sources are permitted.
 7. **Rule Import & ReDoS Defense:** Imported user logic rules undergo rigorous client-side schema parsing and ReDoS execution safety analysis (`isSafeRegex`) to eliminate denial-of-service risks prior to local storage.
+8. **Site-Specific DLP Policy Studio:** User-configured URL governance policies enforce fail-closed controls (Strict Block, Auto-Redact, Warn) preventing raw data leaks on target hosts, backed by signed audit records.
 
 ## Reporting a Vulnerability
 
