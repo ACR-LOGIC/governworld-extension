@@ -47,7 +47,7 @@ import type {
   Rect,
   RedactionStyle,
 } from "../shared/types.js";
-import type { CustomPattern, CommunityAccount, CommunityRule } from "../shared/customPatterns.js";
+import { loadCustomPatterns, saveCustomPatterns, parseCustomPattern, type CustomPattern, type CommunityAccount, type CommunityRule } from "../shared/customPatterns.js";
 import { parseSampleLines, type WizardAnalysis } from "../shared/wizardAnalyzer.js";
 import type { ImageCandidate } from "../shared/messages.js";
 
@@ -2858,6 +2858,9 @@ export async function initPopup(): Promise<void> {
   const noCustomPatterns = document.getElementById("no-custom-patterns") as HTMLParagraphElement | null;
   const communityRulesList = document.getElementById("community-rules-list") as HTMLUListElement | null;
   const communityAccountStatus = document.getElementById("community-account-status") as HTMLParagraphElement | null;
+  const exportCustomRulesBtn = document.getElementById("export-custom-rules-btn") as HTMLButtonElement | null;
+  const importCustomRulesBtn = document.getElementById("import-custom-rules-btn") as HTMLButtonElement | null;
+  const importCustomRulesFile = document.getElementById("import-custom-rules-file") as HTMLInputElement | null;
 
   if (linkCommunityBtn) {
     linkCommunityBtn.disabled = true;
@@ -3158,6 +3161,80 @@ export async function initPopup(): Promise<void> {
 
   fetchCommunityRulesBtn?.addEventListener("click", () => {
     void chrome.runtime.sendMessage({ type: "POPUP_COMMUNITY_FETCH_COMMUNITY_RULES", requestId: requestId() });
+  });
+
+  exportCustomRulesBtn?.addEventListener("click", async () => {
+    const patterns = await loadCustomPatterns();
+    const current = await loadSettings();
+    if (patterns.length === 0) {
+      speakAnnouncement("No personal logic rules to export", current);
+      return;
+    }
+    const json = JSON.stringify(patterns, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "governworld-custom-rules-" + new Date().toISOString().slice(0, 10) + ".json";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    speakAnnouncement(t(current.language, "rules_exported"), current);
+  });
+
+  importCustomRulesBtn?.addEventListener("click", () => {
+    importCustomRulesFile?.click();
+  });
+
+  importCustomRulesFile?.addEventListener("change", async () => {
+    const file = importCustomRulesFile.files?.[0];
+    if (!file) return;
+    const current = await loadSettings();
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      if (!Array.isArray(parsed)) {
+        speakAnnouncement(t(current.language, "invalid_rules_file"), current);
+        return;
+      }
+      const valid: CustomPattern[] = [];
+      for (const item of parsed) {
+        const res = parseCustomPattern(item);
+        if (res.ok) valid.push(res.pattern);
+      }
+      if (valid.length === 0) {
+        speakAnnouncement(t(current.language, "invalid_rules_file"), current);
+        return;
+      }
+      const existing = await loadCustomPatterns();
+      const map = new Map<string, CustomPattern>();
+      for (const p of existing) map.set(p.id, p);
+      for (const p of valid) map.set(p.id, p);
+      const merged = [...map.values()];
+      await saveCustomPatterns(merged);
+      renderCustomPatterns(merged);
+
+      const catSet = new Set(current.enabledCategories);
+      let changed = false;
+      for (const p of valid) {
+        if (p.category !== "custom" && !catSet.has(p.category)) {
+          catSet.add(p.category);
+          changed = true;
+        }
+      }
+      if (changed) {
+        const next = ALL_CATEGORIES.filter((c) => catSet.has(c));
+        await saveSettings({ ...current, enabledCategories: next });
+        await renderCategories({ enabledCategories: next, language: current.language });
+      }
+
+      speakAnnouncement(t(current.language, "rules_imported"), current);
+    } catch {
+      speakAnnouncement(t(current.language, "invalid_rules_file"), current);
+    } finally {
+      importCustomRulesFile.value = "";
+    }
   });
 
   function renderCustomPatterns(patterns: CustomPattern[]) {
