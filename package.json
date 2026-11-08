@@ -66,5 +66,8 @@
     "jsdom": "^30.1.1",
     "typescript": "^7.0.2",
     "vitest": "^5.0.2"
+  },
+  "overrides": {
+    "minimatch": "^11.0.5"
   }
 }
