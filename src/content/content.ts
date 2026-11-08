@@ -255,7 +255,7 @@ if (g.__gwRedactionContentLoaded !== true) {
     const items: Array<{ kind: "highlight" | "mask"; label: string; placeholder?: string; x: number; y: number; width: number; height: number }> = [];
     for (const finding of findings) {
       if (!finding.selected) continue;
-      if (finding.source !== "attr" && finding.nodeId && finding.nodeId !== "svg") {
+      if (finding.source !== "attr" && finding.nodeId && finding.nodeId !== "svg" && !finding.nodeId.startsWith("media")) {
         const fresh = findingRects(finding.startOffset, finding.endOffset);
         if (fresh.length > 0) {
           finding.rects = fresh;
@@ -544,7 +544,7 @@ if (g.__gwRedactionContentLoaded !== true) {
     // Collect image candidates for the popup's "Scan images" offer.
     // Previously only fired on zero-text pages; now fires always so the popup
     // always knows what images are present regardless of DOM text content.
-    const imageCandidates = combined.length === 0 ? collectImageCandidates() : undefined;
+    const imageCandidates = (combined.length === 0 || (combined.length < 300 && findings.length === 0)) ? collectImageCandidates() : undefined;
 
     respond(
       {
@@ -641,6 +641,19 @@ if (g.__gwRedactionContentLoaded !== true) {
               durationMs: msg.durationMs,
               actionLabel: msg.actionLabel,
             });
+            sendResponse({ ok: true });
+            break;
+          }
+          case "SCAN_PAGE_VISUAL_RESULT": {
+            if (msg.sessionId !== sessionId) {
+              sendResponse({ ok: false, error: "Stale session" });
+              break;
+            }
+            for (const f of msg.findings) {
+              if (!findings.some((existing) => existing.id === f.id)) {
+                findings.push(f);
+              }
+            }
             sendResponse({ ok: true });
             break;
           }
