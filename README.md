@@ -55,10 +55,10 @@ The **GovernWorld Extension** is a fully functional, local-first browser protect
    - Copy securely redacted plain text with sensitive values replaced by solid block placeholders `[REDACTED]`.
    - Keyboard shortcuts: `Alt+Shift+E` opens the popup, `Alt+Shift+S` scans the page, `Alt+Shift+M` applies or removes masks, `Alt+Shift+P` opens the side panel. All four are rebindable at `chrome://extensions/shortcuts`.
 
-2. **"Paste & Prompt" Shield (on-demand, active on tabs you have activated):**
-   - Intercepts paste events in real time on LLM interfaces (**ChatGPT**, **Claude**, **Gemini**, **Slack**, web forms).
-   - Shows a non-intrusive floating review modal with masked previews.
-   - 1-click **Sanitize & Paste** automatically scrubs secrets/PII before pasting.
+2. **"Paste, Prompt & Submit" Shield (on-demand, active on tabs you have activated):**
+   - Intercepts paste events and prompt/form submissions (`Enter` key on chat inputs, query bars, message composers, and `<form>` submit events) in real time on web interfaces (**ChatGPT**, **Claude**, **Gemini**, **Slack**, Jira, web forms).
+   - Shows a non-intrusive floating Shadow DOM review modal with masked previews.
+   - 1-click **Sanitize & Paste / Sanitize & Send** automatically scrubs secrets/PII before inserting or submitting.
 
 3. **Interactive Document Redaction Studio:**
    - Drag-and-drop or select PDF, Microsoft Word (`.docx`), and image files (`.png`, `.jpg`, `.webp`).
@@ -83,6 +83,14 @@ The **GovernWorld Extension** is a fully functional, local-first browser protect
 
 7. **Right-Click Context Menu Protection:**
    - Highlight any text and right-click to *Redact selection to clipboard* or *Mask selection* without opening the popup.
+
+8. **Cryptographic Audit Log & Verifiable Compliance Certificate:**
+   - Every scan, mask application, document redaction, and preset change is recorded in an ECDSA P-256 signed audit ledger.
+   - Exports self-contained, printable HTML Compliance Certificates (`governworld-compliance-certificate-*.html`) with digital signature attestation, local-first zero-egress guarantees, and printable audit summaries for compliance reviews.
+
+9. **Offline Custom Rules Backup & Migration (Export & Import):**
+   - Client-side JSON export and import for user-authored detection rules in the Logic tab.
+   - Comprehensive offline schema validation, ReDoS resistance checking, and duplicate-safe ID merging.
 
 ---
 
@@ -272,9 +280,9 @@ npm run test:network-inspection
 The engine includes deterministic, algorithmic detectors for all primary regulatory and compliance categories:
 
 - **PII:** US SSN/ITIN, email addresses, phone numbers, physical addresses, dates of birth, IP addresses (IPv4/IPv6), usernames and login handles.
-- **Financial:** Payment card numbers (Luhn checksum validation), bank account and ABA routing numbers (checksum validated), salary and compensation amounts.
+- **Financial:** Payment card numbers (Luhn checksum validation), bank account and ABA routing numbers (checksum validated), International Bank Account Numbers (**IBAN** with ISO 7064 Mod-97 checksum validation for 80+ countries), salary and compensation amounts.
 - **PHI / Healthcare:** National Provider Identifiers (NPI checksum), DEA registration numbers, Medicare Beneficiary Identifiers (CMS MBI), Medical Record Numbers (MRN).
-- **International Identifiers:** Canadian SIN (Luhn check), UK NHS Number (Mod-11 check), Indian Aadhaar (Verhoeff check) & PAN, Australian TFN (Mod-11 check), Brazilian CPF (Dual checksum).
+- **International Identifiers & Travel Documents:** Canadian SIN (Luhn check), UK NHS Number (Mod-11 check), Indian Aadhaar (Verhoeff check) & PAN, Australian TFN (Mod-11 check), Brazilian CPF (Dual checksum), International Passport Numbers, and Machine Readable Zone (**MRZ** travel documents formatted to ICAO Doc 9303 TD3 standard with 7-3-1 weighted checksums).
 - **Secrets & Credentials:** API keys, AWS access keys, JWT tokens, Bearer tokens, private SSH/RSA keys, database connection strings.
 - **Custom:** User-defined rules created via the Redaction Wizard.
 
@@ -287,7 +295,7 @@ The engine includes deterministic, algorithmic detectors for all primary regulat
 - **India DPDP Act:** Auto-selects Aadhaar, PAN card, and identity identifiers.
 - **Australia Privacy Act:** Auto-selects Tax File Numbers (TFN) and personal identifiers.
 - **Brazil LGPD:** Auto-selects Brazilian CPF numbers and personal records.
-- **Developer / Secrets:** Auto-selects API keys, private keys, auth headers, and cloud credentials.
+- **Developer / Secrets:** Auto-selects API keys, private keys, auth headers, cloud credentials, IP addresses, and developer usernames.
 - **Custom:** Full manual control over enabled categories and custom patterns.
 
 ---
@@ -331,7 +339,7 @@ The **Document Redaction Studio** provides an interactive canvas interface:
 
 ---
 
-## "Paste & Prompt" Shield (Chat & input guard)
+## "Paste, Prompt & Submit" Shield (Chat, prompt & input guard)
 
 Guards against pasting credentials, PHI, or PII into any browser input —
 AI chats, web forms, SaaS apps, rich-text editors — not a list of AI
@@ -341,10 +349,13 @@ covered exactly like a known one:
 - Intercepts `paste`, `beforeinput`, and drag-and-drop text on `input`,
   `textarea`, and `[contenteditable]` elements, including editors inside open
   shadow roots and same-origin iframes.
+- Intercepts direct `Enter` keystrokes on AI chat inputs, message composers,
+  and query bars, as well as `<form>` submit events, preventing accidental
+  transmission of sensitive data that was typed or auto-filled.
 - Displays a floating Shadow DOM review modal near the input.
-- Actions: **Sanitize & Paste** (replaces secrets with `[REDACTED]`), **Paste Unchanged**, or **Cancel** (<kbd>Esc</kbd>).
-- Interception happens synchronously before insertion: a blocked or sanitized
-  paste never reaches the destination. A dialog fault inserts nothing.
+- Actions: **Sanitize & Send / Sanitize & Paste** (replaces secrets with `[REDACTED]`), **Send Unchanged / Paste Unchanged**, or **Cancel** (<kbd>Esc</kbd>).
+- Interception happens synchronously before insertion or submission: a blocked or sanitized
+  submission never reaches the destination. A dialog fault transmits nothing.
 
 ### Protection modes — what is active, and when
 
@@ -396,6 +407,13 @@ The **Redaction Wizard** enables users to construct custom detection logic local
 2. **Analysis:** Generates candidate regex patterns locally using sample text.
 3. **Sandbox Test:** Test candidate patterns against interactive sample text in real time.
 4. **Save Locally:** Save rules directly into `chrome.storage.local` for immediate use in scans and document redactions.
+
+### Offline Custom Rules Backup & Migration (Export & Import)
+
+To migrate custom detection logic between browsers or maintain local backups:
+- **Export Rules:** Generates an offline, formatted JSON file (`governworld-custom-rules-YYYY-MM-DD.json`) containing your defined regex patterns, flags, categories, and confidence ratings.
+- **Import Rules:** Ingests a JSON rules export locally. All imported patterns undergo strict schema validation (`parseCustomPattern`), ReDoS denial-of-service protection checks (`isSafeRegex`), and duplicate-safe merging by rule UUID. Any categories associated with imported rules are automatically activated in active settings.
+- **Zero Remote Egress:** The export and import mechanisms operate exclusively client-side via standard HTML5 File and Blob APIs with zero network egress.
 
 ### Rule Persistence & Video Walkthrough
 
@@ -503,6 +521,7 @@ The codebase includes an extensive automated test suite covering all detection a
 ## Security & Tamper Resistance
 
 - **Signed Audit Trail:** Every scan, mask application, document export, and policy change generates an ECDSA P-256 signed audit record stored locally.
+- **Verifiable Compliance Certificate:** Alongside cryptographic JSONL audit logs, GovernWorld exports self-contained, printable HTML Compliance Certificates (`governworld-compliance-certificate-*.html`) attesting to verified local execution, action counts, and cryptographic public key fingerprints.
 - **Integrity Invariants:** Unit tests verify that audit logs fail closed if file downloads or delivery pipelines are intercepted.
 - For vulnerability reports or security inquiries, please see [SECURITY.md](SECURITY.md).
 

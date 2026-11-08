@@ -1373,6 +1373,12 @@ body[data-reduced-motion="true"] *::after {
   gap: 6px;
 }
 
+.logic-actions-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
 .findings-list {
   list-style: none;
   margin: 0;
