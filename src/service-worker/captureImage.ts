@@ -190,6 +190,37 @@ export async function captureActiveTab(windowId: number): Promise<CapturedImage>
   };
 }
 
+/**
+ * Crop capture bytes to a viewport-relative rectangle if OffscreenCanvas and
+ * createImageBitmap are available in the current runtime environment.
+ * Gracefully returns the original bytes if cropping is unavailable or fails.
+ */
+export async function cropCapturedImage(
+  bytes: ArrayBuffer,
+  cropRect?: { x: number; y: number; width: number; height: number }
+): Promise<ArrayBuffer> {
+  if (!cropRect || cropRect.width <= 0 || cropRect.height <= 0) return bytes;
+  if (typeof OffscreenCanvas === "undefined" || typeof createImageBitmap === "undefined") {
+    return bytes;
+  }
+  try {
+    const blob = new Blob([bytes], { type: "image/png" });
+    const sx = Math.max(0, Math.round(cropRect.x));
+    const sy = Math.max(0, Math.round(cropRect.y));
+    const sw = Math.round(cropRect.width);
+    const sh = Math.round(cropRect.height);
+    const bitmap = await createImageBitmap(blob, sx, sy, sw, sh);
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return bytes;
+    ctx.drawImage(bitmap, 0, 0);
+    const croppedBlob = await canvas.convertToBlob({ type: "image/png" });
+    return await croppedBlob.arrayBuffer();
+  } catch {
+    return bytes;
+  }
+}
+
 /** Prefer the original file; fall back to a rendered capture of the tab. */
 export async function captureImage(src: string, windowId: number): Promise<CapturedImage> {
   const original = await tryFetchOriginal(src);

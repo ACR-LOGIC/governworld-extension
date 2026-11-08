@@ -633,7 +633,7 @@ function clearScanStateForCapture(): PopupState {
 
 /** True when a completed scan read no text, which is the only case that offers capture. */
 function nothingToReadOrAbsent(state: PopupState): boolean {
-  return !state.scanned || state.visibleChars === 0;
+  return !state.scanned || state.visibleChars === 0 || (state.visibleChars < 300 && state.findings.length === 0);
 }
 
 function renderState(state: PopupState): void {

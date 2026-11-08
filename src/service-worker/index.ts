@@ -1254,10 +1254,10 @@ async function handleContentScanResult(message: Extract<WorkerMessage, { type: "
               bytes = original.bytes;
               mimeType = original.mimeType;
             } else if (tab?.windowId) {
-              const { captureActiveTab } = await import("./captureImage.js");
+              const { captureActiveTab, cropCapturedImage } = await import("./captureImage.js");
               const capture = await captureActiveTab(tab.windowId).catch(() => null);
               if (capture) {
-                bytes = capture.bytes;
+                bytes = item.cropRect ? await cropCapturedImage(capture.bytes, item.cropRect) : capture.bytes;
                 mimeType = capture.mimeType;
               }
             }
@@ -1274,11 +1274,18 @@ async function handleContentScanResult(message: Extract<WorkerMessage, { type: "
             for (const page of pages) {
               for (const f of page.findings) {
                 if (meetsThreshold(settings, f.category, f.confidence)) {
+                  const pageRects = (f.rects ?? []).map((r) => ({
+                    ...r,
+                    x: r.x + (item.cropRect?.x ?? 0),
+                    y: r.y + (item.cropRect?.y ?? 0),
+                  }));
                   newFindings.push({
                     ...f,
                     id: `media_${item.sourceId}_${f.id}`,
                     source: "local-rules",
-                    selected: false, // visual OCR findings are report-only
+                    nodeId: `media_${item.sourceId}`,
+                    rects: pageRects.length > 0 ? pageRects : f.rects,
+                    selected: false,
                   });
                 }
               }
@@ -1378,6 +1385,15 @@ async function handleContentScanResult(message: Extract<WorkerMessage, { type: "
         requestId: pending.requestId,
         state: buildPopupState(settings, updatedSession),
       });
+      if (newFindings.length > 0) {
+        void sendToTab(tabId, {
+          type: "SCAN_PAGE_VISUAL_RESULT",
+          requestId: pending.requestId,
+          sessionId: message.sessionId,
+          sourceId: "all_media",
+          findings: newFindings,
+        }).catch(() => undefined);
+      }
     } catch {
       // Async media dispatch failure never affects the already-delivered scan result.
     }
