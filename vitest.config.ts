@@ -23,6 +23,9 @@ export default defineConfig({
     // take the whole suite down with "Timeout waiting for worker to respond".
     // This only governs how many files boot at once.
     maxWorkers: 4,
+    forks: {
+      maxForks: 4,
+    },
     testTimeout: 20000,
   },
 });

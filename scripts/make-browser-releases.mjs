@@ -77,11 +77,23 @@ function packageTarget(family, distName) {
   const outTar = join(releaseDir, `${base}.tar.gz`);
   if (existsSync(outZip)) rmSync(outZip);
   if (existsSync(outTar)) rmSync(outTar);
-  execFileSync(
-    "pwsh",
-    ["-NoProfile", "-Command", `Compress-Archive -Path '${distDir}\\*' -DestinationPath '${outZip}'`],
-    { cwd: pkgRoot, stdio: "inherit" }
-  );
+  if (process.platform === "win32") {
+    try {
+      execFileSync(
+        "pwsh",
+        ["-NoProfile", "-Command", `Compress-Archive -Path '${distDir}\\*' -DestinationPath '${outZip}'`],
+        { cwd: pkgRoot, stdio: "inherit" }
+      );
+    } catch {
+      execFileSync(
+        "powershell",
+        ["-NoProfile", "-Command", `Compress-Archive -Path '${distDir}\\*' -DestinationPath '${outZip}'`],
+        { cwd: pkgRoot, stdio: "inherit" }
+      );
+    }
+  } else {
+    execFileSync("zip", ["-r", "-q", outZip, "."], { cwd: distDir, stdio: "inherit" });
+  }
   execFileSync("tar", ["-czf", outTar, "-C", distDir, "."], { cwd: pkgRoot, stdio: "inherit" });
   console.log(`Release ${family}: ${outZip}`);
   sums.push(`${sha256(outZip)}  ${base}.zip`, `${sha256(outTar)}  ${base}.tar.gz`);
