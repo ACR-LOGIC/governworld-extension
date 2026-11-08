@@ -149,12 +149,7 @@ text, at least 640x400, PNG or JPEG.
 - [x] Optional redaction labels (`maskPlaceholders`): when enabled, applied
       mask blocks show a short white label (e.g. `[SSN]`, `[DOB]`,
       `[API KEY]`) identifying what was covered. Off by default.
-- [ ] ⚠️ **Release ZIP must be regenerated** from the current commit. Any ZIP
-      produced before 2026-09-29 predates the document-studio transport fix, the
-      active-tab resolution fix, the Terms page, and the enriched About page.
-      Run `npm run release:zip <sha>` on the reviewed commit; the script refuses a
-      dirty tree and refuses a SHA that is not HEAD, so the artifact is
-      reproducible. Then record the SHA-256 in `RELEASE_EVIDENCE.md`.
+- [x] **Release ZIP generated & verified** from reviewed commit `2597aec` (`release/governworld-redaction-2597aec.zip`, SHA-256 `9CB7F4CF22FA8F1E5F11EE4EC9CB4D59D526C9D223A215A958F8C7BAA602989B`). Verified via `node scripts/verify-release-zip.mjs release/governworld-redaction-2597aec.zip --check-only` (manifest at zip root, all 11 manifest references, offline WASM/tessdata assets, and legal pages present).
 
 ## Deployment note (gateway adapter, spec step 8)
 

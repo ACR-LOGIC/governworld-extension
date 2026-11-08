@@ -73,6 +73,29 @@ note governs — the older "Done" is scoped to its own block, named explicitly.
 
 ## Release artifact
 
+### Chrome Web Store release (`2597aec`; version 0.2.0)
+
+Official Chrome Web Store submission artifact for GovernWorld Redaction v0.2.0.
+
+| Field | Value |
+|---|---|
+| Commit SHA | `2597aec` |
+| Version | 0.2.0 |
+| Chrome Web Store ZIP | `release/governworld-redaction-2597aec.zip`, SHA-256 `9CB7F4CF22FA8F1E5F11EE4EC9CB4D59D526C9D223A215A958F8C7BAA602989B` |
+| Mirror tarball | `release/governworld-redaction-2597aec.tar.gz`, SHA-256 `5BA3BB35C3CF48ABC1D2A7D2CFD1019933C81959B8B8783DD7EA2D0D757F61CD` |
+| Checksums | `release/SHA256SUMS` (produced by `npm run release:zip 2597aec`) |
+
+| Verification gate | Result |
+|---|---|
+| `npm run typecheck` | ✅ Pass (0 errors) |
+| `npm test` | ✅ 2,178 passed / 0 failed (118 test files) |
+| `npm run sync:sidepanel:check` | ✅ Pass (0 drift) |
+| `npm run build` | ✅ Pass (`dist/`) |
+| `npm run build:firefox` | ✅ Pass (`dist-firefox/`) |
+| `npm run build:safari` | ✅ Pass (`dist-safari/`) |
+| `node scripts/verify-release-zip.mjs` | ✅ Pass: manifest at zip root (MV3, v0.2.0), 11 manifest references, offline assets, legal pages present |
+| Dist & package verification gates | ✅ Pass (`tests/dist-manifest.test.ts`, `tests/offline-assets.test.ts`, `tests/firefox-package.test.ts`, `tests/firefox-manifest.test.ts`) |
+
 ### Per-browser release (`0e354d9`; version 0.1.1, unreleased — supersedes the `d89baa2` packaging)
 
 Delta from `d89baa2`: headed-harness channel override (`GW_BROWSER_CHANNEL`),

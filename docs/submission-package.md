@@ -5,23 +5,23 @@ below is verified against the built artifact; nothing here needs to be
 re-derived at upload time.
 
 - **Target:** Chrome Web Store, single purpose, listing type "Extension"
-- **Artifact:** `release/governworld-redaction-0315091.zip`
-- **Artifact SHA-256:** `7F2DBD1C9A3B3DA8633204AFB63480B7281DD46D88BF6809E17D300937E14450`
-- **Version:** 0.1.1
-- **Published:** https://github.com/ACR-LOGIC/governworld-extension/releases/tag/v0.1.1
+- **Artifact:** `release/governworld-redaction-2597aec.zip`
+- **Artifact SHA-256:** `9CB7F4CF22FA8F1E5F11EE4EC9CB4D59D526C9D223A215A958F8C7BAA602989B`
+- **Version:** 0.2.0
+- **Published:** https://github.com/ACR-LOGIC/governworld-extension/releases/tag/v0.2.0
 
 > The SHA previously recorded here (`67B9D565…`) never matched the artifact it
 > named — it drifted while the package was repointed across releases. It is now
 > the digest of the file actually being uploaded, and `npm run verify:digests`
 > checks the store assets. Verify the zip itself with:
-> `certutil -hashfile release\governworld-redaction-0315091.zip SHA256`
+> `certutil -hashfile release\governworld-redaction-2597aec.zip SHA256`
 - **Digests for every uploaded file:** `npm run verify:digests`
 
 ---
 
 ## 1. Package
 
-Upload `release/governworld-redaction-0315091.zip`. That is the file the
+Upload `release/governworld-redaction-2597aec.zip`. That is the file the
 dashboard wants — not the tarball, and not `dist/`.
 
 Verified in the zip itself: `manifest_version: 3`, 28 files, `manifest.json` at
