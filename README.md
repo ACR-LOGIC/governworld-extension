@@ -114,7 +114,7 @@ The **GovernWorld Extension** is a fully functional, local-first browser protect
 12. **8-Layer Evidence-Based PHI Detection Graph & Layered Clinical Engine:**
     - Operates on the GovernWorld Philosophy: *"Does this content contain evidence of a patient record, and is that data about to leave a controlled environment?"*
     - Composable clinical evidence accumulation spanning:
-      - **Layer 1:** Structured Identifiers (MRN, DOB, Insurance Member IDs, Provider NPI/DEA).
+      - **Layer 1:** Structured Identifiers (MRN, Chart Number, DOB, Member/Policy/Subscriber/Group/Insurance IDs, Provider NPI/DEA).
       - **Layer 2:** Medical Vocabulary Density (40+ clinical terms: pathology, radiology, triage, vital signs, biopsy, etc.).
       - **Layer 3:** ICD-10 Code Detection (Context-corroborated diagnosis codes: `E11.9`, `M54.5`, `I10`, `J45.909`, `Z00.00`).
       - **Layer 4:** CPT / Procedure Codes (5-digit encounter and billing codes: `99213`, `99214`, `80053`, `87635`).

@@ -68,10 +68,13 @@ export function isInternalExtensionUrl(url?: string): boolean {
   if (!url) return false;
   return (
     url.startsWith("chrome-extension://") ||
+    url.startsWith("moz-extension://") ||
+    url.startsWith("safari-web-extension://") ||
     url.startsWith("chrome://") ||
     url.startsWith("edge://") ||
     url.startsWith("about:") ||
-    url.startsWith("view-source:")
+    url.startsWith("view-source:") ||
+    (typeof chrome !== "undefined" && typeof chrome.runtime?.getURL === "function" && url.startsWith(chrome.runtime.getURL("")))
   );
 }
 
@@ -2006,7 +2009,13 @@ export async function initPopup(): Promise<void> {
     const current = await loadSettings();
     speakAnnouncement(t(current.language, "speech_scan_start"), current);
     const mode: ScanMode = lastState?.mode ?? current.mode;
-    void sendMessage({ type: "POPUP_SCAN", requestId: requestId(), mode });
+    const targetTab = await getActiveWebTab();
+    if (targetTab?.id) {
+      if (targetTab.url) currentWebTabUrl = targetTab.url;
+      void sendMessage({ type: "POPUP_SCAN", requestId: requestId(), mode, tabId: targetTab.id });
+    } else {
+      void sendMessage({ type: "POPUP_SCAN", requestId: requestId(), mode });
+    }
   });
 
   clearDataBtn?.addEventListener("click", async () => {
@@ -4301,7 +4310,8 @@ export async function initPopup(): Promise<void> {
     }
   });
 
-  void sendMessage({ type: "POPUP_GET_STATE", requestId: requestId() });
+  const initialTab = await getActiveWebTab().catch(() => undefined);
+  void sendMessage({ type: "POPUP_GET_STATE", requestId: requestId(), ...(initialTab?.id ? { tabId: initialTab.id } : {}) });
 
   // Check for Side Panel handoff from toolbar popup
   async function checkWizardSidePanelHandoff(): Promise<void> {

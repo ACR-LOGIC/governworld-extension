@@ -557,16 +557,19 @@ export function validateMessage(raw: unknown): ValidationResult {
   switch (type) {
     case "POPUP_SCAN": {
       if (!isMode(raw.mode)) return { ok: false, error: "Invalid mode" };
-      return { ok: true, message: { type, requestId, mode: raw.mode } };
+      if (raw.tabId !== undefined && (typeof raw.tabId !== "number" || !Number.isSafeInteger(raw.tabId) || raw.tabId <= 0)) return { ok: false, error: "Invalid tabId" };
+      return { ok: true, message: { type, requestId, mode: raw.mode, ...(typeof raw.tabId === "number" ? { tabId: raw.tabId } : {}) } };
     }
     case "POPUP_APPLY_MASKS": {
       if (!isStringArray(raw.findingIds)) return { ok: false, error: "Invalid findingIds" };
-      return { ok: true, message: { type, requestId, findingIds: raw.findingIds } };
+      if (raw.tabId !== undefined && (typeof raw.tabId !== "number" || !Number.isSafeInteger(raw.tabId) || raw.tabId <= 0)) return { ok: false, error: "Invalid tabId" };
+      return { ok: true, message: { type, requestId, findingIds: raw.findingIds, ...(typeof raw.tabId === "number" ? { tabId: raw.tabId } : {}) } };
     }
     case "POPUP_REMOVE_MASKS":
     case "POPUP_CLEAR_DATA":
     case "POPUP_GET_STATE":
-      return { ok: true, message: { type, requestId } };
+      if (raw.tabId !== undefined && (typeof raw.tabId !== "number" || !Number.isSafeInteger(raw.tabId) || raw.tabId <= 0)) return { ok: false, error: "Invalid tabId" };
+      return { ok: true, message: { type, requestId, ...(typeof raw.tabId === "number" ? { tabId: raw.tabId } : {}) } };
     case "POPUP_COPY_REDACTED": {
       if (!isStringArray(raw.findingIds)) return { ok: false, error: "Invalid findingIds" };
       return { ok: true, message: { type, requestId, findingIds: raw.findingIds } };
@@ -760,7 +763,10 @@ export function validateMessage(raw: unknown): ValidationResult {
       return { ok: true, message: { type, requestId, src: raw.src, name: isName(raw.name) ? raw.name : "page-image.png" } };
     }
     case "POPUP_EXPORT_AUDIT":
-    case "POPUP_UNDO_MASKS":
+    case "POPUP_UNDO_MASKS": {
+      if (raw.tabId !== undefined && (typeof raw.tabId !== "number" || !Number.isSafeInteger(raw.tabId) || raw.tabId <= 0)) return { ok: false, error: "Invalid tabId" };
+      return { ok: true, message: { type, requestId, ...(typeof raw.tabId === "number" ? { tabId: raw.tabId } : {}) } };
+    }
     case "POPUP_CUSTOM_PATTERNS_GET":
     case "POPUP_COMMUNITY_ACCOUNT_GET":
     case "POPUP_COMMUNITY_ACCOUNT_LINK_FREE":

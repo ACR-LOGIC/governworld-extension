@@ -170,12 +170,12 @@ export interface ScanStats {
  */
 
 export type PopupMessage =
-  | { type: "POPUP_SCAN"; requestId: string; mode: ScanMode }
-  | { type: "POPUP_APPLY_MASKS"; requestId: string; findingIds: string[] }
-  | { type: "POPUP_REMOVE_MASKS"; requestId: string }
-  | { type: "POPUP_COPY_REDACTED"; requestId: string; findingIds: string[] }
-  | { type: "POPUP_CLEAR_DATA"; requestId: string }
-  | { type: "POPUP_GET_STATE"; requestId: string }
+  | { type: "POPUP_SCAN"; requestId: string; mode: ScanMode; tabId?: number }
+  | { type: "POPUP_APPLY_MASKS"; requestId: string; findingIds: string[]; tabId?: number }
+  | { type: "POPUP_REMOVE_MASKS"; requestId: string; tabId?: number }
+  | { type: "POPUP_COPY_REDACTED"; requestId: string; findingIds: string[]; tabId?: number }
+  | { type: "POPUP_CLEAR_DATA"; requestId: string; tabId?: number }
+  | { type: "POPUP_GET_STATE"; requestId: string; tabId?: number }
   | { type: "POPUP_SET_MODE"; requestId: string; mode: ScanMode }
   | { type: "POPUP_DOC_PREVIEW"; requestId: string; fileKey: string; name: string; mimeType: string; kind: DocKind; pageOffset?: number; totalPages?: number }
   /**
@@ -213,7 +213,7 @@ export type PopupMessage =
       delivered: boolean;
     }
   | { type: "POPUP_EXPORT_AUDIT"; requestId: string }
-  | { type: "POPUP_UNDO_MASKS"; requestId: string }
+  | { type: "POPUP_UNDO_MASKS"; requestId: string; tabId?: number }
   | { type: "POPUP_SET_NOTIFICATIONS"; requestId: string; enabled: boolean }
   | { type: "POPUP_SET_NOTIFICATION_PREFS"; requestId: string; prefs: Partial<NotificationPreferences> }
   | { type: "POPUP_ACCOUNT_SAVE"; requestId: string; gatewayOrigin: string; apiKey: string }

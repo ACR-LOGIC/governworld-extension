@@ -51,6 +51,8 @@ const EXCLUDED_AUTOCOMPLETE = new Set([
 export function isExcludedElement(el: Element): boolean {
   if (el.closest?.(`[${OVERLAY_ATTR}]`)) return true;
   if (el.closest?.(`[${IGNORE_ATTR}]`)) return true;
+  if (el.getAttribute?.("data-gw-toast-host") != null || el.closest?.("[data-gw-toast-host]")) return true;
+  if (el.id?.startsWith?.("__governworld-") || el.closest?.('[id^="__governworld-"]')) return true;
 
   const blocked = el.closest?.(Array.from(EXCLUDED_TAGS).map((t) => t.toLowerCase()).join(","));
   if (blocked) return true;

@@ -503,10 +503,13 @@ export function isInternalExtensionUrl(url?: string): boolean {
   if (!url) return false;
   return (
     url.startsWith("chrome-extension://") ||
+    url.startsWith("moz-extension://") ||
+    url.startsWith("safari-web-extension://") ||
     url.startsWith("chrome://") ||
     url.startsWith("edge://") ||
     url.startsWith("about:") ||
-    url.startsWith("view-source:")
+    url.startsWith("view-source:") ||
+    (typeof chrome !== "undefined" && typeof chrome.runtime?.getURL === "function" && url.startsWith(chrome.runtime.getURL("")))
   );
 }
 
@@ -547,6 +550,20 @@ export async function getActiveTab(): Promise<chrome.tabs.Tab | undefined> {
   // Strategy 3: Any active HTTP/HTTPS tab in any window
   const allTabs = await chrome.tabs.query({});
   return allTabs.find((t) => t.active && isScannableTab(t));
+}
+
+export async function resolveTargetTab(explicitTabId?: number): Promise<chrome.tabs.Tab | undefined> {
+  if (typeof explicitTabId === "number" && explicitTabId > 0) {
+    try {
+      const candidate = await chrome.tabs.get(explicitTabId);
+      if (candidate && isScannableTab(candidate)) {
+        return candidate;
+      }
+    } catch {
+      // Fall through to active tab resolution
+    }
+  }
+  return await getActiveTab();
 }
 
 function notifyPopup(message: PopupFromWorker): void {
@@ -647,14 +664,14 @@ function buildPopupState(
   };
 }
 
-async function stateForActiveTab(): Promise<PopupState> {
+async function stateForActiveTab(explicitTabId?: number): Promise<PopupState> {
   const settings = await loadSettings();
-  const tab = await getActiveTab();
+  const tab = await resolveTargetTab(explicitTabId);
   const session = tab ? await readSession(tab.id ?? -1) : null;
   return buildPopupState(settings, session);
 }
 
-async function handlePopupScan(mode: ScanMode, requestId: string): Promise<void> {
+async function handlePopupScan(mode: ScanMode, requestId: string, explicitTabId?: number): Promise<void> {
   const settings = await loadSettings();
 
   if (mode === "cloud" && !isCloudAllowed(settings)) {
@@ -669,7 +686,7 @@ async function handlePopupScan(mode: ScanMode, requestId: string): Promise<void>
     return;
   }
 
-  const tab = await getActiveTab();
+  const tab = await resolveTargetTab(explicitTabId);
   if (!tab?.id) {
     notifyPopup({
       type: "POPUP_STATE",
@@ -713,8 +730,8 @@ async function handlePopupScan(mode: ScanMode, requestId: string): Promise<void>
 }
 
 /** True when the action ran; false when the popup was told it could not. */
-async function handlePopupApplyMasks(findingIds: string[], requestId: string): Promise<boolean> {
-  const tab = await getActiveTab();
+async function handlePopupApplyMasks(findingIds: string[], requestId: string, explicitTabId?: number): Promise<boolean> {
+  const tab = await resolveTargetTab(explicitTabId);
   const settings = await loadSettings();
   const session = tab?.id ? await readSession(tab.id) : null;
   if (!tab?.id || !session) {
@@ -740,8 +757,8 @@ async function handlePopupApplyMasks(findingIds: string[], requestId: string): P
   return true;
 }
 
-async function handlePopupUndoMasks(requestId: string): Promise<void> {
-  const tab = await getActiveTab();
+async function handlePopupUndoMasks(requestId: string, explicitTabId?: number): Promise<void> {
+  const tab = await resolveTargetTab(explicitTabId);
   const settings = await loadSettings();
   const session = tab?.id ? await readSession(tab.id) : null;
   if (!tab?.id || !session || !session.maskHistory || session.maskHistory.length === 0) {
@@ -762,8 +779,8 @@ async function handlePopupUndoMasks(requestId: string): Promise<void> {
 }
 
 /** True when the action ran; false when the popup was told it could not. */
-async function handlePopupRemoveMasks(requestId: string): Promise<boolean> {
-  const tab = await getActiveTab();
+async function handlePopupRemoveMasks(requestId: string, explicitTabId?: number): Promise<boolean> {
+  const tab = await resolveTargetTab(explicitTabId);
   const settings = await loadSettings();
   const session = tab?.id ? await readSession(tab.id) : null;
   if (!tab?.id || !session) {
@@ -793,8 +810,8 @@ async function handlePopupCopyRedacted(findingIds: string[], requestId: string):
   await sendToTab(tab.id, { type: "COPY_REDACTED_TEXT", requestId, sessionId: session.sessionId, findingIds });
 }
 
-async function handlePopupClearData(requestId: string): Promise<void> {
-  const tab = await getActiveTab();
+async function handlePopupClearData(requestId: string, explicitTabId?: number): Promise<void> {
+  const tab = await resolveTargetTab(explicitTabId);
   const settings = await loadSettings();
   if (tab?.id) {
     const session = await readSession(tab.id);
@@ -2452,22 +2469,22 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
     }
     switch (msg.type) {
       case "POPUP_SCAN":
-        await handlePopupScan(msg.mode, msg.requestId);
+        await handlePopupScan(msg.mode, msg.requestId, msg.tabId);
         break;
       case "POPUP_APPLY_MASKS":
-        await handlePopupApplyMasks(msg.findingIds, msg.requestId);
+        await handlePopupApplyMasks(msg.findingIds, msg.requestId, msg.tabId);
         break;
       case "POPUP_REMOVE_MASKS":
-        await handlePopupRemoveMasks(msg.requestId);
+        await handlePopupRemoveMasks(msg.requestId, msg.tabId);
         break;
       case "POPUP_COPY_REDACTED":
         await handlePopupCopyRedacted(msg.findingIds, msg.requestId);
         break;
       case "POPUP_CLEAR_DATA":
-        await handlePopupClearData(msg.requestId);
+        await handlePopupClearData(msg.requestId, msg.tabId);
         break;
       case "POPUP_GET_STATE": {
-        notifyPopup({ type: "POPUP_STATE", requestId: msg.requestId, state: await stateForActiveTab() });
+        notifyPopup({ type: "POPUP_STATE", requestId: msg.requestId, state: await stateForActiveTab(msg.tabId) });
         const docSession = await restoreLastSession();
         if (docSession) {
           // The window rides along so a restored session still says "pages

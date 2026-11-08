@@ -823,7 +823,9 @@ function detectDobs(text: string): RawMatch[] {
 }
 
 const MRN_LABEL_RE =
-  /\b(?:mrn|medical\s+record\s*(?:number|no|#)?|record\s*(?:number|no|#))\s*[:#]?\s*(?=\S)/gi;
+  /\b(?:mrn|medical\s+record\s*(?:number|no|#)?|record\s*(?:number|no|#)|chart\s*(?:number|no|#)?|patient\s*(?:account|acct))\s*[:#\-]?\s*(?=\S)/gi;
+const ICD_LABEL_RE =
+  /\b(?:icd(?:-?10|-?9)?|diagnosis|dx|condition|problem)\s*[:#\-]?\s*([A-TV-Z][0-9]{1,2}(?:\.[A-Z0-9]{1,4})?)\b/gi;
 const IDENTIFIER_RE = /[A-Za-z0-9][A-Za-z0-9_-]{2,20}/;
 
 /**
@@ -867,11 +869,25 @@ function detectMrns(text: string): RawMatch[] {
       end: valueStart + found.offset + found.id.length,
     });
   }
+  for (const m of text.matchAll(ICD_LABEL_RE)) {
+    const code = m[1];
+    if (code) {
+      const rel = m[0].lastIndexOf(code);
+      const start = m.index + (rel >= 0 ? rel : 0);
+      out.push({
+        category: "medical_record_number",
+        confidence: 0.88,
+        value: code,
+        start,
+        end: start + code.length,
+      });
+    }
+  }
   return out;
 }
 
 const MEMBER_LABEL_RE =
-  /\b(?:member\s*(?:id|no|number|#)|patient\s*id|pat[-_\s]*id|memberid)\s*[:#]?\s*(?=\S)/gi;
+  /\b(?:member\s*(?:id|no|number|#)|subscriber\s*(?:id|no|number|#)|policy\s*(?:id|no|number|#)|group\s*(?:id|no|number|#)|insurance\s*(?:id|no|number|#)|patient\s*id|pat[-_\s]*id|memberid)\s*[:#\-]?\s*(?=\S)/gi;
 const PASSPORT_LABEL_RE =
   /\b(?:passport(?:\s+book)?\s*(?:no|num|number|id|#)?)\s*[:#]?\s*([A-Za-z0-9]{6,12})\b/gi;
 const MRZ_LINE_RE =
@@ -1305,7 +1321,7 @@ const NAME_LABEL_RE = new RegExp(
   // ("Patient Intake Note" is not "Patient: <name>"). The separator is required;
   // the name must also sit on the label's own line, since letting NAME_RE skip
   // ahead across newlines turned later headings ("Full Name:") into "names".
-  `(?<=^|\\n)\\b${NAME_LABEL_WORDS}\\s*[:.]\\s*(?=\\S)|(?<![\\w])\\b${NAME_LABEL_WORDS}\\s*[:.]\\s*(?=\\S)`,
+  `(?<=^|\\n)\\b${NAME_LABEL_WORDS}\\s*[:.\\-\\t|]\\s*(?=\\S)|(?<![\\w])\\b${NAME_LABEL_WORDS}\\s*[:.\\-\\t|]\\s*(?=\\S)`,
   "gi",
 );
 const NAME_RE = /\b(?:(?:Dr|Mr|Mrs|Ms|Prof)\.?\s+)?([A-Z][a-zA-Z.'-]*(?:[ \t]+[A-Z][a-zA-Z.'-]*){1,3}(?:,?\s+(?:Jr|Sr|II|III|IV)\.?)?)\b/;
