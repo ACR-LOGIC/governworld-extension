@@ -8,6 +8,9 @@ import {
   insertTextIntoElement,
   showPasteGuardDialog,
   initPasteGuard,
+  getElementText,
+  replaceElementText,
+  isPromptOrSendableInput,
 } from "../src/content/pasteGuard.js";
 import { DEFAULT_SETTINGS, normalizeSettings } from "../src/shared/settings.js";
 import type { CustomPattern } from "../src/shared/customPatterns.js";
@@ -201,7 +204,15 @@ function createMockElement(tagName: string, props: Record<string, any> = {}): an
     },
     dispatchEvent: (ev: any) => {
       if (listeners[ev.type]) {
-        for (const fn of listeners[ev.type]) fn(ev);
+        let stopped = false;
+        const origStop = ev.stopPropagation;
+        ev.stopPropagation = () => { stopped = true; origStop?.(); };
+        ev.stopImmediatePropagation = () => { stopped = true; };
+        const list = [...listeners[ev.type]];
+        for (const fn of list) {
+          if (stopped) break;
+          fn(ev);
+        }
       }
       return true;
     },
@@ -301,7 +312,8 @@ function createMockDocument(): any {
     },
     dispatchEvent: (ev: any) => {
       if (listeners[ev.type]) {
-        for (const fn of listeners[ev.type]) fn(ev);
+        const list = [...listeners[ev.type]];
+        for (const fn of list) fn(ev);
       }
       return true;
     },
@@ -583,5 +595,112 @@ describe("Paste Guard - Event Interception & Lifecycle", () => {
     expect(host).not.toBeNull();
 
     teardown();
+  });
+  it("intercepts Enter keydown submission on prompt inputs containing secrets", () => {
+    const doc = createMockDocument();
+    const target = createMockElement("textarea", {
+      placeholder: "Ask anything...",
+      value: "Please check this API key: sk-1234567890abcdef1234567890",
+    });
+    doc.body.appendChild(target);
+
+    const teardown = initPasteGuard(doc);
+
+    const preventDefault = vi.fn();
+    const stopPropagation = vi.fn();
+    const keydownEvent = {
+      type: "keydown",
+      key: "Enter",
+      shiftKey: false,
+      target,
+      preventDefault,
+      stopPropagation,
+    };
+
+    doc.dispatchEvent(keydownEvent);
+    expect(preventDefault).toHaveBeenCalled();
+
+        const host = doc.getElementById("__governworld-paste-guard-host");
+    expect(host).not.toBeNull();
+
+    teardown();
+  });
+
+  it("allows Enter without interception when text is harmless or Shift is held", () => {
+    const doc = createMockDocument();
+    const target = createMockElement("textarea", {
+      placeholder: "Ask anything...",
+      value: "What is the capital of France?",
+    });
+    doc.body.appendChild(target);
+
+    const teardown = initPasteGuard(doc);
+
+    const preventDefault = vi.fn();
+    const keydownEvent = {
+      type: "keydown",
+      key: "Enter",
+      shiftKey: false,
+      target,
+      preventDefault,
+      stopPropagation: vi.fn(),
+    };
+
+    doc.dispatchEvent(keydownEvent);
+    expect(preventDefault).not.toHaveBeenCalled();
+
+    // With Shift held on sensitive text (newline creation in chat apps)
+    target.value = "SSN: 123-45-6789";
+    const shiftEnter = {
+      type: "keydown",
+      key: "Enter",
+      shiftKey: true,
+      target,
+      preventDefault,
+      stopPropagation: vi.fn(),
+    };
+    doc.dispatchEvent(shiftEnter);
+    expect(preventDefault).not.toHaveBeenCalled();
+
+    teardown();
+  });
+
+  it("intercepts form submit when form inputs contain sensitive data", () => {
+    const doc = createMockDocument();
+    const form = createMockElement("form");
+    const input = createMockElement("input", {
+      type: "text",
+      value: "Customer SSN is 123-45-6789",
+    });
+    form.appendChild(input);
+    doc.body.appendChild(form);
+
+    const teardown = initPasteGuard(doc);
+
+    const preventDefault = vi.fn();
+    const submitEvent = {
+      type: "submit",
+      target: form,
+      preventDefault,
+      stopPropagation: vi.fn(),
+    };
+
+    doc.dispatchEvent(submitEvent);
+    expect(preventDefault).toHaveBeenCalled();
+
+    const host = doc.getElementById("__governworld-paste-guard-host");
+    expect(host).not.toBeNull();
+
+    teardown();
+  });
+
+  it("identifies prompt and sendable inputs accurately", () => {
+    const textInput = createMockElement("input", { type: "text" });
+    const chatTextarea = createMockElement("textarea", { placeholder: "Send a message..." });
+    const genericTextarea = createMockElement("textarea", { placeholder: "Write essay..." });
+
+    expect(isPromptOrSendableInput(textInput)).toBe(true);
+    expect(isPromptOrSendableInput(chatTextarea)).toBe(true);
+    expect(isPromptOrSendableInput(genericTextarea)).toBe(false);
   });
 });

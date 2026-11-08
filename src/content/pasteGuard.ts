@@ -128,7 +128,8 @@ export function insertTextIntoElement(target: HTMLElement, text: string): boolea
       if (typeof document !== "undefined" && typeof document.execCommand === "function") {
         inserted = document.execCommand("insertText", false, text);
       }
-    } catch {
+    } catch (err) {
+      console.error('SHOW DIALOG THREW:', err);
       inserted = false;
     }
 
@@ -182,10 +183,96 @@ export function insertTextIntoElement(target: HTMLElement, text: string): boolea
   return false;
 }
 
+
+/** Get the current plain text content of an input, textarea, or contenteditable */
+export function getElementText(target: HTMLElement): string {
+  if (isInputElement(target) || isTextAreaElement(target)) {
+    return (target as HTMLInputElement | HTMLTextAreaElement).value ?? "";
+  }
+  const editable = target.isContentEditable
+    ? target
+    : (target.closest?.("[contenteditable='true'], [contenteditable='']") as HTMLElement | null);
+  if (editable) {
+    return editable.innerText ?? editable.textContent ?? "";
+  }
+  return "";
+}
+
+/** Replace the entire text content of an input, textarea, or contenteditable */
+export function replaceElementText(target: HTMLElement, text: string): boolean {
+  target.focus?.();
+  if (isInputElement(target) || isTextAreaElement(target)) {
+    const el = target as HTMLInputElement | HTMLTextAreaElement;
+    el.value = text;
+    if (typeof Event !== "undefined") {
+      try {
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      } catch {
+        // ignore
+      }
+    }
+    return true;
+  }
+  const editable = target.isContentEditable
+    ? target
+    : (target.closest?.("[contenteditable='true'], [contenteditable='']") as HTMLElement | null);
+  if (editable) {
+    if (typeof editable.innerText === "string") {
+      editable.innerText = text;
+    } else {
+      editable.textContent = text;
+    }
+    if (typeof Event !== "undefined") {
+      try {
+        editable.dispatchEvent(new Event("input", { bubbles: true }));
+      } catch {
+        // ignore
+      }
+    }
+    return true;
+  }
+  return false;
+}
+
+/** Check if an editable element is a prompt input or sendable single-line field */
+export function isPromptOrSendableInput(target: unknown): target is HTMLElement {
+  if (!isHtmlElement(target)) return false;
+  const tag = (target as any).tagName?.toUpperCase() || "";
+  if (tag === "INPUT") {
+    const type = ((target as any).type || "").toLowerCase();
+    return ["text", "search", "url"].includes(type);
+  }
+  if (tag === "TEXTAREA") {
+    const el = target as any;
+    const hint = (el.getAttribute?.("enterkeyhint") || "").toLowerCase();
+    if (hint === "send" || hint === "done" || hint === "go") return true;
+    const ph = (el.placeholder || el.getAttribute?.("placeholder") || "").toLowerCase();
+    const aria = (el.getAttribute?.("aria-label") || "").toLowerCase();
+    const idOrClass = ((el.id || "") + " " + (el.className || "")).toLowerCase();
+    if (/(?:prompt|message|chat|ask|question|query|composer)/.test(ph + " " + aria + " " + idOrClass)) return true;
+    if (typeof el.closest === "function" && el.closest("form, [data-testid*='chat'], [class*='chat'], [class*='prompt'], [class*='composer']")) return true;
+    return false;
+  }
+  if ((target as any).isContentEditable) {
+    const role = ((target as any).getAttribute?.("role") || "").toLowerCase();
+    const aria = ((target as any).getAttribute?.("aria-label") || "").toLowerCase();
+    const ph = ((target as any).getAttribute?.("data-placeholder") || (target as any).getAttribute?.("placeholder") || (target as any).placeholder || "").toLowerCase();
+    if (role === "textbox") return true;
+    if (/(?:prompt|message|chat|ask|composer)/.test(aria + " " + ph)) return true;
+    if (typeof (target as any).closest === "function" && (target as any).closest("[data-testid*='chat'], [class*='chat'], [class*='prompt'], [class*='composer']")) return true;
+  }
+  return false;
+}
+
 export interface PasteGuardDialogCallbacks {
   onSanitize: () => void;
   onRaw: () => void;
   onCancel: () => void;
+  title?: string;
+  subtitle?: string;
+  sanitizeLabel?: string;
+  rawLabel?: string;
 }
 
 export interface ActiveDialogHandle {
@@ -431,7 +518,7 @@ export function showPasteGuardDialog(
     existingHost.remove();
   }
 
-  const host = doc.createElement("div");
+    const host = doc.createElement("div");
   host.id = "__governworld-paste-guard-host";
   // CLOSED, not open. With an open root, page JavaScript could reach the dialog,
   // read the match count and masked previews, and — the real risk — dispatch a
@@ -548,7 +635,7 @@ export function showPasteGuardDialog(
   const titleDiv = doc.createElement("div");
   titleDiv.className = "gw-title";
   titleDiv.id = "gw-pg-title";
-  titleDiv.append(doc.createTextNode("GovernWorld Paste Shield "));
+  titleDiv.append(doc.createTextNode(callbacks.title ? (callbacks.title + " ") : "GovernWorld Paste Shield "));
 
   const badgeSpan = doc.createElement("span");
   badgeSpan.className = "gw-badge";
@@ -557,7 +644,7 @@ export function showPasteGuardDialog(
 
   const subtitleDiv = doc.createElement("div");
   subtitleDiv.className = "gw-subtitle";
-  subtitleDiv.textContent = "On-device privacy check intercepted sensitive data";
+  subtitleDiv.textContent = callbacks.subtitle ?? "On-device privacy check intercepted sensitive data";
 
   headerText.append(titleDiv, subtitleDiv);
   header.append(svg, headerText);
@@ -601,12 +688,12 @@ export function showPasteGuardDialog(
   const kbdSanitize = doc.createElement("span");
   kbdSanitize.className = "gw-kbd";
   kbdSanitize.textContent = "↵ Enter";
-  btnSanitize.append(doc.createTextNode("Sanitize & Paste "), kbdSanitize);
+  btnSanitize.append(doc.createTextNode((callbacks.sanitizeLabel ?? "Sanitize & Paste") + " "), kbdSanitize);
 
   const btnRaw = doc.createElement("button");
   btnRaw.className = "gw-btn gw-btn-ghost";
   btnRaw.id = "gw-btn-raw";
-  btnRaw.textContent = "Paste Unchanged";
+  btnRaw.textContent = callbacks.rawLabel ?? "Paste Unchanged";
 
   const btnCancel = doc.createElement("button");
   btnCancel.className = "gw-btn gw-btn-danger";
@@ -844,7 +931,8 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
 
     isHandlingEvent = true;
     try {
-      showPasteGuardDialog(doc, target, matches, {
+      const dHost = showPasteGuardDialog(doc, target, matches, {
+    /* debug */
         onSanitize: () => {
           isHandlingEvent = false;
           const sanitized = sanitizePastedText(text, matches);
@@ -949,6 +1037,169 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
   const handleDropEvent = (e: Event): void => {
     void onDrop(e as DragEvent);
   };
+  const onKeyDown = (e: KeyboardEvent) => {
+    if (isHandlingEvent || cachedMode === "off") return;
+    if (e.key !== "Enter" || e.shiftKey || (e as any).isComposing) return;
+    const target = e.target;
+    if (!isHtmlElement(target) || !isEditableElement(target)) return;
+    if (!isPromptOrSendableInput(target)) return;
+
+    const text = getElementText(target);
+    if (!text || text.trim().length === 0) return;
+
+    const matches = detectPasteFindings(text, cachedEnabledCategories, cachedCustomPatterns);
+    if (matches.length === 0) return;
+
+    e.preventDefault();
+    if (typeof e.stopImmediatePropagation === "function") {
+      e.stopImmediatePropagation();
+    } else {
+      e.stopPropagation();
+    }
+
+    isHandlingEvent = true;
+    try {
+      showPasteGuardDialog(doc, target, matches, {
+        title: "GovernWorld Prompt Shield",
+        subtitle: `${matches.length} sensitive item${matches.length === 1 ? "" : "s"} intercepted before prompt submission`,
+        sanitizeLabel: "Sanitize & Send",
+        rawLabel: "Send Unchanged",
+        onSanitize: () => {
+          isHandlingEvent = false;
+          const sanitized = sanitizePastedText(text, matches);
+          replaceElementText(target, sanitized);
+          if (cachedSettings.notificationPrefs?.toastEnabled) {
+            showToast({
+              title: "GovernWorld — Prompt Shield",
+              message: "Prompt sanitized safely before submission.",
+              level: "success",
+              durationMs: 3500,
+            });
+          }
+        },
+        onRaw: () => {
+          isHandlingEvent = false;
+        },
+        onCancel: () => {
+          isHandlingEvent = false;
+        },
+      });
+      
+    } catch (err) {
+      console.error("REAL ERROR IN ONKEYDOWN:", err);
+      isHandlingEvent = false;
+    }
+  };
+
+  const onSubmit = (e: Event) => {
+    if (isHandlingEvent || cachedMode === "off") return;
+    const form = e.target as HTMLFormElement | null;
+    if (!form || typeof form.querySelectorAll !== "function") return;
+
+    const inputs: Array<HTMLInputElement | HTMLTextAreaElement> = [];
+    if (typeof form.querySelectorAll === "function") {
+      try {
+        const found = form.querySelectorAll("input, textarea");
+        if (found && found.length > 0) {
+          inputs.push(...(Array.from(found) as any));
+        }
+      } catch {
+        // ignore
+      }
+    }
+    if (inputs.length === 0 && (form as any).children) {
+      const walk = (n: any) => {
+        const t = (n.tagName || "").toUpperCase();
+        if (t === "INPUT" || t === "TEXTAREA") inputs.push(n);
+        for (const ch of n.children || []) walk(ch);
+      };
+      walk(form);
+    }
+
+    const foundMatches: RawMatch[] = [];
+    let culpritElement: HTMLElement | null = null;
+
+    for (const input of inputs) {
+      const type = (input.type || "").toLowerCase();
+      if (["password", "hidden", "submit", "button", "checkbox", "radio", "file"].includes(type)) continue;
+      const val = input.value || "";
+      if (!val || val.length < 3) continue;
+      const matches = detectPasteFindings(val, cachedEnabledCategories, cachedCustomPatterns);
+      if (matches.length > 0) {
+        foundMatches.push(...matches);
+        if (!culpritElement) culpritElement = input;
+      }
+    }
+
+    if (foundMatches.length === 0) return;
+
+    e.preventDefault();
+    if (typeof e.stopImmediatePropagation === "function") {
+      e.stopImmediatePropagation();
+    } else {
+      e.stopPropagation();
+    }
+
+    isHandlingEvent = true;
+    try {
+      showPasteGuardDialog(doc, culpritElement ?? form, foundMatches, {
+        title: "GovernWorld Form Shield",
+        subtitle: `${foundMatches.length} sensitive item${foundMatches.length === 1 ? "" : "s"} detected before form submission`,
+        sanitizeLabel: "Sanitize & Submit",
+        rawLabel: "Submit Unchanged",
+        onSanitize: () => {
+          isHandlingEvent = false;
+          for (const input of inputs) {
+            const matches = detectPasteFindings(input.value || "", cachedEnabledCategories, cachedCustomPatterns);
+            if (matches.length > 0) {
+              input.value = sanitizePastedText(input.value, matches);
+              try {
+                input.dispatchEvent(new Event("input", { bubbles: true }));
+                input.dispatchEvent(new Event("change", { bubbles: true }));
+              } catch {
+                // ignore
+              }
+            }
+          }
+          if (cachedSettings.notificationPrefs?.toastEnabled) {
+            showToast({
+              title: "GovernWorld — Form Shield",
+              message: "Form fields sanitized safely.",
+              level: "success",
+              durationMs: 3500,
+            });
+          }
+          try {
+            if (typeof form.requestSubmit === "function") {
+              form.requestSubmit();
+            } else {
+              form.submit();
+            }
+          } catch {
+            // ignore
+          }
+        },
+        onRaw: () => {
+          isHandlingEvent = false;
+          try {
+            if (typeof form.requestSubmit === "function") {
+              form.requestSubmit();
+            } else {
+              form.submit();
+            }
+          } catch {
+            // ignore
+          }
+        },
+        onCancel: () => {
+          isHandlingEvent = false;
+        },
+      });
+    } catch {
+      isHandlingEvent = false;
+    }
+  };
+
 
   const attachToRoot = (root: Document | ShadowRoot): void => {
     if (attachedRoots.has(root)) return;
@@ -957,12 +1208,16 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
     root.addEventListener("paste", onPaste as EventListener, true);
     root.addEventListener("beforeinput", onBeforeInput as EventListener, true);
     root.addEventListener("drop", handleDropEvent, true);
+    root.addEventListener("keydown", onKeyDown as EventListener, true);
+    root.addEventListener("submit", onSubmit as EventListener, true);
   };
 
   const detachFromRoot = (root: Document | ShadowRoot): void => {
     root.removeEventListener("paste", onPaste as EventListener, true);
     root.removeEventListener("beforeinput", onBeforeInput as EventListener, true);
     root.removeEventListener("drop", handleDropEvent, true);
+    root.removeEventListener("keydown", onKeyDown as EventListener, true);
+    root.removeEventListener("submit", onSubmit as EventListener, true);
   };
 
   /** Attach to every reachable same-document surface under a scope. */
