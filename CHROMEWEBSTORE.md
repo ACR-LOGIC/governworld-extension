@@ -1,6 +1,6 @@
 # Chrome Web Store Listing — GovernWorld Redaction
 
-> **Last Updated:** 2026-09-27  
+> **Last Updated:** 2026-11-08  
 > **Extension Name:** GovernWorld Redaction  
 > **Extension Version:** 0.2.0  
 > **Target Manifest Version:** Manifest V3  
@@ -72,6 +72,14 @@ In accordance with Chrome Web Store Developer Program Policies (Limited Use and 
 
 ## 4. Version History
 
+- **0.2.0 (2026-11-08):** Explainable compliance scoring, AI leakage prevention, and clinical SOAP intelligence release.
+  - Implemented the GovernWorld Explainable Compliance Scorecard (0–100 Risk Formula v1) with deterministic factors: Base Sensitivity, Destination Risk, Action Risk, Volume Risk, and Confidence Modifier.
+  - Added HIPAA Combination Rules (e.g. `Patient Name + DOB`, `Patient Name + MRN`, `MRN + DOB + Diagnosis`, and `Complete Patient Profile`).
+  - Added Secret Weapon AI Leakage Rule: automatically escalates to CRITICAL (100) and blocks PHI clipboard paste/prompt disclosure to external AI services (`chatgpt.com`, `claude.ai`, `gemini.google.com`, `perplexity.ai`, `deepseek.com`, etc.).
+  - Implemented 8-Layer PHI Evidence Graph covering structured clinical identifiers (MRN with brackets/parentheticals, encounter dates, service dates, admission dates), medical vocabulary density, ICD-10 codes, labeled diagnoses (PMH, allergies), top 150+ prescription medications & dosages (`Lisinopril 10 mg daily`, `Metformin 500 mg BID`), physician credentials (`MD`, `DO`, `NP`, `PA`, `RN`, `PhD`), and healthcare portal domains.
+  - Added Policy Studio for granular URL governance: full website access blocking, quick policy templates, custom category scopes, and shadow DOM barrier screens.
+  - Enhanced target tab resolution and isolated internal extension URLs from DOM text extraction.
+  - Interactive compliance scorecards in Page Scan results, Document Studio, and Full-Screen Review.
 - **0.1.1 (2026-10-30):** Hardened privacy and compliance release.
   - Implemented cryptographic SHA-256 hash chaining for the audit log, with independent CLI verification tool (`scripts/verify-audit.mjs`).
   - Added fail-closed audit enforcement for protected document redaction and clipboard release.
