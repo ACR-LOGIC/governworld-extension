@@ -250,6 +250,10 @@ export const COMMON_MEDICATIONS: readonly string[] = [
   "keytruda",
   "pembrolizumab",
   "rituximab",
+  "penicillin",
+  "aspirin",
+  "amoxicillin/clavulanate",
+  "lisinopril/hctz",
 ];
 
 // ---------------------------------------------------------------------------

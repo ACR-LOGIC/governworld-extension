@@ -42,6 +42,7 @@ export interface RawMatch {
   value: string;
   start: number;
   end: number;
+  entityType?: string;
 }
 
 const CATEGORY_PRIORITY: FindingCategory[] = [
@@ -810,23 +811,30 @@ function detectFinancial(text: string): RawMatch[] {
 
 const DOB_RE =
   /\b(0[1-9]|1[0-2])[\/\-](0[1-9]|[12][0-9]|3[01])[\/\-](\d{4}|\d{2})\b|\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})\b|\b(19|20)\d{2}[\/\-](0[1-9]|1[0-2])[\/\-](0[1-9]|[12][0-9]|3[01])\b|\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)[ \t]+(?:0?[1-9]|[12]\d|3[01])(?:st|nd|rd|th)?,?[ \t]+(?:19|20)\d{2}\b/gi;
-const DOB_CUE_RE = /\b(?:dob|date\s+of\s+birth|born|birth\s*date|birthday|birthdate)\b/i;
+const DOB_CUE_RE =
+  /\b(?:dob|date\s+of\s+birth|born|birth\s*date|birthday|birthdate|date\s+of\s+encounter|encounter\s+date|date\s+of\s+service|service\s+date|dos|admission\s+date|admit\s+date|discharge\s+date|visit\s+date|exam\s+date|procedure\s+date)\b/i;
 
 function detectDobs(text: string): RawMatch[] {
   const out: RawMatch[] = [];
   for (const m of text.matchAll(DOB_RE)) {
     const context = text.slice(Math.max(0, m.index - 120), Math.min(text.length, m.index + m[0].length + 60));
     if (!DOB_CUE_RE.test(context)) continue;
-    out.push({ category: "dob", confidence: 0.8, value: m[0], start: m.index, end: m.index + m[0].length });
+    out.push({ category: "dob", confidence: 0.8, value: m[0], start: m.index, end: m.index + m[0].length, entityType: "dob" });
   }
   return out;
 }
 
 const MRN_LABEL_RE =
-  /\b(?:mrn|medical\s+record\s*(?:number|no|#)?|record\s*(?:number|no|#)|chart\s*(?:number|no|#)?|patient\s*(?:account|acct))\s*[:#\-]?\s*(?=\S)/gi;
+  /\b(?:mrn|medical\s+record\s*(?:number|no|#)?(?:\s*\(\s*mrn\s*\))?|record\s*(?:number|no|#)|chart\s*(?:number|no|#)?|patient\s*(?:account|acct))\s*[:#\-]?\s*(?=\S)/gi;
 const ICD_LABEL_RE =
   /\b(?:icd(?:-?10|-?9)?|diagnosis|dx|condition|problem)\s*[:#\-]?\s*([A-TV-Z][0-9]{1,2}(?:\.[A-Z0-9]{1,4})?)\b/gi;
 const IDENTIFIER_RE = /[A-Za-z0-9][A-Za-z0-9_-]{2,20}/;
+
+const CLINICAL_DIAGNOSIS_LABEL_RE =
+  /\b(?:past\s+medical\s+history(?:\s*\(\s*pmh\s*\))?|pmh|diagnosis|dx|assessment|impression|problem\s*list|allergies|allergy)\s*[:#\-]\s*(?=\S)/gi;
+
+const CLINICAL_MEDICATION_LABEL_RE =
+  /\b(?:medications?|current\s+medications?|prescriptions?|meds|rx)\s*[:#\-]\s*(?=\S)/gi;
 
 /**
  * Pull a record or member identifier out from just after its label.
@@ -867,6 +875,7 @@ function detectMrns(text: string): RawMatch[] {
       value: found.id,
       start: valueStart + found.offset,
       end: valueStart + found.offset + found.id.length,
+      entityType: "mrn",
     });
   }
   for (const m of text.matchAll(ICD_LABEL_RE)) {
@@ -880,6 +889,91 @@ function detectMrns(text: string): RawMatch[] {
         value: code,
         start,
         end: start + code.length,
+        entityType: "diagnosis",
+      });
+    }
+  }
+  for (const m of text.matchAll(CLINICAL_DIAGNOSIS_LABEL_RE)) {
+    const valueStart = m.index + m[0].length;
+    const rest = text.slice(valueStart, Math.min(text.length, valueStart + 200));
+    const lineEnd = rest.search(/[\r\n]/);
+    const line = lineEnd === -1 ? rest : rest.slice(0, lineEnd);
+    const parts = line.split(/,\s*(?![^(]*\))|;\s*/);
+    let curSearchPos = 0;
+    for (const part of parts) {
+      const cleaned = part.replace(/^[\s\u2022\[\-]+|[\s\]\.\,\;]+$/g, "");
+      if (cleaned.length < 3) continue;
+      const lowerCleaned = cleaned.toLowerCase();
+      if (lowerCleaned === "none" || lowerCleaned === "n/a" || lowerCleaned === "unknown" || lowerCleaned === "denies") continue;
+
+      // Check if item is formatted as ICD Code followed by parenthetical description: "E11.9 (Type 2 diabetes...)"
+      const icdWithDesc = cleaned.match(/^([A-TV-Z][0-9]{1,2}(?:\.[A-Z0-9]{1,4})?)\s*\(([^)]+)\)$/i);
+      if (icdWithDesc) {
+        const code = icdWithDesc[1];
+        const desc = icdWithDesc[2].trim();
+        const codeRel = line.indexOf(code, curSearchPos);
+        if (codeRel !== -1) {
+          out.push({
+            category: "medical_record_number",
+            confidence: 0.9,
+            value: code,
+            start: valueStart + codeRel,
+            end: valueStart + codeRel + code.length,
+            entityType: "diagnosis",
+          });
+        }
+        if (desc.length >= 3) {
+          const descRel = line.indexOf(desc, codeRel !== -1 ? codeRel + code.length : curSearchPos);
+          if (descRel !== -1) {
+            curSearchPos = descRel + desc.length;
+            out.push({
+              category: "medical_record_number",
+              confidence: 0.88,
+              value: desc,
+              start: valueStart + descRel,
+              end: valueStart + descRel + desc.length,
+              entityType: "diagnosis",
+            });
+          }
+        }
+        continue;
+      }
+
+      const relPos = line.indexOf(cleaned, curSearchPos);
+      if (relPos === -1) continue;
+      curSearchPos = relPos + cleaned.length;
+      out.push({
+        category: "medical_record_number",
+        confidence: 0.88,
+        value: cleaned,
+        start: valueStart + relPos,
+        end: valueStart + relPos + cleaned.length,
+        entityType: "diagnosis",
+      });
+    }
+  }
+  for (const m of text.matchAll(CLINICAL_MEDICATION_LABEL_RE)) {
+    const valueStart = m.index + m[0].length;
+    const rest = text.slice(valueStart, Math.min(text.length, valueStart + 200));
+    const lineEnd = rest.search(/[\r\n]/);
+    const line = lineEnd === -1 ? rest : rest.slice(0, lineEnd);
+    const parts = line.split(/,\s*(?![^(]*\))|;\s*/);
+    let curSearchPos = 0;
+    for (const part of parts) {
+      const cleaned = part.replace(/^[\s\u2022\[\-]+|[\s\]\.\,\;]+$/g, "");
+      if (cleaned.length < 3) continue;
+      const lowerCleaned = cleaned.toLowerCase();
+      if (lowerCleaned === "none" || lowerCleaned === "n/a" || lowerCleaned === "unknown") continue;
+      const relPos = line.indexOf(cleaned, curSearchPos);
+      if (relPos === -1) continue;
+      curSearchPos = relPos + cleaned.length;
+      out.push({
+        category: "medical_record_number",
+        confidence: 0.88,
+        value: cleaned,
+        start: valueStart + relPos,
+        end: valueStart + relPos + cleaned.length,
+        entityType: "medication",
       });
     }
   }
@@ -1324,7 +1418,7 @@ const NAME_LABEL_RE = new RegExp(
   `(?<=^|\\n)\\b${NAME_LABEL_WORDS}\\s*[:.\\-\\t|]\\s*(?=\\S)|(?<![\\w])\\b${NAME_LABEL_WORDS}\\s*[:.\\-\\t|]\\s*(?=\\S)`,
   "gi",
 );
-const NAME_RE = /\b(?:(?:Dr|Mr|Mrs|Ms|Prof)\.?\s+)?([A-Z][a-zA-Z.'-]*(?:[ \t]+[A-Z][a-zA-Z.'-]*){1,3}(?:,?\s+(?:Jr|Sr|II|III|IV)\.?)?)\b/;
+const NAME_RE = /\b(?:(?:Dr|Mr|Mrs|Ms|Prof)\.?\s+)?([A-Z][a-zA-Z.'-]*(?:[ \t]+[A-Z][a-zA-Z.'-]*){1,3}(?:,?\s+(?:Jr|Sr|II|III|IV|MD|DO|NP|PA|RN|PhD|MBBS|FACP|PharmD)\.?)?)\b/;
 // A name in prose directly followed by a parenthetical identifier is a strong
 // clinical-note signal ("Casey Fictional (DOB ...; MRN ...)"). It does not sit
 // after a field label, so NAME_LABEL_RE cannot see it.
@@ -1332,6 +1426,27 @@ const NAME_BEFORE_IDENTIFIER_RE =
   /\b(?:(?:Dr|Mr|Mrs|Ms|Prof)\.?\s+)?([A-Z][a-zA-Z.'-]*(?:[ \t]+[A-Z][a-zA-Z.'-]*){1,3}(?:,?\s+(?:Jr|Sr|II|III|IV)\.?)?)[ \t]*\((?=\s*(?:DOB|MRN|Date of Birth|date of birth|Member ID|member id|Provider NPI|NPI|DEA|SSN|ITIN|Patient ID|PAT-ID)\b)/g;
 
 const GENERIC_NAME_LABELS = new Set([
+  "medical record number",
+  "medical record",
+  "date of birth",
+  "patient id",
+  "member id",
+  "chart number",
+  "attending physician",
+  "date of encounter",
+  "encounter date",
+  "date of service",
+  "service date",
+  "chief complaint",
+  "vital signs",
+  "past medical history",
+  "blood pressure",
+  "discharge summary",
+  "progress note",
+  "history of present illness",
+  "allergies",
+  "medications",
+  "medication list",
   "first name",
   "last name",
   "middle name",
@@ -1374,6 +1489,7 @@ function detectNames(text: string): RawMatch[] {
       value,
       start: valueStart + nameStart,
       end: valueStart + nameStart + value.length,
+      entityType: "patient_name",
     });
   }
   // Tab-separated or multiline names after "Possible name"
@@ -1393,6 +1509,7 @@ function detectNames(text: string): RawMatch[] {
             value: nMatch[0],
             start: offset,
             end: offset + nMatch[0].length,
+            entityType: "patient_name",
           });
         }
       }
@@ -1408,6 +1525,7 @@ function detectNames(text: string): RawMatch[] {
       value,
       start: m.index,
       end: m.index + value.length,
+      entityType: "patient_name",
     });
   }
   return out;

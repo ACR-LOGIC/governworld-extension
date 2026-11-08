@@ -114,12 +114,12 @@ The **GovernWorld Extension** is a fully functional, local-first browser protect
 12. **8-Layer Evidence-Based PHI Detection Graph & Layered Clinical Engine:**
     - Operates on the GovernWorld Philosophy: *"Does this content contain evidence of a patient record, and is that data about to leave a controlled environment?"*
     - Composable clinical evidence accumulation spanning:
-      - **Layer 1:** Structured Identifiers (MRN, Chart Number, DOB, Member/Policy/Subscriber/Group/Insurance IDs, Provider NPI/DEA).
-      - **Layer 2:** Medical Vocabulary Density (40+ clinical terms: pathology, radiology, triage, vital signs, biopsy, etc.).
-      - **Layer 3:** ICD-10 Code Detection (Context-corroborated diagnosis codes: `E11.9`, `M54.5`, `I10`, `J45.909`, `Z00.00`).
+      - **Layer 1:** Structured Identifiers & Clinical Records (MRN with parentheticals/brackets, Chart Number, DOB, Encounter/Service/Admission Dates, Member/Policy/Subscriber/Group/Insurance IDs, Attending Physician with credentials like `MD`, `DO`, `NP`, `PA`, `RN`, `PhD`, Provider NPI/DEA).
+      - **Layer 2:** Medical Vocabulary Density (40+ clinical terms: pathology, radiology, triage, vital signs, biopsy, dyspnea, etc.).
+      - **Layer 3:** ICD-10 & Labeled Diagnoses (ICD codes like `E11.9`, `M54.5`, `I10`, `J45.909`, and labeled clinical diagnoses/PMH/allergies: Hypertension, Diabetes, Penicillin allergies).
       - **Layer 4:** CPT / Procedure Codes (5-digit encounter and billing codes: `99213`, `99214`, `80053`, `87635`).
-      - **Layer 5:** Common Medication Dictionary (Top 150+ prescribed drugs: Metformin, Lisinopril, Ozempic, Insulin, Eliquis, etc.).
-      - **Layer 6:** Clinical Document Signatures (Structural section markers: Chief Complaint, HPI, ROS, Assessment & Plan, Vitals).
+      - **Layer 5:** Common Medication Dictionary & Prescription Regimens (Top 150+ prescribed drugs & regimens: Metformin, Lisinopril, Penicillin, Ozempic, Insulin, dosages like `10 mg daily`, `500 mg BID`).
+      - **Layer 6:** Clinical Document Signatures (Structural SOAP markers: Chief Complaint, HPI, ROS, Past Medical History, Assessment & Plan, Vitals, Discharge Summary).
       - **Layer 7:** Healthcare EHR Domain Detection (Epic, AthenaHealth, Cerner, MyChart, eClinicalWorks, NextGen).
       - **Layer 8:** Evidence Graph Aggregation (`NON_MEDICAL` -> `MEDICAL_CONTEXT` -> `LIKELY_HEALTHCARE` -> `LIKELY_PHI` -> `CONFIRMED_PHI`).
 

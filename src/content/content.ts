@@ -240,6 +240,7 @@ if (g.__gwRedactionContentLoaded !== true) {
       return {
         id: `${match.category}_${match.start}_${match.end}_${i}`,
         category: match.category,
+        entityType: match.entityType,
         confidence: match.confidence,
         source: isCustom ? "custom-pattern" : "local-rules",
         preview: maskValue(match.category, match.value),

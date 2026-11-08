@@ -73,6 +73,8 @@ export interface Finding {
    * never selectable for masking and never mutate the DOM.
    */
   attribute?: string;
+  /** Specific PHI entity classification (e.g. "mrn", "diagnosis", "medication", "patient_name", "dob") */
+  entityType?: string;
   selected: boolean;
 }
 
