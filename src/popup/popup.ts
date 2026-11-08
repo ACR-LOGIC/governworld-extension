@@ -3327,11 +3327,81 @@ export async function initPopup(): Promise<void> {
   const policyDialog = document.getElementById("policy-dialog") as HTMLDialogElement | null;
   const policyNameInput = document.getElementById("policy-name-input") as HTMLInputElement | null;
   const policyUrlInput = document.getElementById("policy-url-input") as HTMLInputElement | null;
+  const policyBlockSiteCheckbox = document.getElementById("policy-block-site-checkbox") as HTMLInputElement | null;
+  const policyScopeRow = document.getElementById("policy-scope-row") as HTMLDivElement | null;
   const policyScopeSelect = document.getElementById("policy-scope-select") as HTMLSelectElement | null;
+  const policyCustomCategoriesContainer = document.getElementById("policy-custom-categories-container") as HTMLDivElement | null;
+  const policyActionRow = document.getElementById("policy-action-row") as HTMLDivElement | null;
   const policyActionSelect = document.getElementById("policy-action-select") as HTMLSelectElement | null;
+  const policyNotesInput = document.getElementById("policy-notes-input") as HTMLInputElement | null;
   const policyDialogError = document.getElementById("policy-dialog-error") as HTMLParagraphElement | null;
   const cancelPolicyBtn = document.getElementById("cancel-policy-btn") as HTMLButtonElement | null;
   const savePolicyBtn = document.getElementById("save-policy-btn") as HTMLButtonElement | null;
+  const policyTemplateBtns = document.querySelectorAll<HTMLButtonElement>(".policy-template-btn");
+
+  function initCustomCategoriesPicker() {
+    if (!policyCustomCategoriesContainer) return;
+    policyCustomCategoriesContainer.replaceChildren();
+    for (const [catKey, label] of Object.entries(CATEGORY_LABELS)) {
+      const labelEl = document.createElement("label");
+      labelEl.className = "policy-cat-checkbox-item";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.value = catKey;
+      const span = document.createElement("span");
+      span.textContent = label;
+      labelEl.append(cb, span);
+      policyCustomCategoriesContainer.appendChild(labelEl);
+    }
+  }
+
+  function updatePolicyDialogVisibility() {
+    const isBlockSite = policyBlockSiteCheckbox?.checked ?? false;
+    if (policyScopeRow) policyScopeRow.hidden = isBlockSite;
+    if (policyActionRow) policyActionRow.hidden = isBlockSite;
+    if (policyCustomCategoriesContainer) {
+      policyCustomCategoriesContainer.hidden = isBlockSite || policyScopeSelect?.value !== "custom";
+    }
+  }
+
+  policyBlockSiteCheckbox?.addEventListener("change", updatePolicyDialogVisibility);
+  policyScopeSelect?.addEventListener("change", updatePolicyDialogVisibility);
+
+  policyTemplateBtns.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const template = btn.dataset.template;
+      if (!policyNameInput || !policyUrlInput) return;
+      if (template === "ai") {
+        policyNameInput.value = "AI Chatbots Guard";
+        policyUrlInput.value = "chatgpt.com, claude.ai, *.openai.com";
+        if (policyBlockSiteCheckbox) policyBlockSiteCheckbox.checked = false;
+        if (policyScopeSelect) policyScopeSelect.value = "secrets";
+        if (policyActionSelect) policyActionSelect.value = "block";
+        if (policyNotesInput) policyNotesInput.value = "Strict block on credentials and API tokens on AI web tools";
+      } else if (template === "health") {
+        policyNameInput.value = "HIPAA Health Portals";
+        policyUrlInput.value = "*.mychart.com, *.epic.com";
+        if (policyBlockSiteCheckbox) policyBlockSiteCheckbox.checked = false;
+        if (policyScopeSelect) policyScopeSelect.value = "phi";
+        if (policyActionSelect) policyActionSelect.value = "block";
+        if (policyNotesInput) policyNotesInput.value = "Strict HIPAA compliance policy";
+      } else if (template === "secrets") {
+        policyNameInput.value = "Dev & Secret Guard";
+        policyUrlInput.value = "github.com, gitlab.com, stackoverflow.com";
+        if (policyBlockSiteCheckbox) policyBlockSiteCheckbox.checked = false;
+        if (policyScopeSelect) policyScopeSelect.value = "secrets";
+        if (policyActionSelect) policyActionSelect.value = "block";
+        if (policyNotesInput) policyNotesInput.value = "Prevent secret token leaks to public developer portals";
+      } else if (template === "block-site") {
+        policyNameInput.value = "Restricted Website Barrier";
+        policyUrlInput.value = "untrusted-site.com";
+        if (policyBlockSiteCheckbox) policyBlockSiteCheckbox.checked = true;
+        if (policyActionSelect) policyActionSelect.value = "block";
+        if (policyNotesInput) policyNotesInput.value = "Full site interaction block enforced";
+      }
+      updatePolicyDialogVisibility();
+    });
+  });
 
   function renderSitePolicies(policies: SitePolicy[]) {
     if (!policiesList || !noPolicies) return;
@@ -3343,7 +3413,7 @@ export async function initPopup(): Promise<void> {
     noPolicies.hidden = true;
     for (const pol of policies) {
       const item = document.createElement("li");
-      item.className = "finding";
+      item.className = "finding policy-card";
       item.style.flexDirection = "column";
       item.style.alignItems = "stretch";
 
@@ -3356,17 +3426,24 @@ export async function initPopup(): Promise<void> {
       titleGroup.style.display = "flex";
       titleGroup.style.alignItems = "center";
       titleGroup.style.gap = "6px";
+      titleGroup.style.flexWrap = "wrap";
 
       const nameSpan = document.createElement("strong");
       nameSpan.textContent = pol.name;
       nameSpan.style.fontSize = "12px";
 
-      const actionBadge = document.createElement("span");
-      actionBadge.className = "finding__severity";
-      actionBadge.textContent = pol.action.toUpperCase();
-      actionBadge.dataset.level = pol.action === "block" ? "critical" : pol.action === "redact" ? "high" : "low";
-
-      titleGroup.append(nameSpan, actionBadge);
+      if (pol.blockEntireSite) {
+        const blockedBadge = document.createElement("span");
+        blockedBadge.className = "policy-badge--blocked";
+        blockedBadge.textContent = "FULL SITE BLOCKED";
+        titleGroup.append(nameSpan, blockedBadge);
+      } else {
+        const actionBadge = document.createElement("span");
+        actionBadge.className = "finding__severity";
+        actionBadge.textContent = pol.action.toUpperCase();
+        actionBadge.dataset.level = pol.action === "block" ? "critical" : pol.action === "redact" ? "high" : "low";
+        titleGroup.append(nameSpan, actionBadge);
+      }
 
       const actionsDiv = document.createElement("div");
       actionsDiv.style.display = "flex";
@@ -3403,21 +3480,32 @@ export async function initPopup(): Promise<void> {
       topRow.append(titleGroup, actionsDiv);
 
       const metaRow = document.createElement("div");
-      metaRow.style.display = "flex";
-      metaRow.style.justifyContent = "space-between";
-      metaRow.style.fontSize = "11px";
-      metaRow.style.color = "var(--text-muted)";
-      metaRow.style.marginTop = "4px";
+      metaRow.className = "policy-card__meta";
 
       const urlCode = document.createElement("code");
       urlCode.textContent = pol.urlPattern;
 
       const scopeSpan = document.createElement("span");
-      const scopeText = typeof pol.scope === "string" ? pol.scope.toUpperCase() : pol.scope.join(", ");
-      scopeSpan.textContent = `Scope: ${scopeText}`;
+      scopeSpan.className = "policy-badge--scope";
+      if (pol.blockEntireSite) {
+        scopeSpan.textContent = "Entire Site Interaction Block";
+      } else {
+        const scopeText = Array.isArray(pol.scope)
+          ? `Custom (${pol.scope.length} categories)`
+          : pol.scope.toUpperCase();
+        scopeSpan.textContent = `Scope: ${scopeText}`;
+      }
 
       metaRow.append(urlCode, scopeSpan);
       item.append(topRow, metaRow);
+
+      if (pol.notes) {
+        const notesDiv = document.createElement("div");
+        notesDiv.className = "policy-card__notes";
+        notesDiv.textContent = pol.notes;
+        item.append(notesDiv);
+      }
+
       policiesList.appendChild(item);
     }
   }
@@ -3426,12 +3514,16 @@ export async function initPopup(): Promise<void> {
     if (!policyNameInput || !policyUrlInput || !policyDialog) return;
     policyNameInput.value = "";
     policyUrlInput.value = "";
+    if (policyBlockSiteCheckbox) policyBlockSiteCheckbox.checked = false;
     if (policyScopeSelect) policyScopeSelect.value = "phi";
     if (policyActionSelect) policyActionSelect.value = "block";
+    if (policyNotesInput) policyNotesInput.value = "";
     if (policyDialogError) {
       policyDialogError.hidden = true;
       policyDialogError.textContent = "";
     }
+    initCustomCategoriesPicker();
+    updatePolicyDialogVisibility();
     policyDialog.showModal();
     policyNameInput.focus();
   });
@@ -3444,8 +3536,6 @@ export async function initPopup(): Promise<void> {
     if (!policyNameInput || !policyUrlInput || !policyScopeSelect || !policyActionSelect) return;
     const name = policyNameInput.value.trim();
     const urlPattern = policyUrlInput.value.trim();
-    const scope = policyScopeSelect.value as PolicyScope;
-    const action = policyActionSelect.value as PolicyAction;
 
     if (!name) {
       if (policyDialogError) {
@@ -3463,6 +3553,27 @@ export async function initPopup(): Promise<void> {
       return;
     }
 
+    const isBlockSite = policyBlockSiteCheckbox?.checked ?? false;
+    let scope: PolicyScope = policyScopeSelect.value as PolicyScope;
+    if (isBlockSite) {
+      scope = "all";
+    } else if (policyScopeSelect.value === "custom") {
+      const checkedBoxes = policyCustomCategoriesContainer
+        ? Array.from(policyCustomCategoriesContainer.querySelectorAll<HTMLInputElement>("input[type='checkbox']:checked"))
+        : [];
+      if (checkedBoxes.length === 0) {
+        if (policyDialogError) {
+          policyDialogError.textContent = "Select at least one category for custom scope";
+          policyDialogError.hidden = false;
+        }
+        return;
+      }
+      scope = checkedBoxes.map((cb) => cb.value as FindingCategory);
+    }
+
+    const action = isBlockSite ? "block" : (policyActionSelect.value as PolicyAction);
+    const notes = policyNotesInput?.value.trim() || undefined;
+
     const newPolicy: SitePolicy = {
       id: crypto.randomUUID(),
       name,
@@ -3471,6 +3582,8 @@ export async function initPopup(): Promise<void> {
       action,
       enabled: true,
       createdAt: new Date().toISOString(),
+      blockEntireSite: isBlockSite,
+      notes,
     };
 
     const updated = await saveSitePolicy(newPolicy);

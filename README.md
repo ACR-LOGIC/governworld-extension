@@ -94,8 +94,10 @@ The **GovernWorld Extension** is a fully functional, local-first browser protect
 
 10. **Policy Studio & Site-Specific DLP Governance:**
     - User-defined URL governance rules allowing granular policy creation, toggling, deletion, export, and import.
-    - URL pattern matching supports wildcards, domain/subdomain rules, and path filters (e.g., `chatgpt.com`, `*.slack.com`, `example.com/api/*`).
-    - Scope options support PHI (HIPAA), PCI DSS / Financial, API Keys & Secrets, PII, and custom category lists.
+    - **Full Website Access Blocking:** When "Block entire website access" is enabled, matching sites are strictly restricted by an isolated Shadow DOM barrier screen preventing any page interaction, DOM access, or data leakage.
+    - **Quick Policy Templates:** Fast-setup presets for AI Chatbots (`chatgpt.com, claude.ai`), HIPAA Health Portals (`*.mychart.com`), Dev & Secrets (`github.com, gitlab.com`), and Full Site Restriction.
+    - **Granular Scope & Custom Category Picker:** Supports PHI (HIPAA), PCI DSS / Financial, API Keys & Secrets, PII, All Sensitive Categories, or granular multi-select across all 23 individual categories.
+    - **Compliance Directives & Notes:** Optional policy justification or regulatory tracking annotations (e.g. `RFC-402 Compliance Directive`).
     - Enforcement actions:
       - **Strict Block:** strictly prohibits pasting, prompt submission, or form submission on targeted websites with a clear rejection dialog (no raw bypass permitted).
       - **Auto-Redact:** enforces mandatory auto-sanitization, stripping bypass actions so sensitive data cannot leave the browser unredacted.

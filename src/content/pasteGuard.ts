@@ -12,7 +12,7 @@ import {
 } from "../shared/enterprisePolicy.js";
 import type { CustomPattern } from "../shared/customPatterns.js";
 import { recordAudit } from "../shared/audit.js";
-import { evaluateSitePolicies, parseSitePolicy, SITE_POLICIES_KEY, type SitePolicy } from "../shared/policyStudio.js";
+import { evaluateSitePolicies, findMatchingFullSiteBlockPolicy, parseSitePolicy, SITE_POLICIES_KEY, type SitePolicy } from "../shared/policyStudio.js";
 
 /**
  * Feature Area 2: Proactive 'Paste & Prompt' Shield / Chat & LLM Guard.
@@ -822,6 +822,211 @@ export function showPasteGuardDialog(
 }
 
 /** Check if an element is an editable target */
+export const FULL_SITE_BLOCK_HOST_ID = "__governworld-full-site-block-shield";
+
+export function renderFullSiteBlockShield(doc: Document, policy: SitePolicy): HTMLElement | null {
+  try {
+    const existing = doc.getElementById(FULL_SITE_BLOCK_HOST_ID);
+    if (existing) return existing;
+
+    const host = doc.createElement("div");
+    host.id = FULL_SITE_BLOCK_HOST_ID;
+    host.setAttribute("data-gw-site-block", "1");
+    const shadow = host.attachShadow({ mode: "closed" });
+
+    const styleEl = doc.createElement("style");
+    styleEl.textContent = `
+      :host {
+        all: initial !important;
+        position: fixed !important;
+        inset: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        z-index: 2147483647 !important;
+        background: radial-gradient(circle at 50% 20%, #161b2b 0%, #060911 100%) !important;
+        color: #f1f5f9 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+        padding: 24px !important;
+        box-sizing: border-box !important;
+        text-align: center !important;
+        user-select: none !important;
+        pointer-events: auto !important;
+      }
+      .shield-card {
+        background: rgba(16, 24, 39, 0.94);
+        border: 1px solid rgba(248, 113, 113, 0.45);
+        border-radius: 16px;
+        box-shadow: 0 20px 48px rgba(0, 0, 0, 0.75), 0 0 32px rgba(239, 68, 68, 0.15);
+        padding: 32px 28px;
+        max-width: 460px;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 16px;
+        backdrop-filter: blur(12px);
+      }
+      .icon-wrap {
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        background: rgba(239, 68, 68, 0.12);
+        border: 2px solid rgba(239, 68, 68, 0.4);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 0 20px rgba(239, 68, 68, 0.25);
+      }
+      .icon-wrap svg {
+        width: 34px;
+        height: 34px;
+        fill: #f87171;
+      }
+      .title {
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: #ffffff;
+        margin: 0;
+      }
+      .desc {
+        font-size: 13px;
+        color: #94a3b8;
+        line-height: 1.55;
+        margin: 0;
+      }
+      .policy-badge {
+        font-family: monospace;
+        font-size: 12px;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 6px;
+        padding: 6px 12px;
+        color: #38bdf8;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .notes {
+        font-size: 11px;
+        font-style: italic;
+        color: #cbd5e1;
+        margin: 0;
+      }
+      .btn-back {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: #ffffff;
+        border: none;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        padding: 10px 24px;
+        cursor: pointer;
+        transition: transform 0.15s ease, box-shadow 0.15s ease;
+        box-shadow: 0 4px 14px rgba(239, 68, 68, 0.4);
+        margin-top: 4px;
+      }
+      .btn-back:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 6px 18px rgba(239, 68, 68, 0.55);
+      }
+      .footer-hint {
+        font-size: 11px;
+        color: #64748b;
+        margin-top: 8px;
+      }
+    `;
+    shadow.appendChild(styleEl);
+
+    const card = doc.createElement("div");
+    card.className = "shield-card";
+
+    const iconWrap = doc.createElement("div");
+    iconWrap.className = "icon-wrap";
+    const svg = (typeof doc.createElementNS === "function" ? doc.createElementNS("http://www.w3.org/2000/svg", "svg") : doc.createElement("svg")) as any;
+    svg.setAttribute("viewBox", "0 0 24 24");
+    const path = (typeof doc.createElementNS === "function" ? doc.createElementNS("http://www.w3.org/2000/svg", "path") : doc.createElement("path")) as any;
+    path.setAttribute("d", "M12 2L3 7v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-9-5zm0 4a3 3 0 013 3v2h1v6H8v-6h1V9a3 3 0 013-3zm0 2a1 1 0 00-1 1v2h2V9a1 1 0 00-1-1z");
+    svg.appendChild(path);
+    iconWrap.appendChild(svg);
+
+    const title = doc.createElement("h2");
+    title.className = "title";
+    title.textContent = "Website Access Blocked";
+
+    const desc = doc.createElement("p");
+    desc.className = "desc";
+    const hostname = doc.defaultView?.location?.hostname || "this domain";
+    desc.textContent = `Access to ${hostname} is restricted by your GovernWorld Policy Studio security rules.`;
+
+    const badge = doc.createElement("div");
+    badge.className = "policy-badge";
+    badge.textContent = `Policy: ${policy.name} [${policy.urlPattern}]`;
+
+    card.append(iconWrap, title, desc, badge);
+
+    if (policy.notes) {
+      const notesEl = doc.createElement("p");
+      notesEl.className = "notes";
+      notesEl.textContent = `Note: ${policy.notes}`;
+      card.appendChild(notesEl);
+    }
+
+    const btnBack = doc.createElement("button");
+    btnBack.className = "btn-back";
+    btnBack.textContent = "Go Back";
+    btnBack.addEventListener("click", () => {
+      try {
+        if (doc.defaultView && doc.defaultView.history && doc.defaultView.history.length > 1) {
+          doc.defaultView.history.back();
+        } else if (doc.defaultView) {
+          doc.defaultView.location.href = "about:blank";
+        }
+      } catch {
+        // ignore
+      }
+    });
+    card.appendChild(btnBack);
+
+    const footer = doc.createElement("div");
+    footer.className = "footer-hint";
+    footer.textContent = "To manage or disable this rule, open the GovernWorld Extension popup.";
+    card.appendChild(footer);
+
+    shadow.appendChild(card);
+    (doc.body || doc.documentElement).appendChild(host);
+
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      void recordAudit({
+        ts: new Date().toISOString(),
+        action: "policy_enforced",
+        host: doc.defaultView?.location?.hostname,
+        policyId: policy.id,
+        policyAction: "block_site",
+        outcome: "denied",
+      }).catch(() => {});
+    }
+
+    return host;
+  } catch {
+    return null;
+  }
+}
+
+export function removeFullSiteBlockShield(doc: Document): void {
+  try {
+    const existing = doc.getElementById(FULL_SITE_BLOCK_HOST_ID);
+    if (existing) existing.remove();
+  } catch {
+    // ignore
+  }
+}
+
 export function isEditableElement(el: unknown): el is HTMLElement {
   if (!isHtmlElement(el)) return false;
   if (isInputElement(el)) {
@@ -876,6 +1081,18 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
   const attachedList: Array<Document | ShadowRoot> = [];
   let observer: MutationObserver | null = null;
 
+  const checkFullSiteBlock = (): boolean => {
+    const currentUrl = doc.defaultView?.location?.href || (typeof location !== "undefined" ? location.href : "");
+    const matchingBlockPolicy = findMatchingFullSiteBlockPolicy(cachedSitePolicies, currentUrl);
+    if (matchingBlockPolicy) {
+      renderFullSiteBlockShield(doc, matchingBlockPolicy);
+      return true;
+    } else {
+      removeFullSiteBlockShield(doc);
+      return false;
+    }
+  };
+
   const recompute = (): void => {
     const eff = resolveEffectiveProtection(cachedSettings, cachedPolicy);
     cachedMode = eff.mode;
@@ -915,6 +1132,7 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
           cachedSitePolicies = valid;
         }
         recompute();
+        checkFullSiteBlock();
       }
     } catch {
       // Fall back to defaults
@@ -941,6 +1159,7 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
           if (res.ok) valid.push(res.policy);
         }
         cachedSitePolicies = valid;
+        checkFullSiteBlock();
       }
     } else if (areaName === "managed") {
       void refreshManaged();
@@ -1475,6 +1694,7 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
     for (const el of Array.from(elements)) visit(el);
   };
 
+  checkFullSiteBlock();
   attachToRoot(doc);
   // Best-effort: minimal DOM shims in tests may not implement traversal.
   try {
@@ -1507,6 +1727,7 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
   }
 
   return () => {
+    removeFullSiteBlockShield(doc);
     try {
       observer?.disconnect();
     } catch {

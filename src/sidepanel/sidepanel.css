@@ -1794,6 +1794,111 @@ body[data-reduced-motion="true"] *::after {
   margin-top: 14px;
 }
 
+/* ---------- Policy Studio & Templates ---------- */
+.policy-templates-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+}
+
+.policy-templates-label {
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.policy-template-btn {
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+}
+
+.policy-block-site-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  cursor: pointer;
+  padding: 6px 8px;
+  background: var(--surface-alt);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.policy-custom-categories-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 6px;
+  max-height: 140px;
+  overflow-y: auto;
+  padding: 8px;
+  background: var(--surface-alt);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  margin-top: 4px;
+}
+
+.policy-cat-checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.policy-card {
+  border-left: 3px solid var(--accent);
+}
+
+.policy-card:hover {
+  transform: translateY(-1px);
+}
+
+.policy-card__meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  gap: 8px;
+}
+
+.policy-card__notes {
+  font-size: 11px;
+  font-style: italic;
+  color: var(--text-muted);
+  margin-top: 4px;
+  padding-left: 6px;
+  border-left: 2px solid var(--border-subtle);
+}
+
+.policy-badge--blocked {
+  font-weight: 700;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  letter-spacing: 0.5px;
+}
+
+.policy-badge--scope {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+}
+
 .wizard-steps {
   display: flex;
   align-items: center;

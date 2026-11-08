@@ -119,6 +119,7 @@ process; unit pins in `tests/paste-enforcement.test.ts`):
 - Managed lock + user toggle/clear attempts → policy enforced at the decision
   point, not just in the UI (checkboxes disabled *and* mandated categories
   re-added on save; content guard merges independently).
+- Policy Studio full website blocking → intercepts matching origins with an isolated, closed Shadow DOM shield (`__governworld-full-site-block-shield`) preventing all interactions, clicks, and underlying DOM leaks.
 
 Anything on this list that regresses to an unlisted bypass is a release
 blocker until fixed or explicitly documented as an unsupported browser

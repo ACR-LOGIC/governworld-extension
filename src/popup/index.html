@@ -1153,6 +1153,13 @@
   <dialog id="policy-dialog" class="dialog dialog--large" aria-labelledby="policy-dialog-title">
     <h3 id="policy-dialog-title" data-i18n="policy_dialog_title">Create Site Policy</h3>
     <p class="footnote" data-i18n="policy_dialog_desc">Define site-specific URL patterns and enforcement actions (block, redact, or warn).</p>
+    <div class="policy-templates-bar">
+      <span class="footnote policy-templates-label" data-i18n="policy_templates_label">Quick Templates:</span>
+      <button type="button" class="btn btn--ghost btn--sm policy-template-btn" data-template="ai" data-i18n="policy_template_ai">AI Chatbots</button>
+      <button type="button" class="btn btn--ghost btn--sm policy-template-btn" data-template="health" data-i18n="policy_template_health">Health Portals</button>
+      <button type="button" class="btn btn--ghost btn--sm policy-template-btn" data-template="secrets" data-i18n="policy_template_secrets">Dev &amp; Secrets</button>
+      <button type="button" class="btn btn--ghost btn--sm policy-template-btn" data-template="block-site" data-i18n="policy_template_block_site">Block Full Site</button>
+    </div>
     <div class="form-row">
       <label for="policy-name-input" data-i18n="policy_name_label">Policy Name</label>
       <input id="policy-name-input" type="text" placeholder="e.g. Block PHI on ChatGPT" maxlength="80" />
@@ -1163,6 +1170,12 @@
       <span class="footnote" data-i18n="policy_url_hint">Matches domain or subdomains. Use * for all sites.</span>
     </div>
     <div class="form-row">
+      <label class="toggle-row policy-block-site-toggle">
+        <input id="policy-block-site-checkbox" type="checkbox" />
+        <span data-i18n="policy_block_site_label">Block entire website access (deny all page interactions)</span>
+      </label>
+    </div>
+    <div class="form-row" id="policy-scope-row">
       <label for="policy-scope-select" data-i18n="policy_scope_label">Protected Data Scope</label>
       <select id="policy-scope-select" class="preset-select">
         <option value="phi" data-i18n="policy_scope_phi">PHI (Health / HIPAA - SSN, DOB, MRN, NPI, MBI)</option>
@@ -1170,15 +1183,21 @@
         <option value="secrets" data-i18n="policy_scope_secrets">API Keys &amp; Secrets</option>
         <option value="pii" data-i18n="policy_scope_pii">PII (Personal Identifiable Information)</option>
         <option value="all" data-i18n="policy_scope_all">All Sensitive Categories</option>
+        <option value="custom" data-i18n="policy_scope_custom">Custom Specific Categories…</option>
       </select>
     </div>
-    <div class="form-row">
+    <div id="policy-custom-categories-container" class="policy-custom-categories-grid" hidden></div>
+    <div class="form-row" id="policy-action-row">
       <label for="policy-action-select" data-i18n="policy_action_label">Enforcement Action</label>
       <select id="policy-action-select" class="preset-select">
         <option value="block" data-i18n="policy_action_block">Strict Block (Prevent transmission / paste completely)</option>
         <option value="redact" data-i18n="policy_action_redact">Auto-Redact (Mandatory sanitization, no bypass)</option>
         <option value="warn" data-i18n="policy_action_warn">Warn (Display policy notice before sending)</option>
       </select>
+    </div>
+    <div class="form-row">
+      <label for="policy-notes-input" data-i18n="policy_notes_label">Policy Notes / Directive (Optional)</label>
+      <input id="policy-notes-input" type="text" placeholder="e.g. Compliance directive RFC-402" maxlength="140" />
     </div>
     <p id="policy-dialog-error" class="summary__note status--error" hidden role="alert"></p>
     <div class="dialog-actions">

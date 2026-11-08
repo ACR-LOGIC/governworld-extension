@@ -14,6 +14,8 @@ export interface SitePolicy {
   action: PolicyAction;
   enabled: boolean;
   createdAt: string; // ISO timestamp
+  blockEntireSite?: boolean; // When true, completely blocks page access and interaction on matching sites
+  notes?: string; // Optional user notes/justification (0-200 chars)
 }
 
 export const SITE_POLICIES_KEY = "sitePolicies";
@@ -151,6 +153,18 @@ export interface PolicyEvaluationResult {
   action: PolicyAction;
   matchedPolicy?: SitePolicy;
   matchedCategories: FindingCategory[];
+  fullSiteBlocked?: boolean;
+}
+
+export function findMatchingFullSiteBlockPolicy(
+  policies: SitePolicy[],
+  currentUrl: string
+): SitePolicy | null {
+  if (!policies || policies.length === 0 || !currentUrl) return null;
+  return (
+    policies.find((p) => p.enabled && p.blockEntireSite === true && matchesUrlPattern(p.urlPattern, currentUrl)) ??
+    null
+  );
 }
 
 export function evaluateSitePolicies(
@@ -165,6 +179,17 @@ export function evaluateSitePolicies(
   const enabledPolicies = policies.filter((p) => p.enabled && matchesUrlPattern(p.urlPattern, currentUrl));
   if (enabledPolicies.length === 0) {
     return { hasMatch: false, action: "warn", matchedCategories: [] };
+  }
+
+  const fullBlock = enabledPolicies.find((p) => p.blockEntireSite === true);
+  if (fullBlock) {
+    return {
+      hasMatch: true,
+      action: "block",
+      matchedPolicy: fullBlock,
+      matchedCategories: [...new Set(findings.map((f) => f.category))],
+      fullSiteBlocked: true,
+    };
   }
 
   // Priority: block > redact > warn
@@ -254,6 +279,11 @@ export function parseSitePolicy(raw: unknown): ParseSitePolicyResult {
   }
 
   const enabled = raw.enabled !== false; // default true
+  const blockEntireSite = raw.blockEntireSite === true;
+  let notes: string | undefined;
+  if (typeof raw.notes === "string" && raw.notes.trim().length > 0) {
+    notes = raw.notes.trim().slice(0, 200);
+  }
 
   if (typeof raw.createdAt !== "string" || raw.createdAt.trim().length === 0) {
     return { ok: false, error: "Policy createdAt must be a valid ISO date string" };
@@ -269,6 +299,8 @@ export function parseSitePolicy(raw: unknown): ParseSitePolicyResult {
       action: raw.action as PolicyAction,
       enabled,
       createdAt: raw.createdAt,
+      blockEntireSite,
+      ...(notes ? { notes } : {}),
     },
   };
 }
