@@ -14,6 +14,9 @@ import {
   isValidIsin,
   isValidSedol,
   isValidLoinc,
+  isValidIban,
+  isValidPassport,
+  isValidMrz,
 } from "../src/validators/index.js";
 
 describe("isValidSsn", () => {
@@ -171,6 +174,55 @@ describe("isValidLoinc", () => {
     expect(isValidLoinc("2345-8")).toBe(false); // wrong check digit
     expect(isValidLoinc("23457")).toBe(false); // missing hyphen
     expect(isValidLoinc("abc-7")).toBe(false); // non-numeric
+  });
+});
+describe("isValidIban", () => {
+  it("validates authentic IBANs across different countries and spacings", () => {
+    // Germany
+    expect(isValidIban("DE89370400440532013000")).toBe(true);
+    expect(isValidIban("DE89 3704 0044 0532 0130 00")).toBe(true);
+    // Great Britain
+    expect(isValidIban("GB29NWBK60161331926819")).toBe(true);
+    expect(isValidIban("GB29 NWBK 6016 1331 9268 19")).toBe(true);
+    // France
+    expect(isValidIban("FR1420041010050500013M02606")).toBe(true);
+    expect(isValidIban("FR14 2004 1010 0505 0001 3M02 606")).toBe(true);
+  });
+
+  it("rejects invalid IBANs with corrupted check digits, wrong lengths, or illegal characters", () => {
+    expect(isValidIban("DE88 3704 0044 0532 0130 00")).toBe(false); // wrong checksum
+    expect(isValidIban("DE89 3704 0044 0532 0130")).toBe(false); // too short for Germany
+    expect(isValidIban("1234 5678 9012 3456 7890")).toBe(false); // missing country code
+    expect(isValidIban("DE89 3704 0044 0532 0130 00!")).toBe(false); // illegal character
+  });
+});
+
+describe("isValidPassport and isValidMrz", () => {
+  it("validates standard US, UK, Canadian, and Australian passport numbers", () => {
+    expect(isValidPassport("123456789", "US")).toBe(true);
+    expect(isValidPassport("A12345678", "US")).toBe(true); // Next-gen passport
+    expect(isValidPassport("987654321", "GB")).toBe(true);
+    expect(isValidPassport("AB123456", "CA")).toBe(true);
+    expect(isValidPassport("N1234567", "AU")).toBe(true);
+  });
+
+  it("rejects out-of-spec passport numbers", () => {
+    expect(isValidPassport("123", "US")).toBe(false); // too short
+    expect(isValidPassport("123456789012345", "US")).toBe(false); // too long
+  });
+
+  it("validates authentic ICAO Doc 9303 MRZ lines", () => {
+    // TD3 Line 1
+    expect(isValidMrz("P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<")).toBe(true);
+    // TD3 Line 2 with valid check digit 9 over doc number L898902C3 (check digit = 6)
+    // L (21)*7 + 8*3 + 9*1 + 8*7 + 9*3 + 0*1 + 2*7 + C(12)*3 + 3*1 = 147+24+9+56+27+0+14+36+3 = 316 % 10 = 6
+    expect(isValidMrz("L898902C36UTO7408122F1204159ZE184226B<<<<<10")).toBe(true);
+  });
+
+  it("rejects corrupted MRZ lines", () => {
+    // Corrupted check digit (9 instead of 6)
+    expect(isValidMrz("L898902C39UTO7408122F1204159ZE184226B<<<<<10")).toBe(false);
+    expect(isValidMrz("NOT_AN_MRZ_LINE")).toBe(false);
   });
 });
 

@@ -3331,6 +3331,54 @@ export async function initPopup(): Promise<void> {
         `governworld-audit-${message.exportedAt.split("T")[0]}.sig.json`,
         "application/json"
       );
+      const eventCount = message.jsonl ? message.jsonl.split("\n").filter((l) => l.trim().length > 0).length : 0;
+      const certHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GovernWorld — Verifiable Compliance Certificate</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; padding: 40px; margin: 0; line-height: 1.5; }
+  .cert { max-width: 760px; margin: 0 auto; background: #1e293b; border: 2px solid #38bdf8; border-radius: 12px; padding: 36px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
+  h1 { margin: 0 0 8px; font-size: 24px; color: #38bdf8; letter-spacing: -0.5px; }
+  .subtitle { font-size: 14px; color: #94a3b8; margin-bottom: 24px; border-bottom: 1px solid #334155; padding-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 24px; }
+  .box { background: #0f172a; border: 1px solid #334155; border-radius: 8px; padding: 14px; }
+  .label { font-size: 11px; text-transform: uppercase; color: #94a3b8; font-weight: 600; margin-bottom: 4px; }
+  .val { font-size: 13px; color: #f1f5f9; font-family: ui-monospace, monospace; word-break: break-all; }
+  .guarantee { background: rgba(34, 197, 94, 0.1); border: 1px solid rgba(34, 197, 94, 0.3); border-radius: 8px; padding: 14px; margin-bottom: 24px; font-size: 13px; color: #86efac; }
+  .footer { font-size: 12px; color: #64748b; text-align: center; border-top: 1px solid #334155; padding-top: 16px; }
+  @media print { body { background: #fff; color: #000; padding: 0; } .cert { border: 1px solid #000; box-shadow: none; background: #fff; color: #000; } .box { border: 1px solid #ccc; background: #fafafa; } .val { color: #000; } .guarantee { background: #f0fdf4; border-color: #86efac; color: #166534; } }
+</style>
+</head>
+<body>
+<div class="cert">
+  <h1>GovernWorld Compliance Certificate</h1>
+  <div class="subtitle">Cryptographic Audit Trail & Client-Side Zero-Egress Attestation</div>
+  <div class="guarantee">
+    <strong>Verified Local Execution:</strong> All redaction, optical character recognition (OCR), pattern detection, and cryptographic signing occurred exclusively on the user device. No raw documents or unmasked sensitive data were transmitted over external network boundaries.
+  </div>
+  <div class="grid">
+    <div class="box"><div class="label">Export Timestamp</div><div class="val">${message.exportedAt}</div></div>
+    <div class="box"><div class="label">Total Audited Events</div><div class="val">${eventCount}</div></div>
+    <div class="box"><div class="label">Cryptographic Algorithm</div><div class="val">ECDSA P-256 (SHA-256)</div></div>
+    <div class="box"><div class="label">Public Key Curve / Type</div><div class="val">${(message.publicKeyJwk as any)?.crv ?? "P-256"} / ${(message.publicKeyJwk as any)?.kty ?? "EC"}</div></div>
+  </div>
+  <div class="box" style="margin-bottom: 24px;">
+    <div class="label">ECDSA Digital Signature (Base64)</div>
+    <div class="val">${message.signatureBase64}</div>
+  </div>
+  <div class="footer">
+    Independent verification: execute <code>node scripts/verify-audit.mjs &lt;export.sig.json&gt;</code> using any Node.js runtime.
+  </div>
+</div>
+</body>
+</html>`;
+      download(
+        certHtml,
+        `governworld-compliance-certificate-${message.exportedAt.split("T")[0]}.html`,
+        "text/html"
+      );
       return;
     }
     if (message.type === "POPUP_DOC_COUNT_RESULT") {

@@ -152,6 +152,26 @@ describe("detect", () => {
     expect(matches.filter((m) => m.category === "address")).toHaveLength(1);
   });
 
+
+  it("detects authentic spaced IBANs under bank_account", () => {
+    const text = "Wire payment to IBAN DE89 3704 0044 0532 0130 00 today";
+    const matches = detect(text, [...ALL, "bank_account"]);
+    const bankMatches = matches.filter((m) => m.category === "bank_account");
+    expect(bankMatches.length).toBeGreaterThanOrEqual(1);
+    expect(bankMatches[0].value).toContain("DE89");
+  });
+
+  it("detects passport numbers and MRZ lines under member_id", () => {
+    const text = "Holder Passport Number: 123456789";
+    const matches = detect(text, [...ALL]);
+    const memberMatches = matches.filter((m) => m.category === "member_id");
+    expect(memberMatches.length).toBeGreaterThanOrEqual(1);
+    expect(memberMatches[0].value).toBe("123456789");
+
+    const mrzText = "P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<<";
+    const mrzMatches = detect(mrzText, [...ALL]);
+    expect(mrzMatches.some((m) => m.value.startsWith("P<UTO"))).toBe(true);
+  });
   it("does not flag every number as sensitive", () => {
     const text = "Invoice total is $1,234.56 with reference 78492.";
     const matches = detect(text, [...ALL]);

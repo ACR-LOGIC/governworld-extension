@@ -14,6 +14,9 @@ import {
   isValidAustralianTfn,
   isValidCpf,
   isValidItin,
+  isValidIban,
+  isValidPassport,
+  isValidMrz,
 } from "../validators/index.js";
 
 /**
@@ -709,7 +712,7 @@ const ABA_LABEL_RE =
 const ACCOUNT_LABEL_RE =
   /\b(?:bank\s+account|checking\s+account|savings\s+account|account(?:\s*(?:number|no|#))?|acct\.?(?:\s*(?:number|no|#))?)[^\n:]{0,16}[:=]?\s*(\d[\d -]{3,19})/gi;
 const IBAN_RE =
-  /\b(?:IBAN\s*[:=]?\s*)?([A-Z]{2}\d{2}[A-Za-z0-9]{11,30})\b/gi;
+  /\b(?:IBAN\s*[:=]?\s*)?([A-Z]{2}\d{2}(?:[ \t]?[A-Za-z0-9]{4}){2,7}(?:[ \t]?[A-Za-z0-9]{1,4})?)\b/gi;
 
 /** ABA routing checksum: 3-7-1 weights over the nine digits. */
 function isValidAbaRouting(value: string): boolean {
@@ -723,14 +726,21 @@ function isValidAbaRouting(value: string): boolean {
 function detectBankAccounts(text: string): RawMatch[] {
   const out: RawMatch[] = [];
   for (const m of text.matchAll(IBAN_RE)) {
-    const value = m[1];
-    if (!value) continue;
+    const rawVal = m[1];
+    if (!rawVal) continue;
+    const value = rawVal.trim();
+    if (!isValidIban(value)) continue;
     const before = text.slice(Math.max(0, m.index - 40), m.index);
-    if (/iban/i.test(m[0]) || /iban/i.test(before)) {
-      const rel = m[0].lastIndexOf(value);
-      const start = m.index + (rel >= 0 ? rel : 0);
-      out.push({ category: "bank_account", confidence: 0.95, value, start, end: start + value.length });
-    }
+    const hasCue = /iban/i.test(m[0]) || /iban/i.test(before);
+    const rel = m[0].lastIndexOf(rawVal);
+    const start = m.index + (rel >= 0 ? rel : 0);
+    out.push({
+      category: "bank_account",
+      confidence: hasCue ? 0.98 : 0.92,
+      value,
+      start,
+      end: start + value.length,
+    });
   }
   for (const m of text.matchAll(ABA_LABEL_RE)) {
     const value = m[1];
@@ -862,6 +872,10 @@ function detectMrns(text: string): RawMatch[] {
 
 const MEMBER_LABEL_RE =
   /\b(?:member\s*(?:id|no|number|#)|patient\s*id|pat[-_\s]*id|memberid)\s*[:#]?\s*(?=\S)/gi;
+const PASSPORT_LABEL_RE =
+  /\b(?:passport(?:\s+book)?\s*(?:no|num|number|id|#)?)\s*[:#]?\s*([A-Za-z0-9]{6,12})\b/gi;
+const MRZ_LINE_RE =
+  /(?:^|(?<=[\s]))(P<[A-Z]{3}[A-Z<]{39}|[A-Z0-9<]{44})(?=[\s]|$)/g;
 
 function detectMemberIds(text: string): RawMatch[] {
   const out: RawMatch[] = [];
@@ -891,6 +905,32 @@ function detectMemberIds(text: string): RawMatch[] {
         end: valueStart + secondOffset + secondId.length,
       });
     }
+  }
+  for (const m of text.matchAll(PASSPORT_LABEL_RE)) {
+    const value = m[1];
+    if (!value || !isValidPassport(value)) continue;
+    const rel = m[0].lastIndexOf(value);
+    const start = m.index + (rel >= 0 ? rel : 0);
+    out.push({
+      category: "member_id",
+      confidence: 0.9,
+      value,
+      start,
+      end: start + value.length,
+    });
+  }
+  for (const m of text.matchAll(MRZ_LINE_RE)) {
+    const line = m[1];
+    if (!line || !isValidMrz(line)) continue;
+    const rel = m[0].indexOf(line);
+    const start = m.index + (rel >= 0 ? rel : 0);
+    out.push({
+      category: "member_id",
+      confidence: 0.99,
+      value: line,
+      start,
+      end: start + line.length,
+    });
   }
   return out;
 }

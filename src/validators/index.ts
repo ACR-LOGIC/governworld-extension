@@ -444,4 +444,112 @@ export function isValidCpf(value: string): boolean {
   if (rem2 === 10 || rem2 === 11) rem2 = 0;
   return rem2 === Number(digits[10]);
 }
+/** Known IBAN lengths per ISO 13616 country registry. */
+const IBAN_LENGTHS: Record<string, number> = {
+  AL: 28, AD: 24, AT: 20, AZ: 28, BH: 22, BY: 28, BE: 16, BA: 20, BR: 29,
+  BG: 22, CR: 22, HR: 21, CY: 28, CZ: 24, DK: 18, DO: 28, EE: 20, FO: 18,
+  FI: 18, FR: 27, GE: 22, DE: 22, GI: 23, GR: 27, GL: 18, GT: 28, HU: 28,
+  IS: 26, IE: 22, IL: 23, IT: 27, JO: 30, KZ: 20, XK: 20, KW: 30, LV: 21,
+  LB: 28, LI: 21, LT: 20, LU: 20, MK: 19, MT: 31, MR: 27, MU: 30, MD: 24,
+  MC: 27, ME: 22, NL: 18, NO: 15, PK: 24, PS: 29, PL: 28, PT: 25, QA: 29,
+  RO: 24, LC: 32, SM: 27, ST: 25, SA: 24, RS: 22, SC: 31, SK: 24, SI: 19,
+  ES: 24, SE: 24, CH: 21, TL: 23, TN: 24, TR: 26, UA: 29, AE: 23, GB: 22,
+  VA: 22, VG: 24,
+};
+
+/**
+ * Validates an International Bank Account Number (IBAN) using the ISO 7064
+ * Mod-97 algorithm and ISO 13616 country length verification.
+ * Accepts both compact and space-grouped forms (e.g. `DE89 3704 0044 0532 0130 00`).
+ */
+export function isValidIban(value: string): boolean {
+  const compact = value.replace(/[\s-]/g, "").toUpperCase();
+  if (!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(compact)) return false;
+
+  const country = compact.slice(0, 2);
+  const expectedLength = IBAN_LENGTHS[country];
+  if (expectedLength !== undefined && compact.length !== expectedLength) {
+    return false;
+  }
+
+  // Rearrange: move first 4 characters (country + check digits) to the end
+  const rearranged = compact.slice(4) + compact.slice(0, 4);
+
+  // Convert letters to numbers (A=10 ... Z=35) and compute piecewise mod 97
+  let remainder = 0;
+  for (let i = 0; i < rearranged.length; i++) {
+    const code = rearranged.charCodeAt(i);
+    // ASCII 0-9 is 48-57, A-Z is 65-90
+    if (code >= 48 && code <= 57) {
+      remainder = (remainder * 10 + (code - 48)) % 97;
+    } else if (code >= 65 && code <= 90) {
+      const val = code - 55;
+      remainder = ((remainder * 100) + val) % 97;
+    } else {
+      return false;
+    }
+  }
+  return remainder === 1;
+}
+
+/**
+ * Validates an ICAO Doc 9303 standard passport MRZ (Machine Readable Zone) line.
+ * Evaluates the 7-3-1 weighted modulus-10 check digits over the passport number.
+ */
+export function isValidMrz(line: string): boolean {
+  const clean = line.replace(/\s/g, "").toUpperCase();
+  // TD3 Line 1: P<UTOERIKSSON<<ANNA<MARIA<<<<<<<<<<<<<<<<<<< (44 chars)
+  if (/^P[A-Z0-9<]{43}$/.test(clean)) return true;
+
+  // TD3 Line 2: [DocNum 9][Check 1][Nationality 3][DOB 6][Check 1][Sex 1][Expiry 6][Check 1][Optional 14][Check 1][OverallCheck 1] (44 chars)
+  if (/^[A-Z0-9<]{44}$/.test(clean)) {
+    const weights = [7, 3, 1];
+    const calcCheck = (str: string): number => {
+      let sum = 0;
+      for (let i = 0; i < str.length; i++) {
+        const c = str[i];
+        let val = 0;
+        if (c >= "0" && c <= "9") val = c.charCodeAt(0) - 48;
+        else if (c >= "A" && c <= "Z") val = c.charCodeAt(0) - 55;
+        else if (c === "<") val = 0;
+        sum += val * weights[i % 3];
+      }
+      return sum % 10;
+    };
+
+    const docNum = clean.slice(0, 9);
+    const docCheck = clean.slice(9, 10);
+    if (docCheck !== "<" && !isNaN(Number(docCheck))) {
+      return calcCheck(docNum) === Number(docCheck);
+    }
+  }
+  return false;
+}
+
+/**
+ * Validates standard US, UK, Canadian, and Australian passport numbers
+ * when accompanied by passport context cues.
+ */
+export function isValidPassport(value: string, country?: string): boolean {
+  const clean = value.replace(/[\s-]/g, "").toUpperCase();
+  if (!clean || clean.length < 6 || clean.length > 12) return false;
+
+  if (country === "US" || !country) {
+    // US Passport Book: 9 numeric digits, or Next Generation 1 letter + 8 digits
+    if (/^\d{9}$/.test(clean) || /^[A-Z]\d{8}$/.test(clean)) return true;
+  }
+  if (country === "GB" || !country) {
+    // UK Passport: 9 numeric digits
+    if (/^\d{9}$/.test(clean)) return true;
+  }
+  if (country === "CA" || !country) {
+    // Canadian Passport: 2 letters + 6 digits
+    if (/^[A-Z]{2}\d{6}$/.test(clean)) return true;
+  }
+  if (country === "AU" || !country) {
+    // Australian Passport: 1 letter + 7 digits
+    if (/^[A-Z]\d{7}$/.test(clean)) return true;
+  }
+  return false;
+}
 
