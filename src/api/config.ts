@@ -23,7 +23,7 @@ const STORAGE_KEY_INSTALLATION_ID = "gw_installation_id";
 
 /**
  * Validates that a candidate API URL is syntactically valid and satisfies transport security.
- * Production/remote endpoints MUST use HTTPS. Plaintext HTTP is allowed ONLY for localhost/127.0.0.1.
+ * Production/remote endpoints MUST use HTTPS. Plaintext HTTP is allowed ONLY for localhost/127.0.0.1/::1.
  */
 export function validateApiUrl(rawUrl: string): { valid: boolean; normalizedUrl?: string; error?: string } {
   try {
@@ -32,11 +32,13 @@ export function validateApiUrl(rawUrl: string): { valid: boolean; normalizedUrl?
       return { valid: false, error: "Invalid protocol. Only HTTPS (or HTTP for localhost) is supported." };
     }
 
+    const cleanHost = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "").replace(/\.+$/, "");
     const isLocalhost =
-      parsed.hostname === "localhost" ||
-      parsed.hostname === "127.0.0.1" ||
-      parsed.hostname === "::1" ||
-      parsed.hostname.endsWith(".localhost");
+      cleanHost === "localhost" ||
+      cleanHost === "127.0.0.1" ||
+      cleanHost === "::1" ||
+      /^0*(?::0*)*:1$/.test(cleanHost) ||
+      cleanHost.endsWith(".localhost");
 
     if (parsed.protocol === "http:" && !isLocalhost) {
       return {

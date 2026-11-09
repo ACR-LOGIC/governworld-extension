@@ -44,7 +44,9 @@ vi.mock('../src/shared/audit.js', () => ({
   recordAudit: async (record: Record<string, unknown>) => {
     auditRecords.push(record);
   },
-  exportSignedAuditLog: async () => ({ entries: [], signature: '', publicKey: '' })
+  exportSignedAuditLog: async () => ({ entries: [], signature: '', publicKey: '' }),
+  setAuditWriterRole: vi.fn(),
+  writeAuditRecordDirect: vi.fn(),
 }));
 
 vi.mock('../src/service-worker/documents.js', () => ({

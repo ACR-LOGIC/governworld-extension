@@ -12,6 +12,7 @@ import type { PatternTestResult, WizardAnalysis } from "./wizardAnalyzer";
 import type { ImageCandidate } from "./messages";
 import type { AccountView } from "./account";
 import type { NotificationPreferences } from "./settings.js";
+import type { AuditEvent } from "./audit.js";
 
 export type FindingCategory =
   | "email"
@@ -215,6 +216,7 @@ export type PopupMessage =
       delivered: boolean;
     }
   | { type: "POPUP_EXPORT_AUDIT"; requestId: string }
+  | { type: "POPUP_RECORD_AUDIT"; requestId: string; event: AuditEvent; failClosed?: boolean }
   | { type: "POPUP_UNDO_MASKS"; requestId: string; tabId?: number }
   | { type: "POPUP_SET_NOTIFICATIONS"; requestId: string; enabled: boolean }
   | { type: "POPUP_SET_NOTIFICATION_PREFS"; requestId: string; prefs: Partial<NotificationPreferences> }
@@ -546,6 +548,7 @@ export const MESSAGE_TYPES = new Set<string>([
   "POPUP_DOC_CAPTURE_READY",
   "POPUP_DOC_DELIVERY_REPORT",
   "POPUP_EXPORT_AUDIT",
+  "POPUP_RECORD_AUDIT",
   "POPUP_AUDIT_EXPORT",
   "POPUP_UNDO_MASKS",
   "POPUP_UNDO_DONE",

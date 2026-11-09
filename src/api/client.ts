@@ -29,6 +29,15 @@ function isSafeServerMessage(value: string): boolean {
   return !UNSAFE_MESSAGE_TERMS.test(value);
 }
 
+const KNOWN_OAUTH_ERRORS = new Set([
+  "invalid_grant",
+  "invalid_token",
+  "invalid_request",
+  "invalid_client",
+  "unauthorized_client",
+  "unsupported_grant_type",
+]);
+
 export class GovernWorldApiClient {
   private customBaseUrl?: string;
 
@@ -54,8 +63,12 @@ export class GovernWorldApiClient {
   private normalizeError(status: number, responseBody: unknown, requestId?: string): ApiErrorDetails {
     let userMessage = "GovernWorld connection encountered an unexpected error.";
     let code = "SERVER_ERROR";
+    let oauthError: string | undefined;
 
-    if (status === 401) {
+    if (status === 400) {
+      code = "BAD_REQUEST";
+      userMessage = "The request was rejected as invalid. Please check your configuration or sign in again.";
+    } else if (status === 401) {
       code = "UNAUTHORIZED";
       userMessage = "Authentication required or your session has expired. Please reconnect.";
     } else if (status === 403) {
@@ -75,11 +88,23 @@ export class GovernWorldApiClient {
       userMessage = "Unable to reach GovernWorld API. Local on-device protection continues normally.";
     }
 
+    if (typeof responseBody === "object" && responseBody !== null) {
+      const bodyRec = responseBody as Record<string, unknown>;
+      for (const field of ["error", "code", "oauth_error"] as const) {
+        const val = bodyRec[field];
+        if (typeof val === "string" && KNOWN_OAUTH_ERRORS.has(val.trim().toLowerCase())) {
+          oauthError = val.trim().toLowerCase();
+          break;
+        }
+      }
+      if (!oauthError && typeof bodyRec.error_description === "string") {
+        const desc = bodyRec.error_description.toLowerCase();
+        if (desc.includes("invalid_grant")) oauthError = "invalid_grant";
+        else if (desc.includes("invalid_token")) oauthError = "invalid_token";
+      }
+    }
+
     // Extract safe message if provided by backend in standard format.
-    // Backend strings are untrusted: a misbehaving server could otherwise smuggle
-    // stack traces, SQL fragments, or other diagnostics into the UI. The same
-    // suspicious-term filter applies to both fields, and overlong messages fall
-    // back to the code-based local text.
     if (
       typeof responseBody === "object" &&
       responseBody !== null &&
@@ -97,7 +122,6 @@ export class GovernWorldApiClient {
       typeof (responseBody as Record<string, unknown>).error === "string"
     ) {
       const rawError = (responseBody as Record<string, unknown>).error as string;
-      // Filter out internal leakages
       if (isSafeServerMessage(rawError)) {
         userMessage = rawError;
       }
@@ -108,6 +132,7 @@ export class GovernWorldApiClient {
       user_message: userMessage,
       status_code: status,
       request_id: requestId,
+      ...(oauthError ? { oauth_error: oauthError } : {}),
     };
   }
 
@@ -172,17 +197,12 @@ export class GovernWorldApiClient {
         signal: controller.signal,
       });
 
-      // The timeout stays armed through body consumption: headers can arrive
-      // promptly while the body stalls, and clearing it here would leave the
-      // request unbounded. An abort during the read surfaces as AbortError below.
       let responseData: unknown = null;
       const contentType = response.headers.get("content-type") || "";
       if (contentType.includes("application/json")) {
         try {
           responseData = await response.json();
         } catch (bodyError) {
-          // A timeout abort must propagate as TIMEOUT, not masquerade as an
-          // empty successful body.
           if ((bodyError as Error)?.name === "AbortError") throw bodyError;
           responseData = null;
         }

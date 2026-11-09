@@ -144,12 +144,26 @@ export const DEFAULT_TRUSTED_INTERNAL_PATTERNS: readonly string[] = [
   "*.internal",
   "*.local",
   "*.corp",
+  "*.lan",
+  "*.intranet",
+  "*.home.arpa",
   "localhost",
   "127.0.0.1",
   "::1",
   ...HEALTHCARE_DOMAINS.map((d) => "*." + d),
   ...HEALTHCARE_DOMAINS,
 ];
+
+/** Cloud metadata endpoints that must NEVER be classified as trusted internal systems */
+const UNTRUSTED_METADATA_HOSTS = new Set([
+  "169.254.169.254",
+  "169.254.170.2",
+  "100.100.100.200",
+  "metadata.google.internal",
+  "metadata.internal",
+  "metadata.azure.internal",
+  "instance-data",
+]);
 
 /** Normalize host or full URL into a clean lowercase hostname without port */
 export function normalizeHostname(urlOrHost: string): string {
@@ -164,22 +178,32 @@ export function normalizeHostname(urlOrHost: string): string {
       if (slash >= 0) {
         host = host.slice(0, slash);
       }
-      const colon = host.indexOf(":");
-      if (colon >= 0) {
-        host = host.slice(0, colon);
+      if (host.startsWith("[")) {
+        const closeBracket = host.indexOf("]");
+        if (closeBracket >= 0) {
+          host = host.slice(1, closeBracket);
+        }
+      } else if (!host.includes(":")) {
+        // No port to strip
+      } else if ((host.match(/:/g) ?? []).length === 1) {
+        // host:port (IPv4 or domain with port)
+        const colon = host.indexOf(":");
+        if (colon >= 0) {
+          host = host.slice(0, colon);
+        }
       }
     }
   } catch {
     // Keep fallback cleaned host
   }
-  return host.replace(/^\.+|\.+$/g, "");
+  return host.replace(/^\[|\]$/g, "").replace(/^\.+|\.+$/g, "");
 }
 
 /** Check if a hostname matches a domain pattern (supports exact and *.example.com wildcard) */
 export function matchesDomainPattern(pattern: string, hostname: string): boolean {
   if (!pattern || !hostname) return false;
-  const p = pattern.trim().toLowerCase();
-  const h = hostname.trim().toLowerCase();
+  const p = pattern.trim().toLowerCase().replace(/^\[|\]$/g, "").replace(/\.+$/, "");
+  const h = hostname.trim().toLowerCase().replace(/^\[|\]$/g, "").replace(/\.+$/, "");
   if (p === h) return true;
   if (p.startsWith("*.")) {
     const root = p.slice(2);
@@ -201,6 +225,23 @@ export function classifyDestination(
   options: DestinationClassifierOptions = {}
 ): DestinationClassification {
   const host = normalizeHostname(urlOrHost);
+
+  // 0. Never trust cloud metadata endpoints even if they end with .internal
+  if (
+    UNTRUSTED_METADATA_HOSTS.has(host) ||
+    host.startsWith("169.254.") ||
+    /^::ffff:(?:169\.254\.|a9fe:)/i.test(host)
+  ) {
+    return {
+      category: "UNKNOWN_WEB",
+      risk: 20,
+      hostname: host,
+      serviceId: "cloud_metadata",
+      serviceName: "Untrusted Metadata Endpoint",
+      isAi: false,
+      isTrusted: false,
+    };
+  }
 
   // 1. Check for Trusted Internal Domains
   const trustedPatterns = [
