@@ -41,6 +41,10 @@ export interface EnterprisePolicy {
   networkDestinationPolicy: NetworkDestinationPolicy;
   /** Internal network allowlist for managed_intranet. */
   networkAllowlist: string[];
+  /** Optional metadata from local office coordinator when enrolled via desktop app */
+  coordinatorOrigin?: string;
+  organizationName?: string;
+  policyVersion?: number;
 }
 
 export const NO_ENTERPRISE_POLICY: EnterprisePolicy = {
@@ -106,6 +110,10 @@ export function parseEnterprisePolicy(raw: unknown): EnterprisePolicy {
     }
   }
 
+  const coordinatorOrigin = typeof raw.coordinatorOrigin === "string" ? raw.coordinatorOrigin : undefined;
+  const organizationName = typeof raw.organizationName === "string" ? raw.organizationName : undefined;
+  const policyVersion = typeof raw.policyVersion === "number" ? raw.policyVersion : undefined;
+
   return {
     managed: true,
     valid: true,
@@ -114,19 +122,40 @@ export function parseEnterprisePolicy(raw: unknown): EnterprisePolicy {
     enforcedCategories: enforced,
     networkDestinationPolicy: networkPolicy,
     networkAllowlist: allowlist,
+    ...(coordinatorOrigin ? { coordinatorOrigin } : {}),
+    ...(organizationName ? { organizationName } : {}),
+    ...(policyVersion ? { policyVersion } : {}),
   };
 }
 
+export const STORAGE_KEY_COORDINATOR_POLICY = "gw_coordinator_policy";
+
 export async function loadEnterprisePolicy(): Promise<EnterprisePolicy> {
   try {
+    // 1. Check GPO / OS managed storage first (highest authority)
     if (typeof chrome !== "undefined" && chrome.storage?.managed) {
       const raw = await chrome.storage.managed.get(null);
-      return parseEnterprisePolicy(raw && Object.keys(raw).length > 0 ? raw : null);
+      if (raw && Object.keys(raw).length > 0) {
+        return parseEnterprisePolicy(raw);
+      }
     }
   } catch {
-    // Managed storage unreadable: treat as unmanaged rather than locking the
-    // user out on a storage fault. Enforcement still follows user settings.
+    // Managed storage unreadable or not configured
   }
+
+  try {
+    // 2. Check local Office Manager coordinator policy in local storage
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      const stored = await chrome.storage.local.get(STORAGE_KEY_COORDINATOR_POLICY);
+      const coordPolicy = stored[STORAGE_KEY_COORDINATOR_POLICY];
+      if (coordPolicy && typeof coordPolicy === "object") {
+        return parseEnterprisePolicy(coordPolicy);
+      }
+    }
+  } catch {
+    // Local storage unreadable
+  }
+
   return { ...NO_ENTERPRISE_POLICY };
 }
 

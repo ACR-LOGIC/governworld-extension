@@ -575,12 +575,26 @@ export function isHttpsOrigin(value: string): boolean {
   }
 }
 
-const ALLOWED_GATEWAY_HOSTS = new Set(["api.governworld.acrlogic.com"]);
+const ALLOWED_GATEWAY_HOSTS = new Set([
+  "api.governworld.acrlogic.com",
+  "127.0.0.1",
+  "localhost",
+]);
 
 export function isAllowedGatewayOrigin(value: string): boolean {
-  if (!isHttpsOrigin(value)) return false;
-  const hostname = new URL(value).hostname.toLowerCase();
-  return ALLOWED_GATEWAY_HOSTS.has(hostname);
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname.toLowerCase();
+    if (ALLOWED_GATEWAY_HOSTS.has(hostname)) {
+      if (hostname === "127.0.0.1" || hostname === "localhost") {
+        return (url.protocol === "http:" || url.protocol === "https:") && url.pathname === "" || url.pathname === "/";
+      }
+      return isHttpsOrigin(value);
+    }
+  } catch {
+    return false;
+  }
+  return false;
 }
 
 export function isCategoryEnabled(settings: Settings, category: FindingCategory): boolean {
