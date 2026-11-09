@@ -307,11 +307,13 @@ if (g.__gwRedactionContentLoaded !== true) {
     currentSettings = settings;
 
     // ── Layer 0: Single DOM Inventory Pass (Item 16) ──────────────────────
+    let passResult: import("./normalization/pageInventory.js").DOMInventoryPassResult | null = null;
     let inventory: import("./normalization/pageInventory.js").PageInventory | null = null;
     try {
-      const passResult = runDOMInventoryPass(document);
+      passResult = runDOMInventoryPass(document);
       inventory = passResult.inventory;
     } catch {
+      passResult = null;
       inventory = null;
     }
 
@@ -324,7 +326,7 @@ if (g.__gwRedactionContentLoaded !== true) {
       nodeIds,
     });
 
-    const tables = extractTableStructures(document);
+    const tables = extractTableStructures(document, passResult?.tables);
     if (tables.length > 0) {
       canonical.segments = annotateSegmentsWithTableStructure(canonical.segments, nodeIds);
       canonical.metadata.tableCount = tables.length;
@@ -334,10 +336,12 @@ if (g.__gwRedactionContentLoaded !== true) {
     // contains every frame. Each frame contributes an independently offset
     // segment list; the shift is applied here, once, against the combined
     // string that is actually built below.
+    const allFrames = passResult ? [...passResult.frames.sameOrigin, ...passResult.frames.crossOrigin] : undefined;
     const iframeResult = traverseIframes(document, {
       maxVisibleChars: settings.maxVisibleChars,
       maxNodeChars: settings.maxNodeChars,
       nodeIds,
+      preCollectedFrames: allFrames,
     });
     for (const frameDoc of iframeResult.frameDocuments) {
       const shift = canonical.combined.length > 0 ? canonical.combined.length + 1 : 0;
@@ -400,7 +404,7 @@ if (g.__gwRedactionContentLoaded !== true) {
 
     // ── Layer 2 (SVG branch): Inline SVG text → run through detect ────────
     try {
-      const svgSegments = extractSvgText(document);
+      const svgSegments = extractSvgText(document, passResult?.media.svgs);
       if (svgSegments.length > 0) {
         const svgText = svgSegments.map((s) => s.text).join("\n");
         const svgDetected = detectWithCoverage(svgText, settings.enabledCategories, customPatterns);
@@ -443,7 +447,7 @@ if (g.__gwRedactionContentLoaded !== true) {
 
     // ── Layer 4 (video captions, deterministic): run through detect ───────
     try {
-      const captions = extractVideoCaptions(document);
+      const captions = extractVideoCaptions(document, passResult?.media.videos);
       if (captions.length > 0) {
         const captionText = captions.map((c) => c.text).join("\n");
         const captionDetected = detectWithCoverage(captionText, settings.enabledCategories, customPatterns);
@@ -523,7 +527,7 @@ if (g.__gwRedactionContentLoaded !== true) {
 
     try {
       if (inventory) {
-        const mediaResult = buildMediaQueue(document, inventory, 8, location.href);
+        const mediaResult = buildMediaQueue(document, inventory, 8, location.href, passResult?.media);
         if (mediaResult.visualQueue.length > 0) visualQueue = mediaResult.visualQueue;
         if (mediaResult.pdfQueue.length > 0) pdfQueue = mediaResult.pdfQueue;
         deferredMediaCount = mediaResult.deferredCount;
@@ -875,15 +879,18 @@ if (g.__gwRedactionContentLoaded !== true) {
             (f) => f.selected && f.startOffset < end && f.endOffset > start
           );
           if (active.length > 0) {
-            // Redact using the same logic but on the native string
-            const chars = Array.from(selectedText);
-            for (const f of active) {
-              const fs = Math.max(start, f.startOffset);
-              const fe = Math.min(end, f.endOffset);
+            let resultText = selectedText;
+            const sortedActive = [...active].sort((a, b) => b.startOffset - a.startOffset);
+            for (const f of sortedActive) {
+              const fs = Math.max(start, f.startOffset) - start;
+              const fe = Math.min(end, f.endOffset) - start;
               if (fe <= fs) continue;
-              for (let i = fs - start; i < fe - start; i++) chars[i] = "\u2588";
+              const repl = placeholdersEnabled
+                ? `[${placeholderLabelFor(f.category)}]`
+                : "\u2588".repeat(fe - fs);
+              resultText = resultText.slice(0, fs) + repl + resultText.slice(fe);
             }
-            event.clipboardData?.setData("text/plain", chars.join(""));
+            event.clipboardData?.setData("text/plain", resultText);
             event.preventDefault();
             touchSession();
           }
@@ -907,7 +914,7 @@ if (g.__gwRedactionContentLoaded !== true) {
         (f) => f.selected && f.startOffset < span.end && f.endOffset > span.start
       );
       if (active.length === 0) return;
-      const text = maskCombinedRange(combined, span.start, span.end, active);
+      const text = maskCombinedRange(combined, span.start, span.end, active, placeholdersEnabled);
       event.clipboardData?.setData("text/plain", text);
       event.preventDefault();
       touchSession();
@@ -928,7 +935,10 @@ if (g.__gwRedactionContentLoaded !== true) {
         let redacted = rawSelText;
         const sorted = [...matches].sort((a, b) => b.start - a.start);
         for (const m of sorted) {
-          redacted = redacted.slice(0, m.start) + "\u2588".repeat(m.end - m.start) + redacted.slice(m.end);
+          const repl = (placeholdersEnabled || currentSettings?.maskPlaceholders)
+            ? `[${placeholderLabelFor(m.category)}]`
+            : "\u2588".repeat(m.end - m.start);
+          redacted = redacted.slice(0, m.start) + repl + redacted.slice(m.end);
         }
         event.clipboardData?.setData("text/plain", redacted);
         event.preventDefault();

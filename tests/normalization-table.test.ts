@@ -29,6 +29,16 @@ describe("table structure", () => {
     expect(tables[0].rows).toBe(2);
     expect(tables[0].cols).toBe(2);
   });
+
+  it("uses preCollectedTables directly when provided", () => {
+    document.body.innerHTML = `
+      <table id="t1"><tr><th>ColA</th></tr></table>
+      <table id="t2"><tr><th>ColB</th></tr></table>`;
+    const t2 = document.getElementById("t2") as HTMLTableElement;
+    const tables = extractTableStructures(document, [t2]);
+    expect(tables.length).toBe(1);
+    expect(tables[0].headerRowIds.length).toBe(1);
+  });
 });
 
 describe("annotateSegmentsWithTableStructure", () => {

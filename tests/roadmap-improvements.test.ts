@@ -340,9 +340,16 @@ describe("GovernWorld Roadmap Improvements Suite (All 17 Items)", () => {
       const isValid = await verifyPolicySignatureEd25519(signedPkg, keypair.publicKey);
       expect(isValid).toBe(true);
 
-      const integrity = await verifyPolicyIntegrity(signedPkg);
+      const integrity = await verifyPolicyIntegrity(signedPkg, Date.now(), {
+        trustedPublicKeyJwk: keypair.publicKeyJwk,
+      });
       expect(integrity.valid).toBe(true);
       expect(integrity.signatureVerified).toBe(true);
+
+      // Security test: Self-supplied public_key_jwk is rejected by default pinned trust anchor
+      const unpinnedIntegrity = await verifyPolicyIntegrity(signedPkg);
+      expect(unpinnedIntegrity.valid).toBe(false);
+      expect(unpinnedIntegrity.reason).toContain("Invalid Ed25519 policy signature");
     });
   });
 

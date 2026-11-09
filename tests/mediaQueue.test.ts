@@ -77,6 +77,21 @@ describe("buildMediaQueue", () => {
     expect(result.newUnscannableRegions[0].sourceType).toBe("video");
     expect(result.visualQueue.length).toBe(0);
   });
+
+  it("processes preCollectedMedia directly without walking the DOM", () => {
+    const img = document.createElement("img");
+    img.src = "https://example.com/precollected.png";
+    img.getBoundingClientRect = () => ({ x: 0, y: 0, width: 200, height: 200, top: 0, left: 0, right: 200, bottom: 200, toJSON: () => {} }) as any;
+    document.body.appendChild(img);
+
+    const inv = makeInventory();
+    const result = buildMediaQueue(document, inv, 8, "https://example.com", {
+      images: [img],
+    });
+
+    expect(result.visualQueue.length).toBe(1);
+    expect(result.visualQueue[0].resourceUrl).toBe("https://example.com/precollected.png");
+  });
 });
 
 describe("extractVideoCaptions", () => {
@@ -116,5 +131,17 @@ describe("extractVideoCaptions", () => {
     const captions = extractVideoCaptions(document);
     expect(captions.length).toBe(1);
     expect(captions[0].text).toContain("alice@hospital.org");
+  });
+
+  it("extracts from preCollectedVideos directly without searching the document", () => {
+    const video = document.createElement("video");
+    const track = {
+      cues: [{ text: "Precollected track: test@example.com", startTime: 1 }],
+    };
+    Object.defineProperty(video, "textTracks", { value: [track], configurable: true });
+
+    const captions = extractVideoCaptions(document, [video]);
+    expect(captions.length).toBe(1);
+    expect(captions[0].text).toBe("Precollected track: test@example.com");
   });
 });

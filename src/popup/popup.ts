@@ -2873,9 +2873,7 @@ export async function initPopup(): Promise<void> {
   const saveBtn = document.getElementById("account-save-btn") as HTMLButtonElement | null;
   const purchaseBtn = document.getElementById("account-purchase-btn") as HTMLButtonElement | null;
   const accountStatus = document.getElementById("account-status") as HTMLParagraphElement | null;
-  const oauthConnectBtn = document.getElementById("oauth-connect-btn") as HTMLButtonElement | null;
-  const oauthStatus = document.getElementById("oauth-status") as HTMLParagraphElement | null;
-
+  
   const accountIdentity = document.getElementById("account-identity");
   const accountEmail = document.getElementById("account-email") as HTMLParagraphElement | null;
   const accountOrg = document.getElementById("account-org") as HTMLParagraphElement | null;
@@ -2942,14 +2940,6 @@ export async function initPopup(): Promise<void> {
     if (accountManagedNote) accountManagedNote.hidden = !canManage;
   }
   renderAccountView(null);
-
-  oauthConnectBtn?.addEventListener("click", () => {
-    if (oauthStatus) oauthStatus.textContent = "Opening GovernWorld sign-in…";
-    void chrome.runtime.sendMessage({
-      type: "POPUP_OAUTH_CONNECT",
-      requestId: requestId(),
-    });
-  });
 
   purchaseBtn?.addEventListener("click", () => {
     if (accountStatus) {
@@ -4324,22 +4314,6 @@ export async function initPopup(): Promise<void> {
       return;
     }
     if (message.type === "POPUP_OAUTH_STATUS") {
-      if (oauthStatus) {
-        if (message.connected) {
-          oauthStatus.textContent = `Connected to ${message.tenantName ?? "GovernWorld"}`;
-          if (oauthConnectBtn) {
-            oauthConnectBtn.textContent = "Disconnect";
-            oauthConnectBtn.onclick = () => {
-              void chrome.runtime.sendMessage({
-                type: "POPUP_API_DISCONNECT",
-                requestId: requestId(),
-              });
-            };
-          }
-        } else if (message.message) {
-          oauthStatus.textContent = message.message;
-        }
-      }
       return;
     }
     if (message.type === "POPUP_CUSTOM_PATTERNS_STATE") {

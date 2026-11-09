@@ -18,6 +18,17 @@ export const DEFAULT_PROD_API_URL = "https://api.governworld.acrlogic.com";
 export const DEFAULT_DEV_API_URL = "http://127.0.0.1:8000";
 export const CURRENT_EXTENSION_VERSION = "0.2.0";
 
+/**
+ * Pinned production Ed25519 public key JWK used to verify policy package signatures.
+ * Untrusted / self-supplied keys inside remote policy packages are never accepted.
+ */
+export const TRUSTED_POLICY_PUBLIC_KEY_JWK: JsonWebKey = {
+  kty: "OKP",
+  crv: "Ed25519",
+  x: "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+  key_ops: ["verify"],
+};
+
 const STORAGE_KEY_API_URL = "gw_api_url";
 const STORAGE_KEY_INSTALLATION_ID = "gw_installation_id";
 

@@ -469,21 +469,23 @@
             <label data-i18n="account_status_label">Account status</label>
             <p class="footnote" id="account-status-label" data-i18n="local_user">Local user — no account required</p>
           </div>
-          <div class="form-row">
-            <label data-i18n="cloud_connect_label">Cloud connection</label>
-            <button id="oauth-connect-btn" class="btn btn--primary btn--sm" type="button" data-i18n="oauth_connect_btn">Connect to GovernWorld</button>
-            <p id="oauth-status" class="footnote" role="status" aria-live="polite"></p>
+          <div class="local-guarantee-card">
+            <div class="local-guarantee-card__header">
+              <span class="local-guarantee-card__icon" aria-hidden="true">🛡️</span>
+              <div class="local-guarantee-card__title">Standalone Local Processing</div>
+            </div>
+            <p class="footnote">GovernWorld operates 100% locally on your device with zero cloud connectivity or external account requirements. Your sensitive data and documents never leave this device.</p>
           </div>
 
           <!-- Local Office Manager Pairing Card -->
-          <div id="office-manager-card" style="margin-top: 12px; padding: 12px; background: rgba(0,0,0,0.03); border: 1px solid var(--border-subtle, #e0e0e0); border-radius: 6px;">
-            <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px;">Office Manager Coordination</div>
-            <p class="footnote" style="margin-bottom: 8px;">Link this browser extension to your organization's local Office Manager to switch to managed mode.</p>
-            <div id="office-manager-status" class="footnote" style="margin-bottom: 8px; font-weight: 500;">Status: Local unmanaged</div>
-            <div id="office-manager-form">
-              <input id="office-pairing-input" type="text" maxlength="6" placeholder="6-digit Pairing Code" style="width: 100%; padding: 6px; font-size: 14px; font-family: monospace; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 8px; box-sizing: border-box;" />
-              <div style="display: flex; gap: 8px;">
-                <button id="office-pair-btn" class="btn btn--primary btn--sm" type="button" style="flex: 1;">Pair with Office Manager</button>
+          <div id="office-manager-card" class="office-card">
+            <div class="office-card__title">Office Manager Coordination</div>
+            <p class="footnote">Link this browser extension to your organization's local Office Manager to switch to managed mode.</p>
+            <div id="office-manager-status" class="footnote">Status: Local unmanaged</div>
+            <div id="office-manager-form" class="office-card__form">
+              <input id="office-pairing-input" class="office-card__input" type="text" maxlength="6" placeholder="6-digit Pairing Code" />
+              <div class="office-card__actions">
+                <button id="office-pair-btn" class="btn btn--primary btn--sm" type="button">Pair with Office Manager</button>
                 <button id="office-unpair-btn" class="btn btn--ghost btn--sm" type="button" style="display: none;">Unpair</button>
               </div>
             </div>

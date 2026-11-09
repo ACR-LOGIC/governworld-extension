@@ -64,12 +64,15 @@ function collectAllSvgs(root: Document | Element | ShadowRoot, out: SVGElement[]
  * Returns segments with their on-page bounding rectangles for overlay
  * matching. Empty/whitespace-only strings are omitted.
  */
-export function extractSvgText(rootDoc: Document = document): SvgTextSegment[] {
+export function extractSvgText(
+  rootDoc: Document = document,
+  preCollectedSvgs?: SVGElement[]
+): SvgTextSegment[] {
   const results: SvgTextSegment[] = [];
   const seenKeys = new Set<string>();
 
-  const svgs: SVGElement[] = [];
-  collectAllSvgs(rootDoc, svgs);
+  const svgs: SVGElement[] = preCollectedSvgs ?? [];
+  if (!preCollectedSvgs) collectAllSvgs(rootDoc, svgs);
   for (const svg of svgs) {
     // Skip decorative SVGs that are too small to hold legible text
     const svgRect = svg.getBoundingClientRect();
