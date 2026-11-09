@@ -73,7 +73,50 @@ note governs — the older "Done" is scoped to its own block, named explicitly.
 
 ## Release artifact
 
-### Chrome Web Store release (`2597aec`; version 0.2.0)
+### Chrome Web Store release (`20df75a`; version 0.3.0)
+
+Official Chrome Web Store submission artifact for GovernWorld Redaction v0.3.0.
+
+| Field | Value |
+|---|---|
+| Commit SHA | `20df75a` |
+| Version | 0.3.0 |
+| Chrome Web Store ZIP | `release/governworld-redaction-20df75a.zip`, SHA-256 `DC288E1D035BD72264547BB8E4331E76F96812A02143E2F3652E838495B36BE4` |
+| Mirror tarball | `release/governworld-redaction-20df75a.tar.gz`, SHA-256 `D0BEFB2A975726561FE31114C79BC6B85DF5D3A9EC6B4C469D27DE50B87ECD12` |
+| Checksums | `release/SHA256SUMS` (produced by `npm run release:zip 20df75a`) |
+
+| Verification gate | Result |
+|---|---|
+| `npm run typecheck` | ✅ Pass (0 errors) |
+| `npm test` | ✅ 2,246 passed / 0 failed (120 test files) |
+| `npm run sync:sidepanel:check` | ✅ Pass (0 drift) |
+| Dead CSS Check | ✅ Pass (0 dead selectors removed) |
+| `npm run build` | ✅ Pass (`dist/`) |
+| `npm run build:firefox` | ✅ Pass (`dist-firefox/`) |
+| `npm run build:safari` | ✅ Pass (`dist-safari/`) |
+| `node scripts/verify-release-zip.mjs` | ✅ Pass: manifest at zip root (MV3, v0.3.0), 11 manifest references, offline assets, legal pages present |
+| `npm run test:offline-ocr` | ✅ Pass (no network, block traversal verified) |
+| `npm run test:network-inspection` | ✅ Pass (0 external requests, 0 telemetry, 0 canary leaks) |
+| Dist & package verification gates | ✅ Pass (`tests/dist-manifest.test.ts`, `tests/offline-assets.test.ts`, `tests/firefox-package.test.ts`, `tests/firefox-manifest.test.ts`) |
+
+### Per-browser release (`20df75a`; version 0.3.0)
+
+Per-browser release packaging for GovernWorld v0.3.0 across Chromium, Firefox, and Safari handoff.
+
+| Field | Value |
+|---|---|
+| Commit SHA | `20df75a` |
+| Version | 0.3.0 |
+| Chromium ZIP | `release/GovernWorld-Chromium-v0.3.0-20df75a.zip`, SHA-256 `14E5C9B51BCEDA1D5D873152BE5F67A72A31DD679BD27A01469CAD0EF78692E5` |
+| Chromium mirror tarball | `release/GovernWorld-Chromium-v0.3.0-20df75a.tar.gz` (same payload), SHA-256 `BFCB95F6AEA7C509A32B70C36B8A82E0422C8FC4AC516B30B3CCBD6AD255D2F2` |
+| Firefox ZIP | `release/GovernWorld-Firefox-v0.3.0-20df75a.zip`, SHA-256 `AF0C9A32771FADE795B1BE6002802D3F40CAE4A1F6E126B662F838C535AD5E36` |
+| Firefox mirror tarball | `release/GovernWorld-Firefox-v0.3.0-20df75a.tar.gz` (same payload), SHA-256 `CA72DC6959A862FAFC5E353A6A1B373B55F6DDB7F8CBDDC2DA113208FF2ED425` |
+| Safari handoff ZIP (packaging input, NOT a distributable) | `release/GovernWorld-Safari-handoff-v0.3.0-20df75a.zip`, SHA-256 `63325EEC1877DA2BF97F6464CBB77BD055A099808C64FB828B1C0AD948972882` |
+| Safari handoff mirror tarball | `release/GovernWorld-Safari-handoff-v0.3.0-20df75a.tar.gz` (same payload), SHA-256 `8D91CD0C8C3603369AAEB795C520FE0F8D68185078768F20D17305CF019D3819` |
+| Checksums | `release/BROWSER_SHA256SUMS` (produced by `npm run release:browsers 20df75a`) |
+| Firefox identity | `redaction@governworld.acrlogic.com` (locked; asserted in both manifests) |
+
+### Previous (superseded): Chrome Web Store release (`2597aec`; version 0.2.0)
 
 Official Chrome Web Store submission artifact for GovernWorld Redaction v0.2.0.
 
