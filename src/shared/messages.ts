@@ -14,6 +14,7 @@ import type { FindingCategory, PopupState } from "./types.js";
 import type { AccountView } from "./account.js";
 import { parseAccountView } from "./account.js";
 import type { PatternTestResult, WizardAnalysis } from "./wizardAnalyzer.js";
+import { isAuditEvent } from "./audit.js";
 
 export type ValidationResult =
   | { ok: true; message: ExtensionMessage }
@@ -252,11 +253,6 @@ function normalizeVisualCaptureItem(entry: unknown): import("../shared/types.js"
   if (typeof entry.cssSelector !== "string" || entry.cssSelector.length > 1024) return null;
   if (typeof entry.elementTag !== "string" || entry.elementTag.length > 64) return null;
   if (!VISIBILITY_STATES.has(entry.visibility as string)) return null;
-  // A PDF resource may arrive as an http(s) URL that isSafeImageSrc rejects (it
-  // is not an image), so the scheme check is applied separately rather than by
-  // loosening the image rule. The previous `|| /\.pdf/` fallback also accepted
-  // `file:///.../x.pdf`, which put the scheme decision in the hands of whatever
-  // fetched it instead of here.
   if (
     entry.resourceUrl !== undefined &&
     !isSafeImageSrc(entry.resourceUrl) &&
@@ -295,13 +291,6 @@ function normalizeVisualQueue(value: unknown): import("../shared/types.js").Visu
 
 /**
  * Scheme check for a URL the WORKER will fetch on a page's behalf.
- *
- * The pdf queue takes URLs straight from page DOM and the worker then fetches
- * them, so accepting any parseable URL gave a page an SSRF primitive: it could
- * make the browser issue requests to `file:`, `blob:` or any intranet address
- * (`http://169.254.169.254/...`, `http://localhost:*`), and observe the
- * difference in behaviour. Restricting to http(s) is what `isSafeImageSrc`
- * already does for the visual queue; this is the same rule for this queue.
  */
 function isSafeFetchUrl(value: unknown): value is string {
   if (typeof value !== "string" || value.length === 0 || value.length > 4096) return false;
@@ -473,10 +462,6 @@ function normalizePopupState(value: unknown): PopupState | null {
     if (!isRecord(value.error) || typeof value.error.code !== "string" || typeof value.error.userMessage !== "string" || value.error.code.length > 100 || value.error.userMessage.length > 500) return null;
     error = { code: value.error.code, userMessage: value.error.userMessage };
   }
-  // The honest scan classification, carried through so the coverage panel can
-  // report what was inspected rather than asserting a clean bill of health. A
-  // value outside the enum is dropped (the panel falls back to "unknown"),
-  // never coerced.
   const coverageStatus =
     typeof value.coverageStatus === "string" && SCAN_COVERAGE_STATUSES.has(value.coverageStatus)
       ? (value.coverageStatus as import("../shared/types.js").ScanCoverageStatus)
@@ -632,9 +617,6 @@ export function validateMessage(raw: unknown): ValidationResult {
       };
     }
     case "POPUP_DOC_PRINT": {
-      // Opens the read-only print/PDF view for an already-redacted document.
-      // The key identifies a manifest in the shared store; the page fetches the
-      // page bitmaps itself, so no image ever crosses this message boundary.
       if (!isFileKey(raw.fileKey)) return { ok: false, error: "Invalid fileKey" };
       return { ok: true, message: { type, requestId, fileKey: raw.fileKey } };
     }
@@ -720,12 +702,6 @@ export function validateMessage(raw: unknown): ValidationResult {
       if (!isDocKind(raw.kind)) return { ok: false, error: "Invalid kind" };
       if (!Array.isArray(raw.pages) || !raw.pages.every(isDocPageMeta)) return { ok: false, error: "Invalid pages" };
       if (raw.error !== undefined && !isRecord(raw.error)) return { ok: false, error: "Invalid error" };
-      // Both are optional so a session recorded by an older build still
-      // validates; the popup falls back to "the scanned pages are the whole
-      // document" when they are absent. They MUST be copied into the
-      // reconstructed message - a field the validator accepts and the
-      // reconstruction drops is a field the UI never sees, which is how the
-      // old `error` object went missing.
       if (raw.totalPages !== undefined && !isTotalPages(raw.totalPages)) return { ok: false, error: "Invalid totalPages" };
       if (raw.pageOffset !== undefined && !isPageOffset(raw.pageOffset)) return { ok: false, error: "Invalid pageOffset" };
       if (raw.truncated !== undefined && typeof raw.truncated !== "boolean") return { ok: false, error: "Invalid truncated" };
@@ -735,8 +711,6 @@ export function validateMessage(raw: unknown): ValidationResult {
       if (!isName(raw.outputName)) return { ok: false, error: "Invalid outputName" };
       if (raw.outputBytesBase64 !== undefined && typeof raw.outputBytesBase64 !== "string") return { ok: false, error: "Invalid outputBytesBase64" };
       if (raw.outputMimeType !== undefined && typeof raw.outputMimeType !== "string") return { ok: false, error: "Invalid outputMimeType" };
-      // Tells the UI a print view is available. The handle is a store key, not
-      // page content, so it stays inside the message size budget.
       const printFileKey = raw.printFileKey;
       if (printFileKey !== undefined && !isFileKey(printFileKey)) return { ok: false, error: "Invalid printFileKey" };
       return { ok: true, message: { type, requestId, outputName: raw.outputName, ...(raw.outputBytesBase64 ? { outputBytesBase64: raw.outputBytesBase64 as string } : {}), ...(raw.outputMimeType ? { outputMimeType: raw.outputMimeType as string } : {}), ...(printFileKey ? { printFileKey } : {}) } };
@@ -755,10 +729,6 @@ export function validateMessage(raw: unknown): ValidationResult {
       return { ok: true, message: { type, requestId, docId: raw.docId } };
     }
     case "POPUP_DOC_CAPTURE_IMAGE": {
-      // Requests that an image found on the active page be lifted into the
-      // Document Studio so OCR and redaction can run over it. `src` is the
-      // image URL the content script reported; the worker decides whether it
-      // may read the original bytes or must fall back to a rendered capture.
       if (typeof raw.src !== "string" || !raw.src) return { ok: false, error: "Invalid src" };
       if (!isSafeImageSrc(raw.src)) return { ok: false, error: "Unsupported image source" };
       return { ok: true, message: { type, requestId, src: raw.src, name: isName(raw.name) ? raw.name : "page-image.png" } };
@@ -767,6 +737,21 @@ export function validateMessage(raw: unknown): ValidationResult {
     case "POPUP_UNDO_MASKS": {
       if (raw.tabId !== undefined && (typeof raw.tabId !== "number" || !Number.isSafeInteger(raw.tabId) || raw.tabId <= 0)) return { ok: false, error: "Invalid tabId" };
       return { ok: true, message: { type, requestId, ...(typeof raw.tabId === "number" ? { tabId: raw.tabId } : {}) } };
+    }
+    case "POPUP_RECORD_AUDIT": {
+      if (!isAuditEvent(raw.event)) return { ok: false, error: "Invalid audit event" };
+      if (raw.failClosed !== undefined && typeof raw.failClosed !== "boolean") {
+        return { ok: false, error: "Invalid failClosed flag" };
+      }
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          event: raw.event,
+          ...(raw.failClosed !== undefined ? { failClosed: raw.failClosed } : {}),
+        },
+      };
     }
     case "POPUP_CUSTOM_PATTERNS_GET":
     case "POPUP_COMMUNITY_ACCOUNT_GET":
@@ -865,9 +850,6 @@ export function validateMessage(raw: unknown): ValidationResult {
       let account: AccountView | undefined;
       if (raw.account !== undefined) {
         const parsed = parseAccountView(raw.account);
-        // Reject rather than coerce. A malformed identity is dropped entirely so
-        // the popup renders the disconnected wall, which is the safe outcome; a
-        // coerced partial account could show a role that was never granted.
         if (!parsed) return { ok: false, error: "Invalid account" };
         account = parsed;
       }
@@ -1012,28 +994,25 @@ export function validateMessage(raw: unknown): ValidationResult {
       };
     }
     case "POPUP_DOC_CAPTURE_READY": {
-    // The worker staged an image taken from the page and is telling the popup
-    // to preview it. `degraded` marks a rendered capture, where OCR quality is
-    // limited by what was on screen.
-    if (!isFileKey(raw.fileKey)) return { ok: false, error: "Invalid fileKey" };
-    if (!isName(raw.name)) return { ok: false, error: "Invalid name" };
-    if (raw.kind !== "image") return { ok: false, error: "Invalid kind" };
-    if (raw.source !== "original" && raw.source !== "capture") return { ok: false, error: "Invalid source" };
-    return {
-      ok: true,
-      message: {
-        type,
-        requestId,
-        fileKey: raw.fileKey,
-        name: raw.name,
-        mimeType: typeof raw.mimeType === "string" ? raw.mimeType : "image/png",
-        kind: "image",
-        source: raw.source,
-        degraded: raw.degraded === true,
-      },
-    };
-  }
-  case "POPUP_DOC_STATUS": {
+      if (!isFileKey(raw.fileKey)) return { ok: false, error: "Invalid fileKey" };
+      if (!isName(raw.name)) return { ok: false, error: "Invalid name" };
+      if (raw.kind !== "image") return { ok: false, error: "Invalid kind" };
+      if (raw.source !== "original" && raw.source !== "capture") return { ok: false, error: "Invalid source" };
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          fileKey: raw.fileKey,
+          name: raw.name,
+          mimeType: typeof raw.mimeType === "string" ? raw.mimeType : "image/png",
+          kind: "image",
+          source: raw.source,
+          degraded: raw.degraded === true,
+        },
+      };
+    }
+    case "POPUP_DOC_STATUS": {
       const stage = raw.stage as DocRedactionStage;
       if (stage !== "detected" && stage !== "redacted" && stage !== "verified") return { ok: false, error: "Invalid stage" };
       const method = raw.method as RedactionVerifyMethod | undefined;
@@ -1100,4 +1079,4 @@ export function validateMessage(raw: unknown): ValidationResult {
     default:
       return { ok: false, error: "Unhandled message type" };
   }
-}
+}

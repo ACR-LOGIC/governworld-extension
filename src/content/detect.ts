@@ -34,7 +34,29 @@ import {
   normalizeUnicodeWithMapping,
   mapNormalizedToOriginalOffset,
 } from "./normalization/unicode.js";
-import { isSafeRegex } from "../shared/wizardAnalyzer.js";
+import { detectNames } from "./detectors/names.js";
+import { detectPhones } from "./detectors/internationalPhones.js";
+import {
+  CHUNK,
+  OVERLAP,
+  CUSTOM_SCAN_CHUNK_SIZE,
+  CUSTOM_SCAN_OVERLAP,
+  runCustomPatterns,
+  runCustomPatternsWithStatus,
+  type CustomPatternScanOptions,
+  type CustomPatternScanResult,
+} from "./detectors/customPatternsRunner.js";
+
+export {
+  CHUNK,
+  OVERLAP,
+  CUSTOM_SCAN_CHUNK_SIZE,
+  CUSTOM_SCAN_OVERLAP,
+  runCustomPatterns,
+  runCustomPatternsWithStatus,
+  type CustomPatternScanOptions,
+  type CustomPatternScanResult,
+};
 
 export interface RawMatch {
   category: FindingCategory;
@@ -242,7 +264,7 @@ export function placeholderLabelFor(category: FindingCategory): string {
  * detector returns immediately when the text contains no `@` at all, which is
  * the case for the overwhelming majority of nodes.
  */
-const EMAIL_RE = /\b[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]{1,64}(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]{1,63})*@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*/g;
+const EMAIL_RE = /\b[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]{1,64}(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]{1,63}){0,12}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?){0,12}/g;
 
 function detectEmails(text: string): RawMatch[] {
   const out: RawMatch[] = [];
@@ -280,44 +302,6 @@ const DASH = `[${DASH_CHARS}]`;
  * accepting it would trade a rare miss for a routine false positive.
  */
 const SEP = `[\\s${DASH_CHARS}]`;
-
-const PHONE_RE = new RegExp(
-  `(?<![\\dA-Za-z])(?:\\+?1${SEP}?)?` +
-    `(?:\\([2-9][0-8][0-9]\\)${SEP}?|[2-9][0-8][0-9]${SEP}?)` +
-    `[2-9][0-9]{2}${SEP}?[0-9]{4}(?![\\dA-Za-z])`,
-  "g"
-);
-
-function detectPhones(text: string): RawMatch[] {
-  const out: RawMatch[] = [];
-  for (const m of text.matchAll(PHONE_RE)) {
-    const value = m[0];
-    const digits = value.replace(/\D/g, "").replace(/^1/, "");
-    if (digits.length !== 10) continue;
-    const area = digits.slice(0, 3);
-    const exchange = digits.slice(3, 6);
-    if (area[0] !== "2" && area[0] !== "3" && area[0] !== "4" && area[0] !== "5" && area[0] !== "6" && area[0] !== "7" && area[0] !== "8" && area[0] !== "9") continue;
-    if (area[0] === "9" && area[1] === "0" && area[2] === "0") continue;
-    if (exchange === "555" && digits.slice(6) === "0100") continue;
-    // A bare 10-digit run bound to an invoice/order/reference label is an
-    // identifier, not a phone number ("Invoice 9876543210"). Formatted numbers
-    // keep their phone reading: identifiers are not written as (210) 555-0107.
-    // The cue list is phone-specific and broader than the NPI non-provider
-    // list: bare "order"/"invoice" already mark a reference number.
-    const isBareRun = !/[^+\d]/.test(value);
-    if (isBareRun) {
-      const before = text.slice(Math.max(0, m.index - 48), m.index);
-      if (
-        isNonProviderBound(before) ||
-        /\b(?:invoice|order|reference|tracking|serial|confirmation|receipt|purchase\s+order|p\.?o\.?)\b/i.test(before.slice(-32))
-      ) {
-        continue;
-      }
-    }
-    out.push({ category: "phone", confidence: 0.88, value, start: m.index, end: m.index + value.length });
-  }
-  return out;
-}
 
 // `(?<![\dA-Za-z])` and `(?![\dA-Za-z])` are used rather than `\b` on purpose.
 // A non-breaking space and several of the dashes are not word characters, so
@@ -781,7 +765,7 @@ function detectBankAccounts(text: string): RawMatch[] {
 const FINANCIAL_LABEL =
   "(?:salary|compensation|total\\s+comp(?:ensation)?|comp|annual\\s+(?:salary|pay|compensation|income)|base\\s+(?:salary|pay)|gross\\s+(?:pay|income)|net\\s+(?:pay|income)|hourly(?:\\s+(?:rate|pay|wage))?|pay\\s+rate|wage|remuneration|bonus|equity)";
 const FINANCIAL_RE = new RegExp(
-  `\\b${FINANCIAL_LABEL}\\b(?:[^\\n:]{0,24}[:=]|\\s+(?:of|is|was|at)?\\s*)\\s*([$€£¥]?(?:USD|EUR|GBP|CAD|AUD)?\\s*\\d[\\d,]*(?:\\.\\d{1,2})?(?:\\s*(?:\\/|per\\s+)(?:hr|hour|yr|year))?)`,
+  `\\b${FINANCIAL_LABEL}\\b(?:[^\\n:]{0,24}[:=]|\\s+(?:of|is|was|at)?\\s*)\\s*([$€£¥]?(?:USD|EUR|GBP|CAD|AUD)?\\s*\\d[\\d,]{0,18}(?:\\.\\d{1,2})?(?:\\s*(?:\\/|per\\s+)(?:hr|hour|yr|year))?)`,
   "gi"
 );
 
@@ -1151,13 +1135,17 @@ function detectMbis(text: string): RawMatch[] {
   return out;
 }
 
+/**
+ * Secret patterns with bounded quantifiers (Priority 1 — Item 7) to prevent
+ * catastrophic or quadratic backtracking on pathological inputs.
+ */
 const SECRET_PATTERNS: { label: string; regex: RegExp; confidence: number }[] = [
   // OpenAI. `sk-proj-` is the current project-key form and contains a hyphen
   // after `sk-`, so the older `[A-Za-z0-9]{20,}` class stopped at the hyphen and
   // missed every project key outright. The hyphenated prefix is matched first,
   // then the plain legacy form.
-  { label: "OpenAI API key", regex: /\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b/g, confidence: 0.95 },
-  { label: "Anthropic API key", regex: /\bsk-ant-[A-Za-z0-9_\-]{20,}\b/g, confidence: 0.95 },
+  { label: "OpenAI API key", regex: /\bsk-(?:proj-)?[A-Za-z0-9_-]{20,256}\b/g, confidence: 0.95 },
+  { label: "Anthropic API key", regex: /\bsk-ant-[A-Za-z0-9_\-]{20,256}\b/g, confidence: 0.95 },
   { label: "Google API key", regex: /\bAIza[0-9A-Za-z_\-]{35}\b/g, confidence: 0.95 },
   // Stripe secret parts are alphanumeric in real keys (24–99 characters), but
   // synthetic fixtures and documentation also use underscore-separated forms.
@@ -1188,47 +1176,30 @@ const SECRET_PATTERNS: { label: string; regex: RegExp; confidence: number }[] = 
   { label: "AWS access key ID", regex: /\b(?:AKIA|ASIA|AROA|AIDA|ANPA|AGPA|AIPA|ANVA|ABIA|ACCA)[A-Z0-9]{16}\b/g, confidence: 0.99 },
   { label: "AWS secret", regex: /\b(?:aws_secret_access_key|aws\s+secret(?:\s+key)?|secret\s+key)\s*[:=]\s*['"]?([A-Za-z0-9/+=]{40})['"]?/gi, confidence: 0.95 },
   { label: "Azure account key", regex: /\bAccountKey\s*=\s*[A-Za-z0-9+/]{86,88}={0,2}/g, confidence: 0.9 },
-  // A PEM block including its body. The old pattern matched only the 30-character
-  // header, which meant the key itself — the part that must never be published —
-  // was left in plain text directly below the mask.
-  { label: "Private key", regex: /-----BEGIN (?:[A-Z0-9 ]+ )?PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z0-9 ]+ )?PRIVATE KEY-----/g, confidence: 0.99 },
-  { label: "PuTTY private key", regex: /PuTTY-User-Key-File-\d+:[\s\S]*?-----END (?:[A-Z0-9 ]+ )?PRIVATE KEY-----/g, confidence: 0.99 },
-  { label: "JWT", regex: /\beyJ[A-Za-z0-9_\-]{10,}\.eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\b/g, confidence: 0.95 },
-  { label: "GitLab token", regex: /\bglpat-[A-Za-z0-9_\-]{20,}\b/g, confidence: 0.99 },
-  { label: "HuggingFace token", regex: /\bhf_[A-Za-z0-9]{30,}\b/g, confidence: 0.95 },
+  // A PEM block including its body. Bounded to 16 KB so malformed unclosed
+  // headers cannot scan unbounded megabytes.
+  { label: "Private key", regex: /-----BEGIN (?:[A-Z0-9 ]{1,32} )?PRIVATE KEY-----[\s\S]{1,16384}?-----END (?:[A-Z0-9 ]{1,32} )?PRIVATE KEY-----/g, confidence: 0.99 },
+  { label: "PuTTY private key", regex: /PuTTY-User-Key-File-\d{1,3}:[\s\S]{1,16384}?-----END (?:[A-Z0-9 ]{1,32} )?PRIVATE KEY-----/g, confidence: 0.99 },
+  { label: "JWT", regex: /\beyJ[A-Za-z0-9_\-]{10,2048}\.eyJ[A-Za-z0-9_\-]{10,4096}\.[A-Za-z0-9_\-]{10,1024}\b/g, confidence: 0.95 },
+  { label: "GitLab token", regex: /\bglpat-[A-Za-z0-9_\-]{20,128}\b/g, confidence: 0.99 },
+  { label: "HuggingFace token", regex: /\bhf_[A-Za-z0-9]{30,128}\b/g, confidence: 0.95 },
   { label: "Discord bot token", regex: /\b(?:Bot\s+)?M[A-Za-z0-9_\-]{23}\.[A-Za-z0-9_\-]{6}\.[A-Za-z0-9_\-]{27}\b/g, confidence: 0.99 },
   { label: "Telegram bot token", regex: /\b\d{8,10}:AA[A-Za-z0-9_\-]{33}\b/g, confidence: 0.95 },
   // A lookbehind anchors the match to the token so the reported span excludes
   // the scheme word: the redacted text still reads "Bearer [REDACTED]", and a
   // specific rule for the token itself (an OpenAI key, say) wins the overlap on
   // its own merits rather than losing to a longer span that swallowed "Bearer".
-  // The `i` flag is required, not stylistic: RFC 7235 section 2.1 makes the
-  // auth-scheme token case-insensitive, and lowercase `bearer` is what HTTP/2
-  // and most modern APIs actually emit. Without it, `authorization: bearer
-  // <token>` matched nothing and the credential was left in plain text while
-  // the correctly-cased form was masked. Found by Copilot review; the same
-  // applied to the Basic-auth rule below.
-  { label: "Bearer token", regex: /(?<=Bearer\s)[A-Za-z0-9._~+/=-]{20,}/gi, confidence: 0.95 },
-  { label: "Slack webhook", regex: /https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9+\/=_-]{10,}/g, confidence: 0.99 },
+  { label: "Bearer token", regex: /(?<=Bearer\s)[A-Za-z0-9._~+/=-]{20,2048}/gi, confidence: 0.95 },
+  { label: "Slack webhook", regex: /https:\/\/hooks\.slack\.com\/services\/[A-Za-z0-9+\/=_-]{10,256}/g, confidence: 0.99 },
   // Shared Access Signature: a capability URL, so the sig alone grants access.
-  { label: "Azure SAS signature", regex: /[?&]sig=[A-Za-z0-9%+/=]{20,}/g, confidence: 0.95 },
-  // Credentials embedded in a URL. Previously the userinfo was skipped entirely
-  // and the value after the `@` was reported as an email address, so the
-  // username stayed visible and the credential was mislabelled.
-  //
-  // The scheme quantifier is capped at 31 characters. Unbounded, this is
-  // quadratic on text with no `://` in it: `[a-z][a-z0-9+.-]*` starts a scan at
-  // every word boundary and backtracks the whole remaining run. No real URL
-  // scheme comes close to 31 characters (the longest registered is `ms-access-control').
-  { label: "URL with credentials", regex: /\b[a-z][a-z0-9+.-]{0,30}:\/\/[^\s/:@]{1,64}:[^\s/:@]{3,128}@[^\s"'<>`]+/gi, confidence: 0.99 },
-  { label: "HTTP Basic auth", regex: /\bBasic\s+[A-Za-z0-9+/]{16,}={0,2}/gi, confidence: 0.95 },
-  { label: "DB connection string", regex: /\b(?:postgres|mysql|mongodb|redis|amqp|mssql):\/\/[^\s'"<>]*[A-Za-z0-9=/]/gi, confidence: 0.95 },
-  // The capture class previously omitted `.`, so any value containing a dot was
-  // not matched at all — including every `client_secret`, most passwords, and
-  // every `.env` value that resembles a hostname.
-  { label: "Credential assignment", regex: /(?:token|secret|api[_-]?key|access[_-]?key(?:[_-]?id)?|auth[_-]?token|password|passwd|pwd|client[_-]?secret)\s*[:=]\s*['"]?([A-Za-z0-9._\-+/=%@!#$%^&*()]{8,})['"]?/gi, confidence: 0.8 },
-  { label: "Parenthetical password", regex: /\b(?:password|passwd|pwd)\s+([A-Za-z0-9._\-+/=%@!#$%^&*()]{8,})\b/gi, confidence: 0.8 },
-  { label: "Basic auth credential", regex: /\bBasic\s+Auth\s*[:=]\s*([A-Za-z0-9._-]+:[A-Za-z0-9._\-+/=%@!#$%^&*()]{6,})/gi, confidence: 0.95 },
+  { label: "Azure SAS signature", regex: /[?&]sig=[A-Za-z0-9%+/=]{20,256}/g, confidence: 0.95 },
+  // Credentials embedded in a URL.
+  { label: "URL with credentials", regex: /\b[a-z][a-z0-9+.-]{0,30}:\/\/[^\s/:@]{1,64}:[^\s/:@]{3,128}@[^\s"'<>`]{1,512}/gi, confidence: 0.99 },
+  { label: "HTTP Basic auth", regex: /\bBasic\s+[A-Za-z0-9+/]{16,512}={0,2}/gi, confidence: 0.95 },
+  { label: "DB connection string", regex: /\b(?:postgres|mysql|mongodb|redis|amqp|mssql):\/\/[^\s'"<>]{0,512}[A-Za-z0-9=/]/gi, confidence: 0.95 },
+  { label: "Credential assignment", regex: /(?:token|secret|api[_-]?key|access[_-]?key(?:[_-]?id)?|auth[_-]?token|password|passwd|pwd|client[_-]?secret)\s*[:=]\s*['"]?([A-Za-z0-9._\-+/=%@!#$%^&*()]{8,256})['"]?/gi, confidence: 0.8 },
+  { label: "Parenthetical password", regex: /\b(?:password|passwd|pwd)\s+([A-Za-z0-9._\-+/=%@!#$%^&*()]{8,256})\b/gi, confidence: 0.8 },
+  { label: "Basic auth credential", regex: /\bBasic\s+Auth\s*[:=]\s*([A-Za-z0-9._-]{1,64}:[A-Za-z0-9._\-+/=%@!#$%^&*()]{6,256})/gi, confidence: 0.95 },
 ];
 
 const PLACEHOLDER_SECRET_RE = /^(?:example|sample|test|changeme|your_|xxxx|sk_test_[0-9a-z]{6}|ghp_TEST)/i;
@@ -1312,7 +1283,7 @@ function isPlaceholder(pat: { confidence: number }, value: string): boolean {
 // address like "500 Training Plaza, Sampleville, TX 00000" produced no street
 // match at all and the whole address stayed visible.
 const STREET_RE =
-  /(?<![\dA-Za-z])\d{1,5}[^\S\n]+[A-Za-z][A-Za-z0-9.'-]*(?:[^\S\n]+[A-Za-z0-9.'-]+)*[^\S\n]+(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Dr|Drive|Ln|Lane|Ct|Court|Pl|Place|Plaza|Way|Ter|Terrace|Cir|Circle|Pkwy|Parkway|Sq|Square|Hwy|Highway|Trl|Trail|Loop)(?:\.)?\b(?:[^\S\n]+(?:NW|NE|SW|SE|N|S|E|W)\b)?/g;
+  /(?<![\dA-Za-z])\d{1,5}[^\S\n]{1,4}[A-Za-z][A-Za-z0-9.'-]{0,32}(?:[^\S\n]{1,4}[A-Za-z0-9.'-]{1,32}){0,6}[^\S\n]{1,4}(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Dr|Drive|Ln|Lane|Ct|Court|Pl|Place|Plaza|Way|Ter|Terrace|Cir|Circle|Pkwy|Parkway|Sq|Square|Hwy|Highway|Trl|Trail|Loop)(?:\.)?\b(?:[^\S\n]{1,4}(?:NW|NE|SW|SE|N|S|E|W)\b)?/g;
 // Optional apt/unit, then city, then state, then ZIP — each bounded by commas
 // so the city clause cannot swallow the state abbreviation.
 //
@@ -1322,7 +1293,7 @@ const STREET_RE =
 // card match was then discarded as an overlap. A ZIP is exactly five digits;
 // five digits that are part of a longer run are not a ZIP.
 const ADDRESS_TAIL_RE =
-  /(?:,[^\S\n]+(?:Apt|Unit|Suite|#|Ste)\.?[^\S\n]*\d+[A-Za-z]?)?(?:,[^\S\n]+[A-Z][a-zA-Z.'-]*(?:[^\S\n]+[A-Z][a-zA-Z.'-]*)*)?(?:,[^\S\n]+[A-Z]{2}(?:\.[^\S\n]+)?)?(?:[^\S\n]+\d{5}(?:-\d{4})?(?!\d))?/;
+  /(?:,[^\S\n]{1,4}(?:Apt|Unit|Suite|#|Ste)\.?[^\S\n]{0,4}\d{1,6}[A-Za-z]?)?(?:,[^\S\n]{1,4}[A-Z][a-zA-Z.'-]{0,30}(?:[^\S\n]{1,4}[A-Z][a-zA-Z.'-]{0,30}){0,4})?(?:,[^\S\n]{1,4}[A-Z]{2}(?:\.[^\S\n]{1,4})?)?(?:[^\S\n]{1,4}\d{5}(?:-\d{4})?(?!\d))?/;
 const ZIP_RE = /\b\d{5}(?:-\d{4})?\b/;
 
 function detectAddresses(text: string): RawMatch[] {
@@ -1353,15 +1324,7 @@ function luhnValid(value: string): boolean {
 }
 
 // Separated card groupings, written as fixed groupings rather than a repeated
-// "optional separator" group. The previous form, (?:\d{4}[\s-]?){3,4}\d{2,4},
-// let the optional separator sit between groups, so a card followed by any
-// number absorbed it: "4111111111111111 219-09-9999" matched as a 19-digit
-// card "4111111111111111 219" that happened to satisfy Luhn, and the SSN was
-// never detected at all. Losing a high-value finding to a malformed neighbour
-// is the worst failure this detector has, so the groupings are enumerated:
-// 4-4-4-4 (16 digits) and Amex 4-6-5 (15). Unseparated cards are the fallback.
-// The separator class also admits the Unicode dashes, for the reason documented
-// on SSN_DASH_RE above.
+// "optional separator" group.
 const CARD_RE = new RegExp(
   `\\b\\d{4}${SEP}?\\d{4}${SEP}?\\d{4}${SEP}?\\d{4}\\b` +
     `|\\b\\d{4}${SEP}?\\d{6}${SEP}?\\d{5}\\b` +
@@ -1400,137 +1363,6 @@ function detectCards(text: string): RawMatch[] {
   return out;
 }
 
-// A name label is either (a) at line start, which is how table/field labels
-// appear in the extracted text (e.g. "Patient name\nJane Doe"), or (b) a
-// mid-line label followed by a colon (e.g. "Patient name: Jane Doe").
-//
-// "Provider" and "Employee" were missing, so "Provider: Dr. Taylor
-// Placeholder" and "Employee: Morgan Demo" stayed visible. "Customer number"
-// and "Provider phone" still are not names: the label must be followed
-// directly by the separator, and "number"/"phone" sits between.
-const NAME_LABEL_WORDS =
-  "(?:possible\\s+name|patient(?:\\s+name)?|member(?:\\s+name)?|full\\s+name|name|provider|employee|customer|client|contact|attending\\s+physician|physician|doctor|clinician|guardian|subscriber|insured)";
-const NAME_LABEL_RE = new RegExp(
-  // A line-start label without a separator is a heading word, not a label
-  // ("Patient Intake Note" is not "Patient: <name>"). The separator is required;
-  // the name must also sit on the label's own line, since letting NAME_RE skip
-  // ahead across newlines turned later headings ("Full Name:") into "names".
-  `(?<=^|\\n)\\b${NAME_LABEL_WORDS}\\s*[:.\\-\\t|]\\s*(?=\\S)|(?<![\\w])\\b${NAME_LABEL_WORDS}\\s*[:.\\-\\t|]\\s*(?=\\S)`,
-  "gi",
-);
-const NAME_RE = /\b(?:(?:Dr|Mr|Mrs|Ms|Prof)\.?\s+)?([A-Z][a-zA-Z.'-]*(?:[ \t]+[A-Z][a-zA-Z.'-]*){1,3}(?:,?\s+(?:Jr|Sr|II|III|IV|MD|DO|NP|PA|RN|PhD|MBBS|FACP|PharmD)\.?)?)\b/;
-// A name in prose directly followed by a parenthetical identifier is a strong
-// clinical-note signal ("Casey Fictional (DOB ...; MRN ...)"). It does not sit
-// after a field label, so NAME_LABEL_RE cannot see it.
-const NAME_BEFORE_IDENTIFIER_RE =
-  /\b(?:(?:Dr|Mr|Mrs|Ms|Prof)\.?\s+)?([A-Z][a-zA-Z.'-]*(?:[ \t]+[A-Z][a-zA-Z.'-]*){1,3}(?:,?\s+(?:Jr|Sr|II|III|IV)\.?)?)[ \t]*\((?=\s*(?:DOB|MRN|Date of Birth|date of birth|Member ID|member id|Provider NPI|NPI|DEA|SSN|ITIN|Patient ID|PAT-ID)\b)/g;
-
-const GENERIC_NAME_LABELS = new Set([
-  "medical record number",
-  "medical record",
-  "date of birth",
-  "patient id",
-  "member id",
-  "chart number",
-  "attending physician",
-  "date of encounter",
-  "encounter date",
-  "date of service",
-  "service date",
-  "chief complaint",
-  "vital signs",
-  "past medical history",
-  "blood pressure",
-  "discharge summary",
-  "progress note",
-  "history of present illness",
-  "allergies",
-  "medications",
-  "medication list",
-  "first name",
-  "last name",
-  "middle name",
-  "full name",
-  "given name",
-  "family name",
-  "sur name",
-  "surname",
-  "user name",
-  "username",
-  "account name",
-  "company name",
-  "enter name",
-  "your name",
-  "placeholder",
-  "not provided",
-  "not applicable",
-  "required",
-  "optional",
-  "select one",
-  "required field",
-  "not specified",
-]);
-
-function detectNames(text: string): RawMatch[] {
-  const out: RawMatch[] = [];
-  for (const m of text.matchAll(NAME_LABEL_RE)) {
-    const valueStart = m.index + m[0].length;
-    const rest = text.slice(valueStart, Math.min(text.length, valueStart + 60));
-    const lineEnd = rest.search(/[\r\n]/);
-    const nameMatch = (lineEnd === -1 ? rest : rest.slice(0, lineEnd)).match(NAME_RE);
-    if (!nameMatch) continue;
-    const value = nameMatch[0];
-    if (GENERIC_NAME_LABELS.has(value.toLowerCase().trim())) continue;
-    const nameStart = nameMatch.index ?? 0;
-    if (value.length < 3) continue;
-    out.push({
-      category: "possible_name",
-      confidence: 0.52,
-      value,
-      start: valueStart + nameStart,
-      end: valueStart + nameStart + value.length,
-      entityType: "patient_name",
-    });
-  }
-  // Tab-separated or multiline names after "Possible name"
-  const POSS_TABLE_RE = /\b(?:Possible\s+name)\s*[:.\t\n]\s*([^\n\r]+)/gi;
-  for (const m of text.matchAll(POSS_TABLE_RE)) {
-    const rawLine = m[1];
-    const parts = rawLine.split(/[\t|]/);
-    for (const part of parts) {
-      const trimmed = part.trim();
-      const nMatch = trimmed.match(NAME_RE);
-      if (nMatch && !GENERIC_NAME_LABELS.has(nMatch[0].toLowerCase())) {
-        const offset = m.index + m[0].indexOf(nMatch[0]);
-        if (offset >= 0) {
-          out.push({
-            category: "possible_name",
-            confidence: 0.85,
-            value: nMatch[0],
-            start: offset,
-            end: offset + nMatch[0].length,
-            entityType: "patient_name",
-          });
-        }
-      }
-    }
-  }
-
-  for (const m of text.matchAll(NAME_BEFORE_IDENTIFIER_RE)) {
-    const value = m[1];
-    if (!value || GENERIC_NAME_LABELS.has(value.toLowerCase().trim())) continue;
-    out.push({
-      category: "possible_name",
-      confidence: 0.6,
-      value,
-      start: m.index,
-      end: m.index + value.length,
-      entityType: "patient_name",
-    });
-  }
-  return out;
-}
-
 const DETECTORS: Partial<Record<FindingCategory, (text: string) => RawMatch[]>> = {
   email: detectEmails,
   phone: detectPhones,
@@ -1563,18 +1395,6 @@ const DETECTORS: Partial<Record<FindingCategory, (text: string) => RawMatch[]>> 
  * Group every set of matches that overlap into a cluster, then keep ONE winner
  * per cluster: highest category priority first, then the longest span, then the
  * most confident.
- *
- * Priority must dominate position. The previous version sorted by start offset
- * and simply dropped anything that started inside an already-kept span, so an
- * `address` match beginning at offset 0 beat a `payment_card` match beginning
- * at offset 11 and the card was discarded — leaving the last 11 digits of a real
- * card number visible in the page. Sorting by position also meant priority was
- * only ever consulted for matches at an identical offset, which made the whole
- * priority table nearly dead.
- *
- * `payment_card` is the highest-priority category, so a cluster containing a
- * card now always resolves to the card and the full number is masked. The
- * address fragment loses its own label rather than the card losing its mask.
  */
 export function resolveOverlaps(matches: RawMatch[]): RawMatch[] {
   if (matches.length === 0) return [];
@@ -1611,89 +1431,22 @@ export function resolveOverlaps(matches: RawMatch[]): RawMatch[] {
   return winners.sort((a, b) => a.start - b.start);
 }
 
-export function runCustomPatterns(text: string, patterns: CustomPattern[]): RawMatch[] {
-  const matches: RawMatch[] = [];
-  if (!text || text.length > 100_000 || !Array.isArray(patterns)) return matches;
-  const TIME_BUDGET_MS = 150;
-  const startTime = Date.now();
-  for (const pat of patterns) {
-    if (Date.now() - startTime > TIME_BUDGET_MS) break;
-    // Location-only rules have no regex; they are handled by a separate
-    // location pass and never execute here.
-    if (!pat.pattern) continue;
-    const patFlags = pat.flags ?? "gi";
-    const patSource = pat.pattern.replace(/^\^/, "").replace(/\$$/, "");
-    if (!isSafeRegex(patSource, patFlags)) continue;
-    try {
-      const effFlags = patFlags.includes("g") ? patFlags : `${patFlags}g`;
-      const flags = effFlags.includes("d") ? effFlags : `${effFlags}d`;
-      let re: RegExp;
-      try {
-        re = new RegExp(patSource, flags);
-      } catch {
-        re = new RegExp(patSource, effFlags);
-      }
-      let m: RegExpExecArray | null;
-      let count = 0;
-      while ((m = re.exec(text)) !== null && count++ < 1000) {
-        if (Date.now() - startTime > TIME_BUDGET_MS) break;
-        if (!m[0]) {
-          re.lastIndex += 1;
-          continue;
-        }
-        let value = m[0];
-        let start = m.index;
-        let end = m.index + m[0].length;
-        if (pat.captureGroup !== undefined && pat.captureGroup > 0) {
-          const captured = m[pat.captureGroup];
-          if (captured === undefined) continue;
-          value = captured;
-          const indices = (m as any).indices?.[pat.captureGroup];
-          if (Array.isArray(indices) && typeof indices[0] === "number" && typeof indices[1] === "number") {
-            start = indices[0];
-            end = indices[1];
-          } else {
-            const relOffset = m[0].indexOf(captured);
-            start = m.index + (relOffset >= 0 ? relOffset : 0);
-            end = start + captured.length;
-          }
-        }
-        if (pat.minLength !== undefined && value.length < pat.minLength) continue;
-        if (pat.maxLength !== undefined && value.length > pat.maxLength) continue;
-        if (Array.isArray(pat.contextCues) && pat.contextCues.length > 0) {
-          const windowStart = Math.max(0, start - 120);
-          const windowEnd = Math.min(text.length, end + 120);
-          const windowText = text.slice(windowStart, windowEnd).toLowerCase();
-          const hasCue = pat.contextCues.some((cue) => cue && windowText.includes(cue.toLowerCase()));
-          if (!hasCue) continue;
-        }
-        matches.push({
-          category: pat.category,
-          confidence: pat.confidence,
-          value,
-          start,
-          end,
-        });
-      }
-    } catch {
-    }
-  }
-  return matches;
+export interface DetectWithCoverageResult {
+  matches: RawMatch[];
+  partiallyScanned: boolean;
 }
 
-export function detect(
+export function detectWithCoverage(
   text: string,
   enabledCategories: FindingCategory[],
-  customPatterns?: CustomPattern[]
-): RawMatch[] {
-  // Normalize once for every detector: strip zero-width obfuscation and fold
-  // foreign/compatibility digits to ASCII, so "219\u200b-09-9999" and
-  // full-width digit runs cannot evade detection. Matches are mapped back to
-  // original offsets so masks land on the real text. When nothing needed
-  // normalizing, this is a zero-cost passthrough of the previous behavior.
+  customPatterns?: CustomPattern[],
+  customOptions?: CustomPatternScanOptions,
+): DetectWithCoverageResult {
   const norm = normalizeUnicodeWithMapping(text);
   const searchText = norm.normalized;
   const all: RawMatch[] = [];
+  let partiallyScanned = false;
+
   for (const category of enabledCategories) {
     const detector = DETECTORS[category];
     if (!detector) continue;
@@ -1702,19 +1455,39 @@ export function detect(
       all.push(match);
     }
   }
+
   if (customPatterns && customPatterns.length > 0) {
-    const activeCustomPatterns = customPatterns.filter((pattern) => enabledCategories.includes(pattern.category));
-    const customMatches = runCustomPatterns(searchText, activeCustomPatterns);
-    all.push(...customMatches);
+    const activeCustomPatterns = customPatterns.filter((pattern) =>
+      enabledCategories.includes(pattern.category),
+    );
+    const customResult = runCustomPatternsWithStatus(
+      searchText,
+      activeCustomPatterns,
+      customOptions,
+    );
+    all.push(...customResult.matches);
+    if (customResult.partiallyScanned) {
+      partiallyScanned = true;
+    }
   }
+
   const resolved = resolveOverlaps(all);
-  if (!norm.changed) return resolved;
-  return resolved.map((m) => {
+  if (!norm.changed) {
+    return { matches: resolved, partiallyScanned };
+  }
+  const remapped = resolved.map((m) => {
     const start = mapNormalizedToOriginalOffset(norm.mappings, m.start);
-    // Exclusive end: map the last normalized char with isEnd: true to advance
-    // by character length (avoiding surrogate pair splitting).
     const end = mapNormalizedToOriginalOffset(norm.mappings, Math.max(m.start, m.end - 1), true);
     const safeEnd = Math.max(end, start + 1);
     return { ...m, start, end: safeEnd, value: text.slice(start, safeEnd) };
   });
+  return { matches: remapped, partiallyScanned };
+}
+
+export function detect(
+  text: string,
+  enabledCategories: FindingCategory[],
+  customPatterns?: CustomPattern[]
+): RawMatch[] {
+  return detectWithCoverage(text, enabledCategories, customPatterns).matches;
 }

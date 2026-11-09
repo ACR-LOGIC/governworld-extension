@@ -4,7 +4,7 @@ import type { RangeLike } from "./extract.js";
 import { isExcludedElement } from "./extract.js";
 import { applySelectionExcludingAttrs, attributeAt, buildAttrScan, collectAttrRecords } from "./attrs.js";
 import type { AttrScan } from "./attrs.js";
-import { detect, maskValue, maskContext, placeholderLabelFor } from "./detect.js";
+import { detect, detectWithCoverage, maskValue, maskContext, placeholderLabelFor } from "./detect.js";
 import { createOverlay } from "./overlay.js";
 import type { OverlayController } from "./overlay.js";
 import { initPasteGuard } from "./pasteGuard.js";
@@ -18,7 +18,7 @@ import { observeMutations, getAffectedNodeIds, type MutationObserverHandle, type
 import { setDynamicContentMonitored, updateCoverageWithBoundaries } from "./normalization/coverage.js";
 import { traverseIframes } from "./normalization/iframe.js";
 import { extractTableStructures, annotateSegmentsWithTableStructure } from "./normalization/table.js";
-import { discoverPageInventory, resolveScanCoverageStatus } from "./normalization/pageInventory.js";
+import { runDOMInventoryPass, resolveScanCoverageStatus } from "./normalization/pageInventory.js";
 import { buildMediaQueue, extractVideoCaptions } from "./mediaQueue.js";
 import { extractSvgText } from "./svgExtract.js";
 
@@ -229,7 +229,8 @@ if (g.__gwRedactionContentLoaded !== true) {
     return { findings: capped, totalFindings, findingsTruncated: capped.length < totalFindings };
   }
 
-  function buildFindings(    rawMatches: ReturnType<typeof detect>,
+  function buildFindings(
+    rawMatches: ReturnType<typeof detect>,
     enabledCategories: string[],
     customPatterns: CustomPattern[] = []
   ): Finding[] {
@@ -305,10 +306,11 @@ if (g.__gwRedactionContentLoaded !== true) {
     activeSessionTimeoutMs = sessionTimeoutMs;
     currentSettings = settings;
 
-    // ── Layer 0: Page inventory (enumerates all content representations) ──
-    let inventory;
+    // ── Layer 0: Single DOM Inventory Pass (Item 16) ──────────────────────
+    let inventory: import("./normalization/pageInventory.js").PageInventory | null = null;
     try {
-      inventory = discoverPageInventory(document);
+      const passResult = runDOMInventoryPass(document);
+      inventory = passResult.inventory;
     } catch {
       inventory = null;
     }
@@ -377,7 +379,7 @@ if (g.__gwRedactionContentLoaded !== true) {
 
     placeholdersEnabled = settings.maskPlaceholders;
 
-    let customPatterns: any[] = [];
+    let customPatterns: CustomPattern[] = [];
     try {
       const stored = await chrome.storage.local.get("customPatterns");
       if (Array.isArray(stored.customPatterns)) {
@@ -389,7 +391,9 @@ if (g.__gwRedactionContentLoaded !== true) {
     currentCustomPatterns = customPatterns;
 
     const threshold = (cat: FindingCategory) => settings.confidenceThresholds?.[cat] ?? 0;
-    const rawMatches = detect(combined, settings.enabledCategories, customPatterns).filter(
+    const detectedMain = detectWithCoverage(combined, settings.enabledCategories, customPatterns);
+    let customPatternsPartiallyScanned = detectedMain.partiallyScanned;
+    const rawMatches = detectedMain.matches.filter(
       (m) => m.confidence >= threshold(m.category)
     );
     findings = buildFindings(rawMatches, settings.enabledCategories, customPatterns);
@@ -399,7 +403,9 @@ if (g.__gwRedactionContentLoaded !== true) {
       const svgSegments = extractSvgText(document);
       if (svgSegments.length > 0) {
         const svgText = svgSegments.map((s) => s.text).join("\n");
-        const svgMatches = detect(svgText, settings.enabledCategories, customPatterns).filter(
+        const svgDetected = detectWithCoverage(svgText, settings.enabledCategories, customPatterns);
+        if (svgDetected.partiallyScanned) customPatternsPartiallyScanned = true;
+        const svgMatches = svgDetected.matches.filter(
           (m) => m.confidence >= threshold(m.category)
         );
         const svgOffset = combined.length + 1; // beyond the DOM scan text
@@ -440,7 +446,9 @@ if (g.__gwRedactionContentLoaded !== true) {
       const captions = extractVideoCaptions(document);
       if (captions.length > 0) {
         const captionText = captions.map((c) => c.text).join("\n");
-        const captionMatches = detect(captionText, settings.enabledCategories, customPatterns).filter(
+        const captionDetected = detectWithCoverage(captionText, settings.enabledCategories, customPatterns);
+        if (captionDetected.partiallyScanned) customPatternsPartiallyScanned = true;
+        const captionMatches = captionDetected.matches.filter(
           (m) => m.confidence >= threshold(m.category)
         );
         const captionOffset = combined.length + 2000; // well beyond DOM text
@@ -475,7 +483,9 @@ if (g.__gwRedactionContentLoaded !== true) {
       });
       attrScan = buildAttrScan(collected.records);
       attrChars = attrScan.combined.length;
-      const attrMatches = detect(attrScan.combined, settings.enabledCategories, customPatterns).filter(
+      const attrDetected = detectWithCoverage(attrScan.combined, settings.enabledCategories, customPatterns);
+      if (attrDetected.partiallyScanned) customPatternsPartiallyScanned = true;
+      const attrMatches = attrDetected.matches.filter(
         (m) => m.confidence >= threshold(m.category)
       );
       const attrFindings = attrMatches.map((match, i) => {
@@ -529,10 +539,17 @@ if (g.__gwRedactionContentLoaded !== true) {
           unresolvedRegions: remainingUnresolved,
           deferredMediaCount,
           visibleChars: combined.length,
+          truncated: canonical.truncated,
+          customPatternsPartiallyScanned,
         });
+      } else if (canonical.truncated || customPatternsPartiallyScanned) {
+        coverageStatus = "PARTIALLY_SCANNED";
       }
     } catch {
       // Media queue is best-effort — never fail the scan.
+      if (canonical.truncated || customPatternsPartiallyScanned) {
+        coverageStatus = "PARTIALLY_SCANNED";
+      }
     }
 
     const result: Finding[] = findings.map((f) => ({
@@ -558,7 +575,7 @@ if (g.__gwRedactionContentLoaded !== true) {
         stats: {
           visibleChars: combined.length,
           attrChars,
-          truncated: canonical.truncated,
+          truncated: canonical.truncated || customPatternsPartiallyScanned,
           findingsTruncated: capped.findingsTruncated,
           totalFindings: capped.totalFindings,
           ...(imageCandidates ? { imageCandidates } : {}),
@@ -826,69 +843,99 @@ if (g.__gwRedactionContentLoaded !== true) {
    * masked values. The DOM is never mutated; the redacted text is derived
    * from the scan state. With no selected findings, copy behaves normally.
    * For input/textarea, preserves native newlines and selection.
+   *
+   * Wrapped in defensive try/catch boundaries (Priority 2 — Item 10) so rare
+   * selection/range anomalies (detached nodes, cross-shadow boundaries) never
+   * crash clipboard handling.
    */
   function onClipboard(event: ClipboardEvent): void {
-    if (!sessionId) return;
-    const sel = window.getSelection();
-    if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
+    try {
+      if (!sessionId) return;
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0) return;
 
-    const activeElement = document.activeElement;
-    const isInputOrTextarea =
-      activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement;
+      const activeElement = document.activeElement;
+      const isInputOrTextarea =
+        activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement;
 
-    // If selection is inside an input/textarea, use native value with preserved newlines
-    if (isInputOrTextarea && activeElement === sel.anchorNode?.parentElement) {
-      const input = activeElement;
-      const start = input.selectionStart;
-      const end = input.selectionEnd;
-      if (
-        start !== null &&
-        end !== null &&
-        start !== end &&
-        start >= 0 &&
-        end <= input.value.length
-      ) {
-        const selectedText = input.value.slice(start, end);
-        const active = findings.filter(
-          (f) => f.selected && f.startOffset < end && f.endOffset > start
-        );
-        if (active.length > 0) {
-          // Redact using the same logic but on the native string
-          const chars = Array.from(selectedText);
-          for (const f of active) {
-            const fs = Math.max(start, f.startOffset);
-            const fe = Math.min(end, f.endOffset);
-            if (fe <= fs) continue;
-            for (let i = fs - start; i < fe - start; i++) chars[i] = "\u2588";
+      // If selection is inside an input/textarea, use native value with preserved newlines
+      if (isInputOrTextarea && activeElement === sel.anchorNode?.parentElement) {
+        const input = activeElement;
+        const start = input.selectionStart;
+        const end = input.selectionEnd;
+        if (
+          start !== null &&
+          end !== null &&
+          start !== end &&
+          start >= 0 &&
+          end <= input.value.length
+        ) {
+          const selectedText = input.value.slice(start, end);
+          const active = findings.filter(
+            (f) => f.selected && f.startOffset < end && f.endOffset > start
+          );
+          if (active.length > 0) {
+            // Redact using the same logic but on the native string
+            const chars = Array.from(selectedText);
+            for (const f of active) {
+              const fs = Math.max(start, f.startOffset);
+              const fe = Math.min(end, f.endOffset);
+              if (fe <= fs) continue;
+              for (let i = fs - start; i < fe - start; i++) chars[i] = "\u2588";
+            }
+            event.clipboardData?.setData("text/plain", chars.join(""));
+            event.preventDefault();
+            touchSession();
           }
-          event.clipboardData?.setData("text/plain", chars.join(""));
-          event.preventDefault();
-          touchSession();
+          return;
         }
-        return;
+      }
+
+      // Fallback: combined scan text approach (may flatten newlines across segments)
+      const range = sel.getRangeAt(0) as unknown as RangeLike<Text>;
+      const span = selectionCombinedSpan(
+        range,
+        segments,
+        segmentStarts,
+        segmentIndexById,
+        nodeIds,
+        combined.length,
+        (node) => node.isConnected
+      );
+      if (!span) return;
+      const active = findings.filter(
+        (f) => f.selected && f.startOffset < span.end && f.endOffset > span.start
+      );
+      if (active.length === 0) return;
+      const text = maskCombinedRange(combined, span.start, span.end, active);
+      event.clipboardData?.setData("text/plain", text);
+      event.preventDefault();
+      touchSession();
+    } catch {
+      // Graceful fallback: if DOM selection mapping fails (e.g., detached range
+      // or cross-shadow boundary), redact the raw selection string on-the-fly
+      // if active findings exist so sensitive data is still protected.
+      try {
+        const hasActiveFindings = findings.some((f) => f.selected);
+        if (!hasActiveFindings || !currentSettings) return;
+        const rawSelText = window.getSelection()?.toString() ?? "";
+        if (!rawSelText) return;
+        const threshold = (cat: FindingCategory) => currentSettings?.confidenceThresholds?.[cat] ?? 0;
+        const matches = detect(rawSelText, currentSettings.enabledCategories, currentCustomPatterns).filter(
+          (m) => m.confidence >= threshold(m.category)
+        );
+        if (matches.length === 0) return;
+        let redacted = rawSelText;
+        const sorted = [...matches].sort((a, b) => b.start - a.start);
+        for (const m of sorted) {
+          redacted = redacted.slice(0, m.start) + "\u2588".repeat(m.end - m.start) + redacted.slice(m.end);
+        }
+        event.clipboardData?.setData("text/plain", redacted);
+        event.preventDefault();
+      } catch {
+        // Never allow clipboard handler to throw an uncaught exception.
       }
     }
-
-    // Fallback: combined scan text approach (may flatten newlines across segments)
-    const range = sel.getRangeAt(0) as unknown as RangeLike<Text>;
-    const span = selectionCombinedSpan(
-      range,
-      segments,
-      segmentStarts,
-      segmentIndexById,
-      nodeIds,
-      combined.length,
-      (node) => node.isConnected
-    );
-    if (!span) return;
-    const active = findings.filter(
-      (f) => f.selected && f.startOffset < span.end && f.endOffset > span.start
-    );
-    if (active.length === 0) return;
-    const text = maskCombinedRange(combined, span.start, span.end, active);
-    event.clipboardData?.setData("text/plain", text);
-    event.preventDefault();
-    touchSession();
   }
 
   document.addEventListener("copy", onClipboard);

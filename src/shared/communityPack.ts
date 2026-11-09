@@ -95,11 +95,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /**
  * Compare dotted numeric versions. Returns a negative number when `a < b`.
- *
- * Deliberately minimal and total: any component that is not a run of digits
- * makes the version invalid rather than being coerced, because a pack whose
- * version field cannot be parsed must not be silently treated as compatible.
- * A leading "v" is tolerated because it is a common packaging convention.
  */
 export function compareVersions(a: string, b: string): number | null {
   const parse = (v: string): number[] | null => {
@@ -148,8 +143,6 @@ export function parseCommunityPack(bodyBytes: Uint8Array): PackVerification {
   if (!Array.isArray(rules) || rules.length > MAX_RULES_PER_PACK) {
     return { ok: false, reason: "malformed" };
   }
-  // Every rule is checked. One invalid rule rejects the whole pack, because a
-  // silently dropped rule is indistinguishable from a missing protection.
   const invalid = rules.findIndex((r) => !isValidCommunityRule(r));
   if (invalid !== -1) {
     return { ok: false, reason: "invalid-rules", detail: `rule at index ${invalid}` };
@@ -186,12 +179,13 @@ async function verifySignature(
 ): Promise<boolean> {
   const signature = base64ToBytes(signatureBase64);
   if (!signature) return false;
+  const isEd25519 = publicKeyJwk.kty === "OKP" && publicKeyJwk.crv === "Ed25519";
   let key: CryptoKey;
   try {
     key = await crypto.subtle.importKey(
       "jwk",
       publicKeyJwk,
-      { name: "ECDSA", namedCurve: "P-256" },
+      isEd25519 ? { name: "Ed25519" } : { name: "ECDSA", namedCurve: "P-256" },
       false,
       ["verify"]
     );
@@ -200,7 +194,7 @@ async function verifySignature(
   }
   try {
     return await crypto.subtle.verify(
-      { name: "ECDSA", hash: "SHA-256" },
+      isEd25519 ? { name: "Ed25519" } : { name: "ECDSA", hash: "SHA-256" },
       key,
       signature as unknown as BufferSource,
       bodyBytes as unknown as BufferSource
@@ -228,20 +222,12 @@ export async function verifyCommunityPack(options: VerifyOptions): Promise<PackV
 
   const expires = Date.parse(pack.expiresAt);
   if (!(expires > now.getTime())) return { ok: false, reason: "expired" };
-  // A pack issued far in the future is either a broken clock or a pre-signed
-  // pack being introduced early. Refuse rather than widen the window.
   if (Date.parse(pack.issuedAt) - skew > now.getTime()) return { ok: false, reason: "not-yet-valid" };
 
-  // Answering §10 question 3: enforce BEFORE anything is staged or installed.
-  // An old client must not accept rules whose validation it does not perform,
-  // and a "rules unavailable" message is a better failure than a partially
-  // understood policy set.
   const versionCmp = compareVersions(clientVersion, pack.minClientVersion);
   if (versionCmp === null) return { ok: false, reason: "client-too-old" };
   if (versionCmp < 0) return { ok: false, reason: "client-too-old" };
 
-  // Authentication happens after the cheap structural gates and before any
-  // state is touched. Nothing is persisted before this returns true.
   if (!(await verifySignature(bodyBytes, signatureBase64, publicKeyJwk))) {
     return { ok: false, reason: "bad-signature" };
   }

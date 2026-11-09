@@ -14,6 +14,20 @@ export type {
 export { buildCanonicalDocument } from "./canonical.js";
 export { getAccessibleShadowRoot } from "./shadow.js";
 export {
+  discoverPageInventory,
+  runDOMInventoryPass,
+  DOMInventoryPass,
+  resolveScanCoverageStatus,
+  computeElementVisibility,
+  buildTraceableSelector,
+  type PageInventory,
+  type DOMInventoryPassResult,
+  type ScanCoverageStatus,
+  type UnscannableRegion,
+  type UnscannableReason,
+  type VisibilityState,
+} from "./pageInventory.js";
+export {
   createInitialCoverage,
   updateCoverageWithBoundaries,
   setDynamicContentMonitored,

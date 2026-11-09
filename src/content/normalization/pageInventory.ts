@@ -16,6 +16,7 @@
  */
 
 import { getAccessibleShadowRoot } from "./shadow.js";
+import { CoverageTelemetry, PerformanceTelemetry } from "../../shared/telemetry.js";
 
 export { getAccessibleShadowRoot } from "./shadow.js";
 
@@ -78,6 +79,25 @@ export interface PageInventory {
   audios: number;
   pdfs: { embedded: number; isTopLevelPdfViewer: boolean };
   unscannableRegions: UnscannableRegion[];
+}
+
+export interface DOMInventoryPassResult {
+  inventory: PageInventory;
+  frames: {
+    sameOrigin: HTMLIFrameElement[];
+    crossOrigin: HTMLIFrameElement[];
+  };
+  tables: HTMLTableElement[];
+  media: {
+    images: HTMLImageElement[];
+    canvases: HTMLCanvasElement[];
+    videos: HTMLVideoElement[];
+    audios: HTMLAudioElement[];
+    svgs: SVGElement[];
+    pdfEmbeds: Element[];
+  };
+  shadowRoots: ShadowRoot[];
+  durationMs: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -196,17 +216,16 @@ export function buildTraceableSelector(el: Element): string {
 }
 
 // ---------------------------------------------------------------------------
-// Page inventory discovery (Layer 0)
+// Single DOM Inventory Pass (Item 16)
 // ---------------------------------------------------------------------------
 
 /**
- * Walks the document and all accessible shadow roots / same-origin iframes,
- * cataloguing every content representation. Returns a live-count inventory
- * plus any regions that cannot be inspected by the extension.
- *
- * This function is purely additive — it never writes to the DOM.
+ * Collects Frames, Tables, Media, Shadow Roots, and Inventory Metrics in a
+ * single DOM traversal so large enterprise applications do not pay for
+ * redundant full-document tree walks.
  */
-export function discoverPageInventory(rootDoc: Document = document): PageInventory {
+export function runDOMInventoryPass(rootDoc: Document = document): DOMInventoryPassResult {
+  const startTime = Date.now();
   const inv: PageInventory = {
     domTextRegions: 0,
     formControls: 0,
@@ -227,6 +246,21 @@ export function discoverPageInventory(rootDoc: Document = document): PageInvento
     unscannableRegions: [],
   };
 
+  const frames = {
+    sameOrigin: [] as HTMLIFrameElement[],
+    crossOrigin: [] as HTMLIFrameElement[],
+  };
+  const tables: HTMLTableElement[] = [];
+  const media = {
+    images: [] as HTMLImageElement[],
+    canvases: [] as HTMLCanvasElement[],
+    videos: [] as HTMLVideoElement[],
+    audios: [] as HTMLAudioElement[],
+    svgs: [] as SVGElement[],
+    pdfEmbeds: [] as Element[],
+  };
+  const shadowRoots: ShadowRoot[] = [];
+
   // Chrome's built-in PDF viewer is always unscannable via DOM — record it once.
   if (inv.pdfs.isTopLevelPdfViewer) {
     inv.unscannableRegions.push({
@@ -246,7 +280,8 @@ export function discoverPageInventory(rootDoc: Document = document): PageInvento
     // Prevent infinite recursion via circular shadow root references
     if (depth > 10) return;
 
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+    const ownerDoc = root instanceof Document ? root : root.ownerDocument ?? document;
+    const walker = ownerDoc.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
     let node: Node | null = walker.currentNode;
 
     while (node) {
@@ -265,9 +300,15 @@ export function discoverPageInventory(rootDoc: Document = document): PageInvento
         // ── Shadow DOM ────────────────────────────────────────────
         const shadow = getAccessibleShadowRoot(el);
         if (shadow) {
+          shadowRoots.push(shadow);
           if (shadow.mode === "open") inv.openShadowRoots++;
           else inv.closedShadowRootsAccessed++;
           walkRoot(shadow, depth + 1);
+        }
+
+        // ── Tables ────────────────────────────────────────────────
+        if (tag === "table") {
+          tables.push(el as HTMLTableElement);
         }
 
         // ── Form Controls ─────────────────────────────────────────
@@ -278,6 +319,7 @@ export function discoverPageInventory(rootDoc: Document = document): PageInvento
         // ── Images ───────────────────────────────────────────────
         if (tag === "img") {
           const img = el as HTMLImageElement;
+          media.images.push(img);
           if (rect.width >= 24 && rect.height >= 14) {
             inv.images.total++;
             if (visibility === "VISIBLE_IN_VIEWPORT" || visibility === "VISIBLE_OUT_OF_VIEWPORT") {
@@ -301,18 +343,25 @@ export function discoverPageInventory(rootDoc: Document = document): PageInvento
         }
 
         // ── Inline SVGs ──────────────────────────────────────────
-        if (tag === "svg" && rect.width >= 24 && rect.height >= 14) {
-          inv.images.inlineSvgs++;
+        if (tag === "svg") {
+          media.svgs.push(el as SVGElement);
+          if (rect.width >= 24 && rect.height >= 14) {
+            inv.images.inlineSvgs++;
+          }
         }
 
         // ── Canvas ───────────────────────────────────────────────
-        if (tag === "canvas" && rect.width >= 24 && rect.height >= 14) {
-          inv.canvases++;
+        if (tag === "canvas") {
+          media.canvases.push(el as HTMLCanvasElement);
+          if (rect.width >= 24 && rect.height >= 14) {
+            inv.canvases++;
+          }
         }
 
         // ── Video ────────────────────────────────────────────────
         if (tag === "video") {
           const video = el as HTMLVideoElement;
+          media.videos.push(video);
           inv.videos.total++;
           if (video.textTracks && video.textTracks.length > 0) inv.videos.withTracks++;
           if (visibility === "VISIBLE_IN_VIEWPORT" || visibility === "VISIBLE_OUT_OF_VIEWPORT") {
@@ -334,6 +383,7 @@ export function discoverPageInventory(rootDoc: Document = document): PageInvento
 
         // ── Audio ────────────────────────────────────────────────
         if (tag === "audio") {
+          media.audios.push(el as HTMLAudioElement);
           inv.audios++;
         }
 
@@ -342,6 +392,7 @@ export function discoverPageInventory(rootDoc: Document = document): PageInvento
           const type = (el.getAttribute("type") || "").toLowerCase();
           const dataUrl = el.getAttribute("src") || el.getAttribute("data") || "";
           if (type.includes("pdf") || /\.pdf($|\?|#)/i.test(dataUrl)) {
+            media.pdfEmbeds.push(el);
             inv.pdfs.embedded++;
           }
         }
@@ -355,10 +406,10 @@ export function discoverPageInventory(rootDoc: Document = document): PageInvento
               const frameDoc = frame.contentDocument;
               if (frameDoc) {
                 inv.sameOriginIframes++;
-                // Recursively walk same-origin frames (already handled by
-                // traverseIframes in content.ts — we just count them here).
+                frames.sameOrigin.push(frame);
               } else {
                 inv.crossOriginIframes++;
+                frames.crossOrigin.push(frame);
                 inv.unscannableRegions.push({
                   sourceType: "iframe",
                   cssSelector: buildTraceableSelector(frame),
@@ -373,6 +424,7 @@ export function discoverPageInventory(rootDoc: Document = document): PageInvento
               }
             } catch {
               inv.crossOriginIframes++;
+              frames.crossOrigin.push(frame);
               inv.unscannableRegions.push({
                 sourceType: "iframe",
                 cssSelector: buildTraceableSelector(frame),
@@ -391,7 +443,49 @@ export function discoverPageInventory(rootDoc: Document = document): PageInvento
   };
 
   walkRoot(rootDoc);
-  return inv;
+  const durationMs = Math.max(0, Date.now() - startTime);
+  PerformanceTelemetry.record("dom_inventory_pass_completed", {
+    durationMs,
+    tablesCount: tables.length,
+    shadowRootsCount: shadowRoots.length,
+    sameOriginIframes: inv.sameOriginIframes,
+    crossOriginIframes: inv.crossOriginIframes,
+  });
+
+  return {
+    inventory: inv,
+    frames,
+    tables,
+    media,
+    shadowRoots,
+    durationMs,
+  };
+}
+
+/**
+ * Class wrapper for the single-traversal DOM inventory pass (Item 16).
+ */
+export class DOMInventoryPass {
+  private readonly rootDoc: Document;
+
+  constructor(rootDoc: Document = document) {
+    this.rootDoc = rootDoc;
+  }
+
+  run(): DOMInventoryPassResult {
+    return runDOMInventoryPass(this.rootDoc);
+  }
+}
+
+/**
+ * Walks the document and all accessible shadow roots / same-origin iframes,
+ * cataloguing every content representation. Returns a live-count inventory
+ * plus any regions that cannot be inspected by the extension.
+ *
+ * This function is purely additive — it never writes to the DOM.
+ */
+export function discoverPageInventory(rootDoc: Document = document): PageInventory {
+  return runDOMInventoryPass(rootDoc).inventory;
 }
 
 // ---------------------------------------------------------------------------
@@ -413,8 +507,20 @@ export function resolveScanCoverageStatus(params: {
   hadRuntimeError?: boolean;
   /** Characters of readable text the extraction pass actually obtained. */
   visibleChars?: number;
+  /** Whether the canonical DOM text extraction was truncated due to size limits. */
+  truncated?: boolean;
+  /** Whether custom pattern matching hit execution or size limits. */
+  customPatternsPartiallyScanned?: boolean;
 }): ScanCoverageStatus {
-  const { findingsCount, unresolvedRegions, deferredMediaCount, hadRuntimeError, visibleChars } = params;
+  const {
+    findingsCount,
+    unresolvedRegions,
+    deferredMediaCount,
+    hadRuntimeError,
+    visibleChars,
+    truncated,
+    customPatternsPartiallyScanned,
+  } = params;
 
   if (hadRuntimeError) return "SCAN_FAILED";
 
@@ -433,7 +539,19 @@ export function resolveScanCoverageStatus(params: {
     return "BLOCKED_BY_BROWSER_SECURITY";
   }
 
-  if (deferredMediaCount > 0 || unresolvedRegions.length > 0) {
+  if (
+    deferredMediaCount > 0 ||
+    unresolvedRegions.length > 0 ||
+    truncated === true ||
+    customPatternsPartiallyScanned === true
+  ) {
+    CoverageTelemetry.record("scan_coverage_resolved", {
+      status: "PARTIALLY_SCANNED",
+      deferredMediaCount,
+      unresolvedCount: unresolvedRegions.length,
+      truncated: Boolean(truncated),
+      customPatternsPartiallyScanned: Boolean(customPatternsPartiallyScanned),
+    });
     return "PARTIALLY_SCANNED";
   }
 

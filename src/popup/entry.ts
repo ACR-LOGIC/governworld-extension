@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 import { initPopup } from "./popup.js";
+import { sanitizeErrorForLog } from "../shared/errorSanitizer.js";
 
 /**
  * Initialisation failures must not be silent.
@@ -12,7 +13,7 @@ import { initPopup } from "./popup.js";
  * because an unlabelled dead UI is indistinguishable from a broken extension.
  */
 void initPopup().catch((error: unknown) => {
-  console.error("[governworld] popup failed to initialise:", error);
+  console.error("[governworld] popup failed to initialise:", sanitizeErrorForLog(error));
   const status = document.getElementById("doc-status-text");
   if (status) {
     status.textContent = "GovernWorld could not start. Reload the extension and try again.";

@@ -133,7 +133,7 @@ export function insertTextIntoElement(target: HTMLElement, text: string): boolea
         inserted = document.execCommand("insertText", false, text);
       }
     } catch (err) {
-      console.error('SHOW DIALOG THREW:', err);
+      inserted = false;
       inserted = false;
     }
 
@@ -1531,7 +1531,7 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
       });
       
     } catch (err) {
-      console.error("REAL ERROR IN ONKEYDOWN:", err);
+      isHandlingEvent = false;
       isHandlingEvent = false;
     }
   };

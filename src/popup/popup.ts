@@ -1,3 +1,4 @@
+import { sanitizeErrorForLog } from "../shared/errorSanitizer.js";
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 import { validateMessage } from "../shared/messages.js";
 import { previewObjectUrl } from "../shared/docStore.js";
@@ -117,7 +118,7 @@ export async function ensureContentScriptReady(tabId: number): Promise<boolean> 
       await new Promise((resolve) => setTimeout(resolve, 80));
       return true;
     } catch (error) {
-      console.warn(`[governworld] Unable to dynamically inject content script on tab ${tabId}:`, error);
+      console.warn(`[governworld] Unable to dynamically inject content script on tab ${tabId}:`, sanitizeErrorForLog(error));
       return false;
     }
   }
@@ -3161,7 +3162,7 @@ export async function initPopup(): Promise<void> {
         await chrome.sidePanel.open({ windowId: currentWindowId });
         window.close(); // Cleanly close ephemeral toolbar popup once Side Panel opens
       } catch (err) {
-        console.warn("[GovernWorld] SidePanel open fallback to native picker:", err);
+        console.warn("[GovernWorld] SidePanel open fallback to native picker:", sanitizeErrorForLog(err));
         wizardFileInput?.click();
       }
 

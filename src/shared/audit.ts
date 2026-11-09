@@ -6,6 +6,9 @@ import { isRecord } from "./types.js";
  * counts, hashes, and policy references — never raw detected values or page
  * content (zero raw-data persistence invariant).
  *
+ * Centralize Audit Writing (Priority 0 — Item 3):
+ *   Popup / Content Script  ──(POPUP_RECORD_AUDIT)──►  Service Worker  ──►  Audit Store
+ *
  * Events live in chrome.storage.local (ring buffer). Export produces JSONL
  * plus a detached ECDSA P-256/SHA-256 signature over the exact exported bytes,
  * so a reviewer can verify nothing was altered after the fact.
@@ -170,7 +173,28 @@ export function trimEvents(events: AuditEvent[]): AuditEvent[] {
   return events.slice(events.length - AUDIT_MAX_EVENTS);
 }
 
-// ---------- Storage (service worker side) ----------
+// ---------- Storage (service worker single-writer side) ----------
+
+export type AuditWriterRole = "auto" | "service-worker" | "client";
+
+let currentAuditWriterRole: AuditWriterRole = "auto";
+
+/**
+ * Configures the current execution context's audit writer role:
+ * - `"service-worker"`: Directly appends hash-chained events to `chrome.storage.local`.
+ * - `"client"`: Forwards all audit events to the Service Worker via `POPUP_RECORD_AUDIT`
+ *   and never writes directly to `chrome.storage.local`.
+ * - `"auto"`: Attempts `POPUP_RECORD_AUDIT` when `chrome.runtime.sendMessage` has an
+ *   active Service Worker listener, falling back to local lock-protected storage in
+ *   unit-test harnesses without a Service Worker.
+ */
+export function setAuditWriterRole(role: AuditWriterRole): void {
+  currentAuditWriterRole = role;
+}
+
+export function getAuditWriterRole(): AuditWriterRole {
+  return currentAuditWriterRole;
+}
 
 export async function loadAuditLog(): Promise<AuditEvent[]> {
   const raw = await chrome.storage.local.get(AUDIT_KEY);
@@ -259,7 +283,20 @@ function releaseAuditLock(): void {
   }
 }
 
-export async function recordAudit(event: AuditEvent, options?: RecordAuditOptions): Promise<void> {
+let auditReqCounter = 0;
+function nextAuditRequestId(): string {
+  auditReqCounter += 1;
+  return `audit_${Date.now()}_${auditReqCounter}`;
+}
+
+/**
+ * Authoritative single-writer persistence function executed by the Service Worker.
+ * Serializes concurrent writes with an in-memory mutex and computes `prevHash`.
+ */
+export async function writeAuditRecordDirect(
+  event: AuditEvent,
+  options?: RecordAuditOptions,
+): Promise<void> {
   await acquireAuditLock();
   try {
     const events = await loadAuditLog();
@@ -277,6 +314,74 @@ export async function recordAudit(event: AuditEvent, options?: RecordAuditOption
   } finally {
     releaseAuditLock();
   }
+}
+
+export async function recordAudit(event: AuditEvent, options?: RecordAuditOptions): Promise<void> {
+  if (currentAuditWriterRole === "service-worker") {
+    await writeAuditRecordDirect(event, options);
+    return;
+  }
+
+  const canSendMessage =
+    typeof chrome !== "undefined" && typeof chrome?.runtime?.sendMessage === "function";
+
+  if (currentAuditWriterRole === "client") {
+    if (!canSendMessage) {
+      if (options?.failClosed) {
+        throw new Error("Audit service worker channel is unavailable");
+      }
+      return;
+    }
+    try {
+      const res = (await chrome.runtime.sendMessage({
+        type: "POPUP_RECORD_AUDIT",
+        requestId: nextAuditRequestId(),
+        event,
+        failClosed: Boolean(options?.failClosed),
+      })) as { ok?: boolean; error?: string } | undefined;
+      if (res && res.ok === false) {
+        if (options?.failClosed) {
+          throw new Error(res.error ?? "Service worker rejected audit record");
+        }
+      }
+    } catch (err) {
+      if (options?.failClosed) {
+        throw err;
+      }
+    }
+    return;
+  }
+
+  // "auto" role: if sendMessage is available and a Service Worker listener
+  // responds with { ok: boolean }, delegate to the Service Worker single writer.
+  if (canSendMessage) {
+    try {
+      const res = (await chrome.runtime.sendMessage({
+        type: "POPUP_RECORD_AUDIT",
+        requestId: nextAuditRequestId(),
+        event,
+        failClosed: Boolean(options?.failClosed),
+      })) as { ok?: boolean; error?: string } | undefined;
+      if (res && typeof res === "object" && typeof res.ok === "boolean") {
+        if (!res.ok && options?.failClosed) {
+          throw new Error(res.error ?? "Service worker rejected audit record");
+        }
+        return;
+      }
+    } catch (err) {
+      // If the Service Worker explicitly rejected a failClosed audit, propagate.
+      if (
+        options?.failClosed &&
+        err instanceof Error &&
+        err.message.includes("Service worker rejected audit record")
+      ) {
+        throw err;
+      }
+      // Otherwise fall through to direct write for local/test environments.
+    }
+  }
+
+  await writeAuditRecordDirect(event, options);
 }
 
 export async function clearAuditLog(): Promise<void> {

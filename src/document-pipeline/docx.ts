@@ -2,6 +2,8 @@
 import mammoth from "mammoth";
 import type { OcrToken } from "./ocr.js";
 import { MAX_DOCX_CHARS } from "../shared/docLimits.js";
+import { SecurityTelemetry } from "../shared/telemetry.js";
+import { extractSafeError } from "../shared/errorSanitizer.js";
 
 /**
  * DOCX-page loading. Extracts raw text with mammoth, then lays it out on a
@@ -41,6 +43,10 @@ const MAX_DOCX_ENTRIES = 1_000;
 const MAX_DOCX_RATIO = 100;
 
 export function assertSafeDocxArchive(bytes: ArrayBuffer): void {
+  if (!bytes || !(bytes instanceof ArrayBuffer) || bytes.byteLength < 22) {
+    SecurityTelemetry.record("docx_archive_rejected", { reason: "too_small_or_invalid_buffer", byteLength: bytes?.byteLength ?? 0 });
+    throw new Error("DOCX archive is invalid.");
+  }
   const view = new DataView(bytes);
   let eocd = -1;
   const start = Math.max(0, bytes.byteLength - 65_557);
@@ -50,26 +56,64 @@ export function assertSafeDocxArchive(bytes: ArrayBuffer): void {
       break;
     }
   }
-  if (eocd < 0) throw new Error("DOCX archive is invalid.");
+  if (eocd < 0) {
+    SecurityTelemetry.record("docx_archive_rejected", { reason: "missing_eocd" });
+    throw new Error("DOCX archive is invalid.");
+  }
   const entryCount = view.getUint16(eocd + 10, true);
   const centralSize = view.getUint32(eocd + 12, true);
   const centralOffset = view.getUint32(eocd + 16, true);
-  if (entryCount === 0xffff || centralSize === 0xffffffff || centralOffset === 0xffffffff || entryCount > MAX_DOCX_ENTRIES) throw new Error("DOCX archive limits are unsupported.");
-  if (centralOffset + centralSize > bytes.byteLength) throw new Error("DOCX archive is truncated.");
+  if (entryCount === 0xffff || centralSize === 0xffffffff || centralOffset === 0xffffffff || entryCount > MAX_DOCX_ENTRIES) {
+    SecurityTelemetry.record("docx_archive_rejected", { reason: "archive_limits_exceeded", entryCount });
+    throw new Error("DOCX archive limits are unsupported.");
+  }
+  if (centralOffset + centralSize > bytes.byteLength) {
+    SecurityTelemetry.record("docx_archive_rejected", { reason: "truncated_central_directory" });
+    throw new Error("DOCX archive is truncated.");
+  }
 
   let offset = centralOffset;
   let totalUncompressed = 0;
   for (let index = 0; index < entryCount; index += 1) {
-    if (offset + 46 > bytes.byteLength || view.getUint32(offset, true) !== 0x02014b50) throw new Error("DOCX archive is invalid.");
+    if (offset + 46 > bytes.byteLength || view.getUint32(offset, true) !== 0x02014b50) {
+      SecurityTelemetry.record("docx_archive_rejected", { reason: "invalid_central_header", index });
+      throw new Error("DOCX archive is invalid.");
+    }
     const flags = view.getUint16(offset + 8, true);
     const compressedSize = view.getUint32(offset + 20, true);
     const uncompressedSize = view.getUint32(offset + 24, true);
     const nameLength = view.getUint16(offset + 28, true);
     const extraLength = view.getUint16(offset + 30, true);
     const commentLength = view.getUint16(offset + 32, true);
-    if ((flags & 1) !== 0 || compressedSize === 0xffffffff || uncompressedSize === 0xffffffff) throw new Error("Encrypted or unsupported DOCX entries are not allowed.");
-    if (uncompressedSize > MAX_DOCX_UNCOMPRESSED_BYTES - totalUncompressed) throw new Error("DOCX archive expands beyond the processing limit.");
-    if (compressedSize > 0 && uncompressedSize / compressedSize > MAX_DOCX_RATIO) throw new Error("DOCX archive compression ratio is unsafe.");
+    const localHeaderOffset = view.getUint32(offset + 42, true);
+
+    if ((flags & 1) !== 0 || compressedSize === 0xffffffff || uncompressedSize === 0xffffffff) {
+      SecurityTelemetry.record("docx_archive_rejected", { reason: "encrypted_or_zip64_entry", index });
+      throw new Error("Encrypted or unsupported DOCX entries are not allowed.");
+    }
+    if (uncompressedSize > MAX_DOCX_UNCOMPRESSED_BYTES - totalUncompressed) {
+      SecurityTelemetry.record("docx_archive_rejected", { reason: "uncompressed_limit_exceeded", uncompressedSize });
+      throw new Error("DOCX archive expands beyond the processing limit.");
+    }
+    if (compressedSize > 0 && uncompressedSize / compressedSize > MAX_DOCX_RATIO) {
+      SecurityTelemetry.record("docx_archive_rejected", { reason: "compression_ratio_unsafe", compressedSize, uncompressedSize });
+      throw new Error("DOCX archive compression ratio is unsafe.");
+    }
+
+    // Validate local file header when present and bounded to detect zip-bomb header spoofing
+    if (localHeaderOffset + 30 <= bytes.byteLength && view.getUint32(localHeaderOffset, true) === 0x04034b50) {
+      const localCompressed = view.getUint32(localHeaderOffset + 18, true);
+      const localUncompressed = view.getUint32(localHeaderOffset + 22, true);
+      if (localUncompressed > MAX_DOCX_UNCOMPRESSED_BYTES) {
+        SecurityTelemetry.record("docx_archive_rejected", { reason: "local_header_uncompressed_limit", index });
+        throw new Error("DOCX archive expands beyond the processing limit.");
+      }
+      if (localCompressed > 0 && localUncompressed / localCompressed > MAX_DOCX_RATIO) {
+        SecurityTelemetry.record("docx_archive_rejected", { reason: "local_header_ratio_unsafe", index });
+        throw new Error("DOCX archive compression ratio is unsafe.");
+      }
+    }
+
     totalUncompressed += uncompressedSize;
     offset += 46 + nameLength + extraLength + commentLength;
   }
@@ -118,6 +162,30 @@ export function layoutDocxPages(text: string, ctx: CanvasRenderingContext2D): st
   return lines;
 }
 
+const KNOWN_SAFE_DOCX_ERRORS = new Set([
+  "DOCX archive is invalid.",
+  "DOCX archive limits are unsupported.",
+  "DOCX archive is truncated.",
+  "Encrypted or unsupported DOCX entries are not allowed.",
+  "DOCX archive expands beyond the processing limit.",
+  "DOCX archive compression ratio is unsafe.",
+  "Canvas rendering is unavailable.",
+]);
+
+/**
+ * Normalize any archive/parser exception into a controlled failure Error so
+ * corrupt or malicious DOCX files never surface unhandled rejections or raw
+ * parser internals.
+ */
+function toControlledDocxError(error: unknown): Error {
+  if (error instanceof Error && KNOWN_SAFE_DOCX_ERRORS.has(error.message)) {
+    return error;
+  }
+  const safe = extractSafeError(error);
+  SecurityTelemetry.record("docx_parse_exception", { errorName: safe.name });
+  return new Error("The DOCX document is corrupt or could not be safely parsed.");
+}
+
 /**
  * Extract the document's raw text, bounded by the same archive limits and
  * character cap the renderer uses. Shared so a page count and a render can
@@ -129,19 +197,23 @@ export function layoutDocxPages(text: string, ctx: CanvasRenderingContext2D): st
  * cap had. The fact has to travel to the UI so it can say what was NOT read.
  */
 export async function extractDocxText(bytes: ArrayBuffer): Promise<{ text: string; truncated: boolean }> {
-  assertSafeDocxArchive(bytes);
-  const input = { buffer: new Uint8Array(bytes.slice(0)) };
-  const { value } = await mammoth.extractRawText(
-    input as unknown as Parameters<typeof mammoth.extractRawText>[0]
-  );
-  const raw = value ?? "";
-  const text = raw.slice(0, MAX_DOCX_CHARS);
-  // "Was anything dropped?" rather than "is it over the cap?": mammoth appends
-  // its own paragraph separators to what it hands back, so a document exactly
-  // at the limit can be a byte or two over it with nothing lost. Claiming a cut
-  // that did not happen is the false alarm this whole disclosure exists to
-  // avoid.
-  return { text, truncated: text.length < raw.length };
+  try {
+    assertSafeDocxArchive(bytes);
+    const input = { buffer: new Uint8Array(bytes.slice(0)) };
+    const result = await mammoth.extractRawText(
+      input as unknown as Parameters<typeof mammoth.extractRawText>[0]
+    );
+    const raw = typeof result?.value === "string" ? result.value : "";
+    const text = raw.slice(0, MAX_DOCX_CHARS);
+    // "Was anything dropped?" rather than "is it over the cap?": mammoth appends
+    // its own paragraph separators to what it hands back, so a document exactly
+    // at the limit can be a byte or two over it with nothing lost. Claiming a cut
+    // that did not happen is the false alarm this whole disclosure exists to
+    // avoid.
+    return { text, truncated: text.length < raw.length };
+  } catch (error) {
+    throw toControlledDocxError(error);
+  }
 }
 
 /** A throwaway measuring context for text width; the DOCX layout needs one. */
@@ -168,60 +240,68 @@ function measuringContext(): CanvasRenderingContext2D {
  * the rendered set come from one layout implementation.
  */
 export async function countDocxPages(bytes: ArrayBuffer): Promise<number> {
-  const { text } = await extractDocxText(bytes);
-  const pages = layoutDocxPages(text, measuringContext());
-  return pages.length >= 1 ? pages.length : 1;
+  try {
+    const { text } = await extractDocxText(bytes);
+    const pages = layoutDocxPages(text, measuringContext());
+    return pages.length >= 1 ? pages.length : 1;
+  } catch (error) {
+    throw toControlledDocxError(error);
+  }
 }
 
 export async function loadDocxPages(bytes: ArrayBuffer): Promise<{ pages: DocxPage[]; truncated: boolean }> {
-  const { text, truncated } = await extractDocxText(bytes);
-  const ctx = measuringContext();
-  const pages = layoutDocxPages(text, ctx);
-  const fontPx = Number.parseFloat(FONT);
-  return {
-    pages: pages.map((pageLines, index) => {
-    const pageCanvas = document.createElement("canvas");
-    pageCanvas.width = PAGE_WIDTH_PX;
-    pageCanvas.height = PAGE_HEIGHT_PX;
-    const pctx = pageCanvas.getContext("2d", { willReadFrequently: true });
-    if (!pctx) throw new Error("Canvas rendering is unavailable.");
-    pctx.fillStyle = "#ffffff";
-    pctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
-    pctx.font = FONT;
-    pctx.fillStyle = "#111111";
-    pctx.textBaseline = "top";
-    let y = MARGIN_PX;
-    const tokens: OcrToken[] = [];
-    for (const line of pageLines) {
-      if (line !== "") {
-        pctx.fillText(line, MARGIN_PX, y);
-        // Measured from the context that just drew the line, so the box is the
-        // text's real extent. Clamped to the page because a line that overflowed
-        // the layout would otherwise produce a rect the painter cannot cover.
-        const measured = pctx.measureText(line).width;
-        const width = Math.min(measured, PAGE_WIDTH_PX - MARGIN_PX);
-        if (width > 0) {
-          tokens.push({
-            text: line,
-            confidence: 100,
-            lineIndex: tokens.length,
-            bbox: { x: MARGIN_PX, y, width, height: fontPx },
-          });
-        }
-      }
-      y += LINE_HEIGHT;
-    }
+  try {
+    const { text, truncated } = await extractDocxText(bytes);
+    const ctx = measuringContext();
+    const pages = layoutDocxPages(text, ctx);
+    const fontPx = Number.parseFloat(FONT);
     return {
-      index,
-      canvas: pageCanvas,
-      widthPx: pageCanvas.width,
-      heightPx: pageCanvas.height,
-      widthPt: 612,
-      heightPt: 792,
-      hasTextLayer: tokens.length > 0,
-      tokens,
+      pages: pages.map((pageLines, index) => {
+        const pageCanvas = document.createElement("canvas");
+        pageCanvas.width = PAGE_WIDTH_PX;
+        pageCanvas.height = PAGE_HEIGHT_PX;
+        const pctx = pageCanvas.getContext("2d", { willReadFrequently: true });
+        if (!pctx) throw new Error("Canvas rendering is unavailable.");
+        pctx.fillStyle = "#ffffff";
+        pctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+        pctx.font = FONT;
+        pctx.fillStyle = "#111111";
+        pctx.textBaseline = "top";
+        let y = MARGIN_PX;
+        const tokens: OcrToken[] = [];
+        for (const line of pageLines) {
+          if (line !== "") {
+            pctx.fillText(line, MARGIN_PX, y);
+            // Measured from the context that just drew the line, so the box is the
+            // text's real extent. Clamped to the page because a line that overflowed
+            // the layout would otherwise produce a rect the painter cannot cover.
+            const measured = pctx.measureText(line).width;
+            const width = Math.min(measured, PAGE_WIDTH_PX - MARGIN_PX);
+            if (width > 0) {
+              tokens.push({
+                text: line,
+                confidence: 100,
+                lineIndex: tokens.length,
+                bbox: { x: MARGIN_PX, y, width, height: fontPx },
+              });
+            }
+          }
+          y += LINE_HEIGHT;
+        }
+        return {
+          index,
+          canvas: pageCanvas,
+          widthPx: pageCanvas.width,
+          heightPx: pageCanvas.height,
+          widthPt: 612,
+          heightPt: 792,
+          hasTextLayer: tokens.length > 0,
+          tokens,
+        };
+      }),
+      truncated,
     };
-  }),
-    truncated,
-  };
+  } catch (error) {
+    throw toControlledDocxError(error);
+  }
 }

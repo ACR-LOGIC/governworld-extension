@@ -84,6 +84,12 @@ export interface PolicyPackage {
   expires_at?: string;
   policy_hash: string; // SHA-256 hex string
   rules: PolicyRule[];
+  /** Optional cryptographic signature (Base64 or hex) over canonical policy payload (Item 14). */
+  policy_signature?: string;
+  /** Cryptographic signature algorithm used (`Ed25519` preferred). */
+  signature_algorithm?: "Ed25519" | "ECDSA-P256";
+  /** Optional signer public key JWK when not using a pinned key. */
+  public_key_jwk?: JsonWebKey;
 }
 
 export interface BootstrapResponse {
@@ -138,4 +144,5 @@ export interface ApiErrorDetails {
   user_message: string;
   status_code: number;
   request_id?: string;
+  oauth_error?: string;
 }
