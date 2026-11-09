@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 import type { Finding } from "../shared/types.js";
+import { placeholderLabelFor } from "./detect.js";
 import { getAccessibleShadowRoot } from "./normalization/shadow.js";
 
 /**
@@ -361,19 +362,34 @@ export function maskCombinedRange(
   combined: string,
   start: number,
   end: number,
-  findings: Finding[]
+  findings: Finding[],
+  placeholdersEnabled = false,
 ): string {
   const lo = Math.max(0, Math.min(start, combined.length));
   const hi = Math.max(lo, Math.min(end, combined.length));
-  const chars = Array.from(combined.slice(lo, hi));
-  for (const f of findings) {
-    if (!f.selected) continue;
-    const fs = Math.max(lo, f.startOffset);
-    const fe = Math.min(hi, f.endOffset);
-    if (fe <= fs) continue;
-    for (let i = fs - lo; i < fe - lo; i++) chars[i] = MASK_CHAR;
+  if (!placeholdersEnabled) {
+    const chars = Array.from(combined.slice(lo, hi));
+    for (const f of findings) {
+      if (!f.selected) continue;
+      const fs = Math.max(lo, f.startOffset);
+      const fe = Math.min(hi, f.endOffset);
+      if (fe <= fs) continue;
+      for (let i = fs - lo; i < fe - lo; i++) chars[i] = MASK_CHAR;
+    }
+    return chars.join("");
   }
-  return chars.join("");
+  let text = combined.slice(lo, hi);
+  const sorted = [...findings]
+    .filter((f) => f.selected && f.startOffset < hi && f.endOffset > lo)
+    .sort((a, b) => b.startOffset - a.startOffset);
+  for (const f of sorted) {
+    const fs = Math.max(lo, f.startOffset) - lo;
+    const fe = Math.min(hi, f.endOffset) - lo;
+    if (fe <= fs) continue;
+    const repl = `[${placeholderLabelFor(f.category)}]`;
+    text = text.slice(0, fs) + repl + text.slice(fe);
+  }
+  return text;
 }
 
 /** Structural subset of DOM Range used by selection mapping. DOM-independent for testability. */

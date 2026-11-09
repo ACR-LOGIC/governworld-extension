@@ -124,7 +124,13 @@ export function buildMediaQueue(
   rootDoc: Document = document,
   inventory: PageInventory,
   maxVisualQueue = 8,
-  pageUrl = rootDoc.location?.href ?? ""
+  pageUrl = rootDoc.location?.href ?? "",
+  preCollectedMedia?: {
+    images?: HTMLImageElement[];
+    canvases?: HTMLCanvasElement[];
+    videos?: HTMLVideoElement[];
+    pdfEmbeds?: Element[];
+  }
 ): MediaQueueResult {
   const allVisual: VisualCaptureRequest[] = [];
   const pdfQueue: PdfExtractRequest[] = [];
@@ -141,13 +147,7 @@ export function buildMediaQueue(
     });
   }
 
-  // ── Walk the DOM ───────────────────────────────────────────────────────
-  const walker = rootDoc.createTreeWalker(rootDoc, NodeFilter.SHOW_ELEMENT);
-  let node: Node | null = walker.currentNode;
-
-  while (node) {
-    if (node instanceof Element) {
-      const el = node;
+  const processElement = (el: Element) => {
       const tag = el.tagName.toLowerCase();
       const visibility = computeElementVisibility(el);
       const isVisible =
@@ -156,8 +156,8 @@ export function buildMediaQueue(
       // Only queue media that is at least partially visible — hidden UI state
       // is already extracted (or deliberately excluded) by the DOM text layer.
       if (!isVisible) {
-        node = walker.nextNode();
-        continue;
+        return;
+
       }
 
       const rect = el.getBoundingClientRect();
@@ -287,8 +287,27 @@ export function buildMediaQueue(
           }
         }
       }
+  };
+
+  if (preCollectedMedia) {
+    const mediaElements: Element[] = [
+      ...(preCollectedMedia.images ?? []),
+      ...(preCollectedMedia.canvases ?? []),
+      ...(preCollectedMedia.videos ?? []),
+      ...(preCollectedMedia.pdfEmbeds ?? []),
+    ];
+    for (const el of mediaElements) {
+      processElement(el);
     }
-    node = walker.nextNode();
+  } else if (typeof rootDoc.createTreeWalker === "function") {
+    const walker = rootDoc.createTreeWalker(rootDoc, NodeFilter.SHOW_ELEMENT);
+    let node: Node | null = walker.currentNode;
+    while (node) {
+      if (node instanceof Element) {
+        processElement(node);
+      }
+      node = walker.nextNode();
+    }
   }
 
   // ── Viewport-first sort + area prioritization + per-pass cap ───────────
@@ -358,10 +377,13 @@ function collectAllVideos(root: Document | Element | ShadowRoot, out: HTMLVideoE
  * element in the document. Returns deterministic text (confidence 1.0) that
  * can be fed directly into detect.ts without OCR.
  */
-export function extractVideoCaptions(rootDoc: Document = document): VideoCaptionSegment[] {
+export function extractVideoCaptions(
+  rootDoc: Document = document,
+  preCollectedVideos?: HTMLVideoElement[]
+): VideoCaptionSegment[] {
   const results: VideoCaptionSegment[] = [];
-  const videos: HTMLVideoElement[] = [];
-  collectAllVideos(rootDoc, videos);
+  const videos: HTMLVideoElement[] = preCollectedVideos ?? [];
+  if (!preCollectedVideos) collectAllVideos(rootDoc, videos);
 
   for (const video of videos) {
     const visibility = computeElementVisibility(video);

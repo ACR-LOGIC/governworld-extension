@@ -10,10 +10,13 @@ export interface TableStructure {
   cellSegmentIds: Map<string, { row: number; col: number; role: "header" | "cell" | "row-header" }>;
 }
 
-export function extractTableStructures(root: Document | Element | ShadowRoot): TableStructure[] {
+export function extractTableStructures(
+  root: Document | Element | ShadowRoot,
+  preCollectedTables?: HTMLTableElement[]
+): TableStructure[] {
   const tables: TableStructure[] = [];
   const doc = root instanceof Document ? root : root.ownerDocument ?? root;
-  const tableElements = doc.querySelectorAll("table");
+  const tableElements = preCollectedTables ?? (typeof doc.querySelectorAll === "function" ? doc.querySelectorAll("table") : []);
 
   for (let t = 0; t < tableElements.length; t++) {
     const table = tableElements[t];

@@ -86,4 +86,17 @@ describe("extractSvgText", () => {
     expect(segments.length).toBe(1);
     expect(segments[0].text).toBe("iframe-svg@example.com");
   });
+
+  it("uses preCollectedSvgs directly without walking the document", () => {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.getBoundingClientRect = () => ({ x: 0, y: 0, width: 200, height: 100, top: 0, left: 0, right: 200, bottom: 100, toJSON: () => {} }) as any;
+    const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    text.textContent = "precollected-svg@example.com";
+    text.getBoundingClientRect = () => ({ x: 10, y: 10, width: 150, height: 20, top: 10, left: 10, right: 160, bottom: 30, toJSON: () => {} }) as any;
+    svg.appendChild(text);
+
+    const segments = extractSvgText(document, [svg as unknown as SVGElement]);
+    expect(segments.length).toBe(1);
+    expect(segments[0].text).toBe("precollected-svg@example.com");
+  });
 });

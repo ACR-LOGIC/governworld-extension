@@ -58,6 +58,7 @@ export function traverseIframes(
     maxVisibleChars?: number;
     maxNodeChars?: number;
     nodeIds: Map<string, Node>;
+    preCollectedFrames?: HTMLIFrameElement[];
   }
 ): IframeTraversalResult {
   const frameDocuments: CanonicalDocument[] = [];
@@ -73,7 +74,11 @@ export function traverseIframes(
     if (depth > MAX_FRAME_DEPTH) return;
 
     const frames: HTMLIFrameElement[] = [];
-    collectFrames(container, frames, depth);
+    if (depth === 0 && options.preCollectedFrames) {
+      frames.push(...options.preCollectedFrames);
+    } else {
+      collectFrames(container, frames, depth);
+    }
 
     for (const el of frames) {
       framesSeen++;

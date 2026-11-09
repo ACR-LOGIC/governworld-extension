@@ -11,6 +11,7 @@
 import { GovernWorldApiClient } from "./client.js";
 import type { PolicyPackage, PolicyRule } from "./types.js";
 import { PolicyTelemetry, SecurityTelemetry } from "../shared/telemetry.js";
+import { TRUSTED_POLICY_PUBLIC_KEY_JWK } from "./config.js";
 
 const STORAGE_KEY_CACHED_POLICY = "gw_cached_policy";
 
@@ -122,7 +123,11 @@ export async function signPolicyPackageEd25519(
 }
 
 /**
- * Verifies an Ed25519 (or ECDSA-P256 fallback) signature on a policy package.
+ * Verifies an Ed25519 signature on a policy package.
+ * Enforces Ed25519 exclusively (raw 64-byte signature) to avoid IEEE P1363 vs.
+ * ASN.1 DER format mismatches inherent to ECDSA in WebCrypto.
+ * Always verifies against a pinned/trusted public key; untrusted self-supplied
+ * `pkg.public_key_jwk` is never accepted in production.
  */
 export async function verifyPolicySignatureEd25519(
   pkg: PolicyPackage,
@@ -132,41 +137,26 @@ export async function verifyPolicySignatureEd25519(
     return false;
   }
   const sigBytes = base64ToBytes(pkg.policy_signature);
-  if (!sigBytes || sigBytes.byteLength === 0) return false;
+  if (!sigBytes || sigBytes.byteLength !== 64) return false;
+  if (pkg.signature_algorithm && pkg.signature_algorithm !== "Ed25519") return false;
 
-  const keySource = trustedKey ?? pkg.public_key_jwk;
+  const keySource = trustedKey ?? TRUSTED_POLICY_PUBLIC_KEY_JWK;
   if (!keySource) return false;
+  if (!(keySource instanceof CryptoKey)) {
+    if (keySource.kty !== "OKP" || (keySource.crv && keySource.crv !== "Ed25519")) {
+      return false;
+    }
+  }
 
   const canonical = canonicalizePolicyPackageForSigning(pkg);
   const data = new TextEncoder().encode(canonical);
 
   try {
-    let publicKey: CryptoKey;
-    const isEcdsa =
-      pkg.signature_algorithm === "ECDSA-P256" ||
-      (!(keySource instanceof CryptoKey) && (keySource as JsonWebKey).kty === "EC");
-
-    if (keySource instanceof CryptoKey) {
-      publicKey = keySource;
-    } else if (isEcdsa) {
-      publicKey = await crypto.subtle.importKey(
-        "jwk",
-        keySource,
-        { name: "ECDSA", namedCurve: "P-256" },
-        false,
-        ["verify"],
-      );
-    } else {
-      publicKey = await crypto.subtle.importKey(
-        "jwk",
-        keySource,
-        { name: "Ed25519" },
-        false,
-        ["verify"],
-      );
-    }
-
-    const verifyAlg = isEcdsa ? { name: "ECDSA", hash: "SHA-256" } : { name: "Ed25519" };
+    const publicKey: CryptoKey =
+      keySource instanceof CryptoKey
+        ? keySource
+        : await crypto.subtle.importKey("jwk", keySource, { name: "Ed25519" }, false, ["verify"]);
+    const verifyAlg = { name: "Ed25519" };
     return await crypto.subtle.verify(
       verifyAlg,
       publicKey,

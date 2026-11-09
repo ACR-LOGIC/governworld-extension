@@ -164,6 +164,14 @@ describe("maskCombinedRange", () => {
     const out = maskCombinedRange(combined, 0, 2, [f]);
     expect(out).toBe("A ");
   });
+
+  it("replaces with category placeholder when placeholdersEnabled is true", () => {
+    const combined = "Contact: jane@example.com phone: 555-123-4567";
+    const f1 = finding({ id: "f1", category: "email", startOffset: 9, endOffset: 25 });
+    const f2 = finding({ id: "f2", category: "phone", startOffset: 33, endOffset: 45 });
+    const out = maskCombinedRange(combined, 0, combined.length, [f1, f2], true);
+    expect(out).toBe("Contact: [EMAIL] phone: [PHONE]");
+  });
 });
 
 describe("isExcludedElement (static rules)", () => {
