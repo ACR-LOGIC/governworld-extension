@@ -734,8 +734,14 @@ function renderState(state: PopupState): void {
   const summaryChars = document.getElementById("summary-chars") as HTMLElement | null;
 
   if (badge) {
-    badge.textContent = state.mode === "cloud" ? t(currentLang, "cloud_processing") : t(currentLang, "local_processing");
-    badge.classList.toggle("badge--cloud", state.mode === "cloud");
+    if (state.operatingMode === "MANAGE") {
+      badge.textContent = "MANAGE";
+      badge.classList.add("badge--managed");
+      badge.classList.remove("badge--cloud");
+    } else {
+      badge.textContent = "LOCAL";
+      badge.classList.remove("badge--managed", "badge--cloud");
+    }
   }
   if (scanBtn) {
     scanBtn.disabled = state.scanning;
@@ -2984,14 +2990,31 @@ export async function initPopup(): Promise<void> {
 
   async function checkOfficeManagerPairingStatus() {
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      const stored = (await chrome.storage.local.get(["gw_coordinator_policy", "gw_coordinator_url"])) as {
+      const stored = (await chrome.storage.local.get([
+        "gw_coordinator_policy",
+        "gw_coordinator_url",
+        "gw_applied_managed_policy",
+        "gw_management_enrollment",
+      ])) as {
         gw_coordinator_policy?: { managed?: boolean; organizationName?: string; policyVersion?: number };
         gw_coordinator_url?: string;
+        gw_applied_managed_policy?: { organization_name?: string; organization_id?: string; policy_version?: number };
+        gw_management_enrollment?: { organization_name?: string; organization_id?: string };
       };
-      const policy = stored.gw_coordinator_policy;
-      if (policy && policy.managed) {
+      const managedPolicy = stored.gw_applied_managed_policy;
+      const enrollment = stored.gw_management_enrollment;
+      const coordPolicy = stored.gw_coordinator_policy;
+
+      if (managedPolicy || (enrollment && enrollment.organization_id) || (coordPolicy && coordPolicy.managed)) {
+        const orgName =
+          managedPolicy?.organization_name ||
+          enrollment?.organization_name ||
+          enrollment?.organization_id ||
+          coordPolicy?.organizationName ||
+          "Organization";
+        const ver = managedPolicy?.policy_version || coordPolicy?.policyVersion || 1;
         if (officeManagerStatus) {
-          officeManagerStatus.textContent = `Managed by Office Manager: ${policy.organizationName || "Protected Office"} (v${policy.policyVersion || 1})`;
+          officeManagerStatus.textContent = `Operating Mode: MANAGE — Enforced by ${orgName} (v${ver})`;
           officeManagerStatus.style.color = "var(--gw-emerald, #10b981)";
         }
         if (officePairingInput) officePairingInput.style.display = "none";
@@ -3001,7 +3024,7 @@ export async function initPopup(): Promise<void> {
       }
     }
     if (officeManagerStatus) {
-      officeManagerStatus.textContent = "Status: Local unmanaged";
+      officeManagerStatus.textContent = "Operating Mode: LOCAL (Standalone unmanaged protection)";
       officeManagerStatus.style.color = "inherit";
     }
     if (officePairingInput) officePairingInput.style.display = "block";
@@ -3075,7 +3098,12 @@ export async function initPopup(): Promise<void> {
 
   officeUnpairBtn?.addEventListener("click", async () => {
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      await chrome.storage.local.remove(["gw_coordinator_policy", "gw_coordinator_url"]);
+      await chrome.storage.local.remove([
+        "gw_coordinator_policy",
+        "gw_coordinator_url",
+        "gw_applied_managed_policy",
+        "gw_management_enrollment",
+      ]);
       await checkOfficeManagerPairingStatus();
       await refreshProtectionStatus();
     }

@@ -16,7 +16,7 @@
  */
 export const DEFAULT_PROD_API_URL = "https://api.governworld.acrlogic.com";
 export const DEFAULT_DEV_API_URL = "http://127.0.0.1:8000";
-export const CURRENT_EXTENSION_VERSION = "0.2.0";
+export const CURRENT_EXTENSION_VERSION = "0.3.0";
 
 /**
  * Pinned production Ed25519 public key JWK used to verify policy package signatures.

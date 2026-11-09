@@ -474,6 +474,7 @@ function normalizePopupState(value: unknown): PopupState | null {
       : undefined;
   return {
     mode: value.mode,
+    ...(value.operatingMode === "MANAGE" || value.operatingMode === "LOCAL" ? { operatingMode: value.operatingMode } : {}),
     scanning: value.scanning,
     findings,
     scanned: value.scanned,

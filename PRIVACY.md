@@ -200,7 +200,28 @@ This includes, where applicable, raw webpage text, documents, user prompts, chat
 
 This statement does not prohibit collection that is independently initiated by you, required for a separately enabled GovernWorld service, necessary for security or legal compliance, or expressly disclosed by the applicable feature.
 
-## 18. Paid Services and Organizational Deployments
+## 18. Paid Services and Organizational Deployments (MANAGE Mode)
+
+GovernWorld may offer paid services, organizational deployments, enterprise capabilities, APIs, runtime governance, policy enforcement, monitoring, audit, integrations, or other connected services.
+
+### Enterprise Management Coordination (MANAGE Mode)
+
+When the Extension operates in **MANAGE mode** (enrolled with an organization's GovernWorld Office Manager infrastructure):
+
+- **Purpose of Management Communication:** The Extension periodically checks for and retrieves administrator-approved security policies (mandated detection categories, locked protection modes, and restricted domain lists).
+- **Cryptographic Validation:** All received policies are signed with an Ed25519 private key by the organization administrator and validated locally against a pinned public key before application.
+- **What is Sent to Management Infrastructure:**
+  - Organization ID, employee ID, and device ID (for targeting validation).
+  - Minimal policy application acknowledgments: policy ID, applied policy version number, Unix timestamp, and application status (APPLIED, REJECTED, ERROR).
+- **What is NEVER Sent to Management Infrastructure or Supabase:**
+  - Web browsing history, URLs visited (except for local matching against administrator blocklists), or tab titles.
+  - Page text, DOM structures, or web form inputs.
+  - Clipboard contents (incoming or outgoing).
+  - Uploaded documents (PDF, DOCX, images) or generated redaction files.
+  - Extracted OCR text or bounding box coordinates.
+  - Detected PII, PHI, financial records, credentials, or custom pattern matches.
+  - Prompts, messages, or conversations with external AI services.
+- **Offline Enforcement:** If communication with the management infrastructure is interrupted, the Extension continues to enforce the last valid administrator policy locally without interruption or fail-open vulnerability.
 
 GovernWorld may offer paid services, organizational deployments, enterprise capabilities, APIs, runtime governance, policy enforcement, monitoring, audit, integrations, or other connected services.
 

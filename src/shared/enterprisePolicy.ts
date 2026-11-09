@@ -11,7 +11,9 @@ import {
 } from "./settings.js";
 
 /**
- * Enterprise (administrator) policy, delivered via `chrome.storage.managed`.
+ * Enterprise (administrator) policy, delivered via `chrome.storage.managed`
+ * or via cryptographically signed policy payloads from the GovernWorld
+ * management coordination infrastructure.
  *
  * Consumer/free users have no managed policy and control everything
  * themselves. When a managed policy exists, the administrator controls the
@@ -129,6 +131,7 @@ export function parseEnterprisePolicy(raw: unknown): EnterprisePolicy {
 }
 
 export const STORAGE_KEY_COORDINATOR_POLICY = "gw_coordinator_policy";
+export const STORAGE_KEY_MANAGED_POLICY = "gw_applied_managed_policy";
 
 export async function loadEnterprisePolicy(): Promise<EnterprisePolicy> {
   try {
@@ -144,7 +147,42 @@ export async function loadEnterprisePolicy(): Promise<EnterprisePolicy> {
   }
 
   try {
-    // 2. Check local Office Manager coordinator policy in local storage
+    // 2. Check signed administrator policy received from management infrastructure
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      const stored = await chrome.storage.local.get(STORAGE_KEY_MANAGED_POLICY);
+      const applied = stored[STORAGE_KEY_MANAGED_POLICY];
+      if (isRecord(applied) && isRecord(applied.settings)) {
+        const s = applied.settings;
+        return {
+          managed: true,
+          valid: true,
+          protectionMode: isProtectionMode(s.protectionMode) ? s.protectionMode : "always-on",
+          userCanDisable: s.userCanDisable === true,
+          enforcedCategories: Array.isArray(s.enforcedCategories)
+            ? (s.enforcedCategories as unknown[]).filter(isCategory)
+            : [...ALL_CATEGORIES],
+          networkDestinationPolicy:
+            s.networkDestinationPolicy === "managed_intranet" || s.networkDestinationPolicy === "disabled"
+              ? s.networkDestinationPolicy
+              : "public_only",
+          networkAllowlist: Array.isArray(s.networkAllowlist) ? (s.networkAllowlist as string[]) : [],
+          coordinatorOrigin: typeof applied.organization_id === "string" ? applied.organization_id : undefined,
+          organizationName:
+            typeof applied.organization_name === "string"
+              ? applied.organization_name
+              : typeof applied.organization_id === "string"
+                ? applied.organization_id
+                : undefined,
+          policyVersion: typeof applied.policy_version === "number" ? applied.policy_version : undefined,
+        };
+      }
+    }
+  } catch {
+    // Local storage unreadable
+  }
+
+  try {
+    // 3. Check local Office Manager coordinator policy in local storage
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
       const stored = await chrome.storage.local.get(STORAGE_KEY_COORDINATOR_POLICY);
       const coordPolicy = stored[STORAGE_KEY_COORDINATOR_POLICY];

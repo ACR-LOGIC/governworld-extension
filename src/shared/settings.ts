@@ -522,10 +522,21 @@ export async function loadSettings(): Promise<Settings> {
 }
 
 export async function saveSettings(settings: Settings): Promise<void> {
+  let enforced = settings;
+  try {
+    const ep = await import("./enterprisePolicy.js");
+    const policy = await ep.loadEnterprisePolicy();
+    if (policy && policy.managed) {
+      const po = await import("./policyOwnership.js");
+      enforced = po.applySettingsWithPolicy(settings, {}, policy).settings;
+    }
+  } catch {
+    // If enterprise policy cannot be loaded, fail-safe persists settings as sanitized
+  }
   const sanitized = {
-    ...settings,
+    ...enforced,
     // Never persist anything sensitive: only preferences and config.
-    enabledCategories: settings.enabledCategories.filter(isCategory),
+    enabledCategories: enforced.enabledCategories.filter(isCategory),
   };
   if (typeof chrome !== "undefined" && chrome?.storage?.local) {
     await chrome.storage.local.set({ [SETTINGS_KEY]: sanitized });

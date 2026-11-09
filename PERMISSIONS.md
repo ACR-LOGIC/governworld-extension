@@ -39,7 +39,11 @@ uses it, and lists permissions the extension deliberately does **not** request.
 | `cookies`      | No cookies are read or written. |
 | `notifications`| Requested only as an optional permission (see above) — never required at install. |
 
-## Data handling
+## Data handling in LOCAL vs. MANAGE Modes
+
+- **Zero Sensitive Data Transmission:** In both LOCAL and MANAGE modes, no raw scanned text, document contents, page snapshots, clipboard data, OCR text, or PHI/PII are ever transmitted over the network.
+- **MANAGE Mode Policy Synchronization:** In MANAGE mode, network communication is strictly limited to extension-initiated policy retrieval from the management coordination infrastructure. Payloads consist exclusively of signed policy JSON envelopes, and acknowledgments contain only minimal status metadata (`policy_id`, `policy_version`, applied timestamp, status code).
+
 
 - No raw scanned text or page snapshots are persisted to storage, logs, telemetry, analytics, or error reporting.
 - Scan session state lives in `chrome.storage.session` (cleared on browser restart) and holds findings metadata with masked previews only.

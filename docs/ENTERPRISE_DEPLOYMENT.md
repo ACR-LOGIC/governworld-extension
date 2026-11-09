@@ -198,3 +198,29 @@ GovernWorld allows enterprises to restrict page-derived network fetches (for ima
   ]
 }
 ```
+
+---
+
+## 5. GovernWorld Office Manager Dynamic Policy Synchronization (MANAGE Mode)
+
+In addition to OS-level `chrome.storage.managed` (GPO / MDM), GovernWorld Extension v0.3.0 supports dynamic policy orchestration via the **GovernWorld Office Manager**:
+
+```
++-----------------------+         +----------------------------+         +---------------------------+
+| GovernWorld           |  Push   | Supabase Coordination      |  Poll   | GovernWorld Browser       |
+| Office Manager Admin  | ------> | Infrastructure (Encrypted) | <------ | Extension (MANAGE Mode)   |
+| (Signs Policy Ed25519)|         | (Zero sensitive data stored| (Fetch) | (Validates Sig & Enforces)|
++-----------------------+         +----------------------------+         +---------------------------+
+```
+
+### A. Dynamic Security Architecture
+1. **Ed25519 Cryptographic Verification:** Every policy envelope is signed by the administrator using an Ed25519 private key. The extension verifies the signature against a pinned trusted public key before applying any settings.
+2. **Deterministic Content Hashing:** The policy content is canonicalized (sorted keys, normalized types) and hashed with SHA-256 to ensure byte-level integrity.
+3. **Anti-Downgrade & Monotonic Versions:** The extension enforces strictly monotonic `policy_version` sequencing. Policies with version numbers less than or equal to the currently applied version are rejected with `VERSION_DOWNGRADE`.
+4. **Anti-Replay Protection:** Envelopes require a fresh nonce and timestamp within an allowable validation window (+/- 5 minutes).
+5. **Targeting Validation:** Each envelope specifies `organization_id`, `employee_id`, and `device_id`. Policies targeted to different entities are rejected with `TARGET_MISMATCH`.
+6. **Setting Ownership Model:**
+   - **Administrator-Controlled:** Mandated categories and locked protection modes cannot be removed or weakened by employees.
+   - **User-Controlled:** End users retain control over cosmetic appearance, font scaling, sound announcements, and non-conflicting custom rules.
+   - **System-Controlled:** Tamper-resistant ECDSA audit trails and zero-egress sandboxing boundaries remain enforced at all times.
+7. **Offline Continuity:** The last verified policy is persisted in local storage. In the event of network disruption, offline travel, or Supabase unavailability, the extension continues enforcing the policy. Protections are never suspended due to lack of network connectivity.
