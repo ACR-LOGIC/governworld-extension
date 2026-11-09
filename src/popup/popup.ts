@@ -2994,7 +2994,10 @@ export async function initPopup(): Promise<void> {
 
   async function checkOfficeManagerPairingStatus() {
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      const stored = await chrome.storage.local.get(["gw_coordinator_policy", "gw_coordinator_url"]);
+      const stored = (await chrome.storage.local.get(["gw_coordinator_policy", "gw_coordinator_url"])) as {
+        gw_coordinator_policy?: { managed?: boolean; organizationName?: string; policyVersion?: number };
+        gw_coordinator_url?: string;
+      };
       const policy = stored.gw_coordinator_policy;
       if (policy && policy.managed) {
         if (officeManagerStatus) {
