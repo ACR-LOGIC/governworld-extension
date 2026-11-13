@@ -13,6 +13,7 @@ import type { ImageCandidate } from "./messages";
 import type { AccountView } from "./account";
 import type { NotificationPreferences } from "./settings.js";
 import type { AuditEvent } from "./audit.js";
+import type { ParsedName } from "../content/detectors/nameParser.js";
 
 export type FindingCategory =
   | "email"
@@ -76,6 +77,8 @@ export interface Finding {
   attribute?: string;
   /** Specific PHI entity classification (e.g. "mrn", "diagnosis", "medication", "patient_name", "dob") */
   entityType?: string;
+  /** Structured name components for possible_name findings (additive; never the raw value). */
+  parsedName?: ParsedName;
   selected: boolean;
 }
 
@@ -249,7 +252,19 @@ export type PopupMessage =
       tenantName?: string;
       apiUrl?: string;
       capabilities?: string[];
-    };
+    }
+  | { type: "POPUP_MANAGEMENT_GET_STATUS"; requestId: string }
+  | {
+      type: "POPUP_MANAGEMENT_ENROLL";
+      requestId: string;
+      organizationId: string;
+      organizationName?: string;
+      employeeId: string;
+      employeeEmail?: string;
+      coordinatorUrl?: string;
+    }
+  | { type: "POPUP_MANAGEMENT_UNENROLL"; requestId: string }
+  | { type: "POPUP_SYNC_MANAGED_POLICY"; requestId: string; force?: boolean };
 
 export interface ScanSettingsMessage {
   enabledCategories: FindingCategory[];
@@ -296,6 +311,7 @@ export type DocRedactionStage = "detected" | "redacted" | "verified";
 
 export interface PopupState {
   mode: ScanMode;
+  operatingMode?: "LOCAL" | "MANAGE";
   scanning: boolean;
   findings: Finding[];
   scanned: boolean;
@@ -509,6 +525,21 @@ export type PopupFromWorker =
       success: boolean;
       submissionId?: string;
       error?: string;
+    }
+  | {
+      type: "POPUP_MANAGEMENT_STATUS_STATE";
+      requestId: string;
+      mode: "LOCAL" | "MANAGE";
+      enrolled: boolean;
+      organizationId?: string;
+      organizationName?: string;
+      employeeId?: string;
+      employeeEmail?: string;
+      deviceId?: string;
+      appliedPolicyId?: string;
+      appliedPolicyVersion?: number;
+      lastSyncStatus?: string;
+      error?: string;
     };
 
 export const MESSAGE_TYPES = new Set<string>([
@@ -588,6 +619,11 @@ export const MESSAGE_TYPES = new Set<string>([
   "POPUP_API_STATUS_STATE",
   "POPUP_API_POLICY_STATE",
   "POPUP_API_SUBMIT_RESULT",
+  "POPUP_MANAGEMENT_GET_STATUS",
+  "POPUP_MANAGEMENT_ENROLL",
+  "POPUP_MANAGEMENT_UNENROLL",
+  "POPUP_SYNC_MANAGED_POLICY",
+  "POPUP_MANAGEMENT_STATUS_STATE",
   // Multi-format acquisition pipeline messages (Layer 2–5 async OCR/PDF results)
   "SCAN_PAGE_VISUAL_RESULT",
   "CONTENT_SHOW_TOAST",

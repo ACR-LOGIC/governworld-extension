@@ -4,7 +4,8 @@ import type { RangeLike } from "./extract.js";
 import { isExcludedElement } from "./extract.js";
 import { applySelectionExcludingAttrs, attributeAt, buildAttrScan, collectAttrRecords } from "./attrs.js";
 import type { AttrScan } from "./attrs.js";
-import { detect, detectWithCoverage, maskValue, maskContext, placeholderLabelFor } from "./detect.js";
+import { detect, detectWithCoverage, maskValue, maskContext, placeholderLabelFor, type RawMatch } from "./detect.js";
+import { parseName, type ParsedName } from "./detectors/nameParser.js";
 import { createOverlay } from "./overlay.js";
 import type { OverlayController } from "./overlay.js";
 import { initPasteGuard } from "./pasteGuard.js";
@@ -21,6 +22,23 @@ import { extractTableStructures, annotateSegmentsWithTableStructure } from "./no
 import { runDOMInventoryPass, resolveScanCoverageStatus } from "./normalization/pageInventory.js";
 import { buildMediaQueue, extractVideoCaptions } from "./mediaQueue.js";
 import { extractSvgText } from "./svgExtract.js";
+
+function enrichAndBoostNames(matches: RawMatch[]): RawMatch[] {
+  return matches.map((m) => {
+    if (m.category !== "possible_name") return m;
+    const parsed = parseName(m.value);
+    const structured = isNameStructured(parsed);
+    return {
+      ...m,
+      confidence: structured ? Math.max(m.confidence, 0.85) : m.confidence,
+      parsedName: parsed,
+    };
+  });
+}
+
+function isNameStructured(p: ParsedName | undefined): boolean {
+  return !!p && ((!!p.first && !!p.last) || !!p.prefix || p.credentials.length > 0);
+}
 
 /**
  * Content script (isolated world). Runs only after a deliberate user action
@@ -238,20 +256,24 @@ if (g.__gwRedactionContentLoaded !== true) {
       const rects = findingRects(match.start, match.end);
       const mapped = mapRange(segments, segmentStarts, combined.length, match.start, match.end);
       const isCustom = match.category === "custom" || customPatterns.some((cp) => cp.category === match.category && cp.pattern);
-      return {
-        id: `${match.category}_${match.start}_${match.end}_${i}`,
-        category: match.category,
-        entityType: match.entityType,
-        confidence: match.confidence,
-        source: isCustom ? "custom-pattern" : "local-rules",
-        preview: maskValue(match.category, match.value),
-        nodeId: mapped[0]?.nodeId ?? "",
-        startOffset: match.start,
-        endOffset: match.end,
-        rects,
-        contextPreview: contextFor(match.start, match.end),
-        selected: true,
-      } satisfies Finding;
+        const parsedName =
+          match.parsedName ??
+          (match.category === "possible_name" ? parseName(match.value) : undefined);
+        return {
+          id: `${match.category}_${match.start}_${match.end}_${i}`,
+          category: match.category,
+          entityType: match.entityType,
+          confidence: match.confidence,
+          source: isCustom ? "custom-pattern" : "local-rules",
+          preview: maskValue(match.category, match.value),
+          nodeId: mapped[0]?.nodeId ?? "",
+          startOffset: match.start,
+          endOffset: match.end,
+          rects,
+          contextPreview: contextFor(match.start, match.end),
+          ...(match.category === "possible_name" ? { parsedName } : {}),
+          selected: match.category !== "possible_name" || isNameStructured(parsedName),
+        } satisfies Finding;
     });
   }
 
@@ -397,10 +419,19 @@ if (g.__gwRedactionContentLoaded !== true) {
     const threshold = (cat: FindingCategory) => settings.confidenceThresholds?.[cat] ?? 0;
     const detectedMain = detectWithCoverage(combined, settings.enabledCategories, customPatterns);
     let customPatternsPartiallyScanned = detectedMain.partiallyScanned;
-    const rawMatches = detectedMain.matches.filter(
+    let rawMatches = detectedMain.matches;
+
+    // Name intelligence: parse every possible_name span, attach structured
+    // components, and boost structured names before the confidence gate so real
+    // PHI names are not filtered out as low-confidence.
+    if (settings.enabledCategories.includes("possible_name")) {
+      rawMatches = enrichAndBoostNames(rawMatches);
+    }
+
+    const filteredMatches = rawMatches.filter(
       (m) => m.confidence >= threshold(m.category)
     );
-    findings = buildFindings(rawMatches, settings.enabledCategories, customPatterns);
+    findings = buildFindings(filteredMatches, settings.enabledCategories, customPatterns);
 
     // ── Layer 2 (SVG branch): Inline SVG text → run through detect ────────
     try {

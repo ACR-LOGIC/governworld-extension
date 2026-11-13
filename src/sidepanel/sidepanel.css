@@ -536,6 +536,14 @@ body[data-reduced-motion="true"] *::after {
   color: var(--text-faint);
 }
 
+.finding__name-detail {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-top: 2px;
+  word-break: break-word;
+}
+
 .finding__context {
   grid-column: 1 / -1;
   color: var(--text-faint);
@@ -1185,6 +1193,16 @@ body[data-reduced-motion="true"] *::after {
 .mode-badge.badge--cloud {
   color: var(--warning);
   border-color: rgba(251, 191, 36, 0.3);
+}
+
+.mode-badge.badge--managed {
+  color: #60a5fa;
+  border-color: rgba(96, 165, 250, 0.3);
+}
+
+.mode-badge.badge--managed::before {
+  background: #60a5fa;
+  box-shadow: 0 0 6px #60a5fa;
 }
 
 .icon-btn {

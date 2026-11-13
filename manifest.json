@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GovernWorld Redaction",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Local-first PII/PHI detection and redaction for pages and documents you choose to scan. Content stays on this device.",
   "minimum_chrome_version": "116",
   "browser_specific_settings": {
@@ -19,27 +19,52 @@
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
   },
-  "permissions": ["activeTab", "scripting", "storage", "downloads", "offscreen", "sidePanel", "contextMenus"],
-  "optional_permissions": ["notifications"],
-  "optional_host_permissions": ["http://*/*", "https://*/*"],
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "downloads",
+    "offscreen",
+    "sidePanel",
+    "contextMenus"
+  ],
+  "optional_permissions": [
+    "notifications"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
   "storage": {
     "managed_schema": "schema/policy.json"
   },
   "commands": {
     "_execute_action": {
-      "suggested_key": { "default": "Alt+Shift+E", "mac": "Command+Shift+E" },
+      "suggested_key": {
+        "default": "Alt+Shift+E",
+        "mac": "Command+Shift+E"
+      },
       "description": "Open the GovernWorld popup"
     },
     "scan-page": {
-      "suggested_key": { "default": "Alt+Shift+S", "mac": "Command+Shift+S" },
+      "suggested_key": {
+        "default": "Alt+Shift+S",
+        "mac": "Command+Shift+S"
+      },
       "description": "Scan the current page for sensitive data"
     },
     "toggle-masks": {
-      "suggested_key": { "default": "Alt+Shift+M", "mac": "Command+Shift+M" },
+      "suggested_key": {
+        "default": "Alt+Shift+M",
+        "mac": "Command+Shift+M"
+      },
       "description": "Apply or remove page masks"
     },
     "open-side-panel": {
-      "suggested_key": { "default": "Alt+Shift+P", "mac": "Command+Shift+P" },
+      "suggested_key": {
+        "default": "Alt+Shift+P",
+        "mac": "Command+Shift+P"
+      },
       "description": "Open the GovernWorld side panel"
     }
   },

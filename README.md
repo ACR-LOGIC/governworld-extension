@@ -249,6 +249,94 @@ iMessage, native apps, or the OS.
 
 ---
 
+## Operating Modes: LOCAL vs. MANAGE
+
+GovernWorld Extension v0.3.0 supports exactly two user-facing operating modes:
+
+```
++-----------------------------------------------------------------------------------+
+|                                  OPERATING MODES                                  |
++-----------------------------------------------------------------------------------+
+|  1. LOCAL (Standalone)                            2. MANAGE (Enterprise Managed)  |
+|  - On-device, local-first                           - Receives administrator policies|
+|  - No mandatory account or subscription           - Office Manager -> Extension   |
+|  - No mandatory Supabase/cloud connection         - Cryptographic Ed25519 verified |
+|  - Autonomous detection & custom logic            - Anti-rollback & anti-replay   |
+|  - Local ECDSA P-256 signed audit trails          - Offline continuity enforced   |
+|  - Offline OCR & local document flattening        - Zero egress of sensitive data |
++-----------------------------------------------------------------------------------+
+```
+
+### 1. LOCAL Mode (Standalone Operation)
+
+In **LOCAL mode**, the extension functions as an autonomous, self-contained privacy guardian:
+- **No Mandatory Account:** Operates without any user registration, sign-in, or profile creation.
+- **No Mandatory Subscription:** Core PII/PHI detection, page masking, and document redaction are freely available.
+- **No Mandatory Remote Coordination:** Zero network contact with Supabase, cloud databases, or management coordinators.
+- **User Autonomy:** The user configures detection categories, custom regex rules, appearance, and protection presets.
+- **Local Enforcement:** Page text scanning, clipboard sanitization, and document processing run directly on-device.
+- **Local Cryptographic Audit:** Every security event generates a detached ECDSA P-256 signature stored locally in `chrome.storage.local`.
+
+### 2. MANAGE Mode (Administrator-Managed Operation)
+
+In **MANAGE mode**, the extension is enrolled with the organization's **GovernWorld Office Manager** coordination infrastructure:
+- **Centralized Security Directives:** Receives cryptographically signed policy envelopes specifying mandated detection categories, locked protection modes, and restricted domain governance.
+- **Enforcement Integrity:** Administrator-controlled settings cannot be disabled, weakened, or bypassed by employees.
+- **3-Tier Setting Ownership Classification:**
+  1. **Administrator-Controlled:** Mandated detection categories (e.g. SSN, credit cards, medical records), minimum protection mode (`always-on` or `this-tab`), restricted URL lists, and fail-closed security policies. Stored under authoritative policy storage and enforced at every configuration resolution, service-worker handler, and message boundary.
+  2. **User-Controlled:** End-user preferences that do not compromise corporate policy, such as custom redaction logic rules (in non-restricted categories), UI color themes, dyslexia font scaling, sound announcements, and optional notifications.
+  3. **System-Controlled:** Tamper-resistant internals, including ECDSA audit signing keys, SHA-256 canonical hashing, offline WebAssembly assets, and zero-egress network isolation boundaries.
+- **Offline Continuity:** Enforces the last known valid policy when disconnected. If network access to Supabase or the management infrastructure is lost, protection remains active and locked. It never fails open.
+- **Zero Sensitive Data Transmission:** The management channel is strictly limited to authentication, signed policy retrieval, and minimal delivery acknowledgments (policy ID, version, timestamp, and status). Browsing history, page text, clipboard contents, uploaded documents, OCR text, and PHI/PII **never leave the extension**.
+
+---
+
+## Extension Policy Updates vs. Extension Software Updates
+
+It is critical to distinguish between dynamic policy synchronization and browser extension software updates:
+
+| Attribute | Extension Policy Updates | Extension Software Updates |
+| :--- | :--- | :--- |
+| **Source** | GovernWorld Office Manager via signed envelopes | Browser Web Stores (Chrome Web Store, Firefox AMO, Edge Add-ons) |
+| **Delivery Mechanism** | Extension-initiated retrieval over HTTPS / Supabase | Browser native auto-update mechanism (`update_url`) |
+| **Payload** | JSON policy payload with Ed25519 signature & targeting | Bundled extension ZIP/CRX/XPI binary (JS, HTML, CSS, WASM) |
+| **Frequency** | Dynamic, on-demand (startup, settings, 15-min intervals) | Version releases (e.g. v0.2.0 -> v0.3.0) |
+| **User Disruption** | Zero: hot-applied in memory and session state | Extension restarts / reload upon browser update |
+| **Integrity Check** | Ed25519 signature verified against pinned public key | Cryptographic store signing and browser manifest verification |
+| **Rollback Defense** | Monotonic `policy_version` check (rejects older versions) | Browser store rollback policies |
+
+---
+
+## Detection & Redaction Limitations Disclosure
+
+GovernWorld Extension is engineered for high-assurance data privacy, but users must understand its explicit boundaries:
+
+1. **Pattern-Based Heuristic Limitations:**
+   - Pattern-based detection (regular expressions, dictionary lookups, and algorithmic checksums) is not guaranteed to detect 100% of sensitive entities in unstructured human text.
+   - Ambiguous names, atypical handwriting, non-standard address formats, or novel credential patterns may not be flagged automatically.
+   - **User Verification Required:** Users must review highlighted entities and masked previews before disseminating redacted documents or submitting data to external destinations.
+
+2. **Visual Masking vs. Flattened Content Redaction:**
+   - **Web Page Masking:** Overlays temporary visual privacy masks in an isolated Shadow DOM. The underlying web page DOM text is not modified unless the user uses the *Sanitize & Paste* or *Redact Selection to Clipboard* actions.
+   - **Document Studio Redaction:** Flattens redactions directly into the vector stream and raster canvas of PDF, DOCX, and image files. Bounding box regions are completely overwritten with solid pixels or blackout vectors. Supposedly removed text is stripped from the document's internal text layer and metadata.
+
+3. **Unsupported Content & Surfaces:**
+   - **Canvas/WebGL Elements:** If a web application renders text purely onto an HTML5 `<canvas>` or WebGL surface without an underlying DOM text layer or accessibility tree, on-demand DOM scanning cannot read that text. Users should capture an image and process it via the Document Redaction Studio.
+   - **Protected / Encrypted Media:** DRM-protected media, encrypted streaming video, and native browser UI (address bar, browser settings) cannot be inspected.
+   - **Native Applications:** The extension operates solely inside the web browser environment and does not inspect external desktop applications, terminal windows, or native OS clipboards outside browser boundaries.
+
+---
+
+## Troubleshooting & Diagnostics
+
+- **Operating Mode Badge Displays "LOCAL":** The extension is in standalone mode. To enroll in enterprise management, enter your organization's enrollment token in Settings -> Advanced -> Management.
+- **Operating Mode Badge Displays "MANAGE":** The extension is actively enrolled. Administrator-mandated categories display a lock icon and cannot be toggled off.
+- **Policy Synchronization Status:** Check Settings -> Advanced -> Management Status. If offline, the extension displays "Offline (Enforcing Last Valid Policy)".
+- **Document Studio Reports "No Text Layer Found":** Scanned PDFs or photos without embedded text automatically invoke the bundled offline Tesseract OCR engine. Ensure the document is right-side up and legible.
+- **Diagnostic Export:** Download the cryptographically signed audit ledger via Settings -> Privacy & Security -> Export Audit Log.
+
+---
+
 ## Local-First Architecture & Privacy Guarantees
 
 GovernWorld Redaction is built from the ground up on a **local-processing-by-default** security model:

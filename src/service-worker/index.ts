@@ -36,6 +36,15 @@ import { MAX_DOC_BYTES } from "../shared/docLimits.js";
 import { evaluateDestinationPolicy, fetchWithPolicy, readBoundedArrayBuffer } from "../shared/networkGuard.js";
 import { sanitizeErrorForLog } from "../shared/errorSanitizer.js";
 import { runOAuthConnectFlow, runOAuthCallbackFlow } from "./oauthService.js";
+import {
+  loadManagementEnrollment,
+  saveManagementEnrollment,
+  clearManagementEnrollment,
+  loadLastAppliedManagedPolicy,
+  ManagementEnrollment,
+} from "../shared/managedPolicy.js";
+import { syncManagedPolicy } from "./policySyncService.js";
+import { getInstallationId } from "../api/config.js";
 
 /**
  * Scan settings with admin-mandated categories merged in. Page scans must not
@@ -630,6 +639,23 @@ function maskCommandOk(response: unknown): boolean {
   return typeof response === "object" && response !== null && (response as { ok?: boolean }).ok === true;
 }
 
+let currentOperatingMode: "LOCAL" | "MANAGE" = "LOCAL";
+
+export async function refreshOperatingMode(): Promise<"LOCAL" | "MANAGE"> {
+  try {
+    const policy = await loadEnterprisePolicy();
+    const enrollment = await loadManagementEnrollment();
+    if (policy.managed || (enrollment && enrollment.management_mode === "MANAGE")) {
+      currentOperatingMode = "MANAGE";
+    } else {
+      currentOperatingMode = "LOCAL";
+    }
+  } catch {
+    currentOperatingMode = "LOCAL";
+  }
+  return currentOperatingMode;
+}
+
 function buildPopupState(
   settings: Settings,
   session: SessionState | null,
@@ -637,6 +663,7 @@ function buildPopupState(
 ): PopupState {
   return {
     mode: settings.mode,
+    operatingMode: currentOperatingMode,
     scanning: session?.scanning ?? false,
     findings: session?.findings ?? [],
     scanned: session !== null,
@@ -659,6 +686,7 @@ function buildPopupState(
 }
 
 async function stateForActiveTab(explicitTabId?: number): Promise<PopupState> {
+  await refreshOperatingMode();
   const settings = await loadSettings();
   const tab = await resolveTargetTab(explicitTabId);
   const session = tab ? await readSession(tab.id ?? -1) : null;
@@ -1615,10 +1643,14 @@ function purgeStagedFilesOnLifecycle(reason: string): void {
 
 chrome.runtime.onStartup?.addListener(() => {
   purgeStagedFilesOnLifecycle("browser startup");
+  void syncManagedPolicy(false);
+  void refreshOperatingMode();
 });
 
 chrome.runtime.onInstalled?.addListener(() => {
   purgeStagedFilesOnLifecycle("extension install/update");
+  void syncManagedPolicy(false);
+  void refreshOperatingMode();
 });
 
 // OAuth callback capture: when the provider redirects to chromiumapp.org,
@@ -1727,6 +1759,8 @@ if (chrome.permissions?.onRemoved) {
 
 void syncSiteProtection();
 void reconcileTabStatuses();
+void syncManagedPolicy(false);
+void refreshOperatingMode();
 
 if (chrome.contextMenus?.onClicked) {
   chrome.contextMenus.onClicked.addListener((info, tab) => {
@@ -2013,6 +2047,63 @@ async function handleOAuthConnect(requestId: string): Promise<void> {
 
 async function handleOAuthCallback(code: string, state: string, requestId: string): Promise<void> {
   await runOAuthCallbackFlow(code, state, requestId, oauthCallbacks);
+}
+
+async function handleManagementGetStatus(requestId: string): Promise<void> {
+  await refreshOperatingMode();
+  const enrollment = await loadManagementEnrollment();
+  const lastApplied = await loadLastAppliedManagedPolicy();
+  const deviceId = await getInstallationId();
+  notifyPopup({
+    type: "POPUP_MANAGEMENT_STATUS_STATE",
+    requestId,
+    mode: currentOperatingMode,
+    enrolled: Boolean(enrollment && enrollment.management_mode === "MANAGE"),
+    ...(enrollment?.organization_id ? { organizationId: enrollment.organization_id } : {}),
+    ...(enrollment?.organization_name ? { organizationName: enrollment.organization_name } : {}),
+    ...(enrollment?.employee_id ? { employeeId: enrollment.employee_id } : {}),
+    ...(enrollment?.employee_email ? { employeeEmail: enrollment.employee_email } : {}),
+    deviceId,
+    ...(lastApplied?.policy_id ? { appliedPolicyId: lastApplied.policy_id } : {}),
+    ...(lastApplied?.policy_version ? { appliedPolicyVersion: lastApplied.policy_version } : {}),
+  });
+}
+
+async function handleManagementEnroll(
+  msg: {
+    organizationId: string;
+    organizationName?: string;
+    employeeId: string;
+    employeeEmail?: string;
+    coordinatorUrl?: string;
+  },
+  requestId: string,
+): Promise<void> {
+  const deviceId = await getInstallationId();
+  const enrollment: ManagementEnrollment = {
+    organization_id: msg.organizationId,
+    organization_name: msg.organizationName,
+    employee_id: msg.employeeId,
+    employee_email: msg.employeeEmail,
+    device_id: deviceId,
+    enrolled_at: new Date().toISOString(),
+    coordinator_url: msg.coordinatorUrl,
+    management_mode: "MANAGE",
+  };
+  await saveManagementEnrollment(enrollment);
+  await syncManagedPolicy(true);
+  await handleManagementGetStatus(requestId);
+}
+
+async function handleManagementUnenroll(requestId: string): Promise<void> {
+  await clearManagementEnrollment();
+  void syncSiteProtection();
+  await handleManagementGetStatus(requestId);
+}
+
+async function handleSyncManagedPolicy(force: boolean, requestId: string): Promise<void> {
+  await syncManagedPolicy(force);
+  await handleManagementGetStatus(requestId);
 }
 
 async function handleApiSyncPolicy(requestId: string): Promise<void> {
@@ -2372,6 +2463,18 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
         break;
       case "POPUP_OAUTH_CALLBACK":
         await handleOAuthCallback(msg.code, msg.state, msg.requestId);
+        break;
+      case "POPUP_MANAGEMENT_GET_STATUS":
+        await handleManagementGetStatus(msg.requestId);
+        break;
+      case "POPUP_MANAGEMENT_ENROLL":
+        await handleManagementEnroll(msg, msg.requestId);
+        break;
+      case "POPUP_MANAGEMENT_UNENROLL":
+        await handleManagementUnenroll(msg.requestId);
+        break;
+      case "POPUP_SYNC_MANAGED_POLICY":
+        await handleSyncManagedPolicy(Boolean(msg.force), msg.requestId);
         break;
       default:
         break;

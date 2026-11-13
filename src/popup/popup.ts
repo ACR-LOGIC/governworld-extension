@@ -61,6 +61,7 @@ import type {
   Rect,
   RedactionStyle,
 } from "../shared/types.js";
+import type { ParsedName } from "../content/detectors/nameParser.js";
 import { loadCustomPatterns, saveCustomPatterns, parseCustomPattern, type CustomPattern, type CommunityAccount, type CommunityRule } from "../shared/customPatterns.js";
 import { parseSampleLines, type WizardAnalysis } from "../shared/wizardAnalyzer.js";
 import type { ImageCandidate } from "../shared/messages.js";
@@ -552,7 +553,21 @@ function updateComplianceScorecard(
   }
 }
 
-function renderFindings(findings: Finding[]): void {
+function nameDetailText(p: ParsedName): string {
+  const parts: string[] = [];
+  if (p.prefix) parts.push(`Title: ${p.prefix}`);
+  if (p.first) parts.push(`First: ${p.first}`);
+  if (p.middle.length) parts.push(`Middle: ${p.middle.join(", ")}`);
+  if (p.last) parts.push(`Last: ${p.last}`);
+  if (p.suffix) parts.push(`Suffix: ${p.suffix}`);
+  if (p.credentials.length) parts.push(`Credentials: ${p.credentials.join(", ")}`);
+  if (p.gender) parts.push(`Gender: ${p.gender}`);
+  if (p.age != null) parts.push(`Age: ${p.age}`);
+  if (p.dob) parts.push(`DOB: ${p.dob}`);
+  return parts.join(" · ");
+}
+
+export function renderFindings(findings: Finding[]): void {
   const list = document.getElementById("findings-list") as HTMLUListElement | null;
   const count = document.getElementById("results-count") as HTMLSpanElement | null;
   const applyBtn = document.getElementById("apply-masks-btn") as HTMLButtonElement | null;
@@ -604,6 +619,10 @@ function renderFindings(findings: Finding[]): void {
     const meta = el("div", "finding__meta");
     const confidence = el("span", "finding__confidence", `${Math.round(finding.confidence * 100)}% confidence`);
     meta.append(confidence);
+    if (finding.category === "possible_name" && finding.parsedName) {
+      const detail = el("div", "finding__name-detail", nameDetailText(finding.parsedName));
+      meta.append(detail);
+    }
     main.append(head, preview, meta);
 
     if (check) item.append(check, main);
@@ -734,8 +753,14 @@ function renderState(state: PopupState): void {
   const summaryChars = document.getElementById("summary-chars") as HTMLElement | null;
 
   if (badge) {
-    badge.textContent = state.mode === "cloud" ? t(currentLang, "cloud_processing") : t(currentLang, "local_processing");
-    badge.classList.toggle("badge--cloud", state.mode === "cloud");
+    if (state.operatingMode === "MANAGE") {
+      badge.textContent = "MANAGE";
+      badge.classList.add("badge--managed");
+      badge.classList.remove("badge--cloud");
+    } else {
+      badge.textContent = "LOCAL";
+      badge.classList.remove("badge--managed", "badge--cloud");
+    }
   }
   if (scanBtn) {
     scanBtn.disabled = state.scanning;
@@ -936,10 +961,32 @@ async function copyToClipboard(text: string): Promise<void> {
 }
 
 function findingsToCsv(findings: Finding[]): string {
-  const headers = ["Category", "Preview", "Confidence", "Source", "Attribute", "Page", "Start Offset", "End Offset", "Rect Count"];
+  const headers = [
+    "Category",
+    "Preview",
+    "Confidence",
+    "Source",
+    "Attribute",
+    "Page",
+    "Start Offset",
+    "End Offset",
+    "Rect Count",
+    "Name Title",
+    "Name First",
+    "Name Middle",
+    "Name Last",
+    "Name Suffix",
+    "Name Credentials",
+    "Name Gender",
+    "Name Age",
+    "Name DOB",
+  ];
   const rows = findings.map((f) => {
     const pageMatch = f.nodeId.match(/^doc:(\d+):/);
     const page = pageMatch ? parseInt(pageMatch[1], 10) + 1 : "N/A";
+    const p = f.parsedName;
+    const middle = p?.middle?.join("; ") ?? "";
+    const credentials = p?.credentials?.join("; ") ?? "";
     return [
       getCategoryLabel(currentLang, f.category),
       `"${f.preview.replace(/"/g, '""')}"`,
@@ -950,6 +997,15 @@ function findingsToCsv(findings: Finding[]): string {
       f.startOffset.toString(),
       f.endOffset.toString(),
       f.rects.length.toString(),
+      `"${(p?.prefix ?? "").replace(/"/g, '""')}"`,
+      `"${(p?.first ?? "").replace(/"/g, '""')}"`,
+      `"${middle.replace(/"/g, '""')}"`,
+      `"${(p?.last ?? "").replace(/"/g, '""')}"`,
+      `"${(p?.suffix ?? "").replace(/"/g, '""')}"`,
+      `"${credentials.replace(/"/g, '""')}"`,
+      `"${(p?.gender ?? "").replace(/"/g, '""')}"`,
+      `${p?.age ?? ""}`,
+      `"${(p?.dob ?? "").replace(/"/g, '""')}"`,
     ];
   });
   return [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
@@ -972,6 +1028,7 @@ function findingsToJson(findings: Finding[]): string {
       endOffset: f.endOffset,
       rectCount: f.rects.length,
       contextPreview: f.contextPreview ?? null,
+      parsedName: f.parsedName ?? null,
     })),
   };
   return JSON.stringify(exportData, null, 2);
@@ -2984,14 +3041,31 @@ export async function initPopup(): Promise<void> {
 
   async function checkOfficeManagerPairingStatus() {
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      const stored = (await chrome.storage.local.get(["gw_coordinator_policy", "gw_coordinator_url"])) as {
+      const stored = (await chrome.storage.local.get([
+        "gw_coordinator_policy",
+        "gw_coordinator_url",
+        "gw_applied_managed_policy",
+        "gw_management_enrollment",
+      ])) as {
         gw_coordinator_policy?: { managed?: boolean; organizationName?: string; policyVersion?: number };
         gw_coordinator_url?: string;
+        gw_applied_managed_policy?: { organization_name?: string; organization_id?: string; policy_version?: number };
+        gw_management_enrollment?: { organization_name?: string; organization_id?: string };
       };
-      const policy = stored.gw_coordinator_policy;
-      if (policy && policy.managed) {
+      const managedPolicy = stored.gw_applied_managed_policy;
+      const enrollment = stored.gw_management_enrollment;
+      const coordPolicy = stored.gw_coordinator_policy;
+
+      if (managedPolicy || (enrollment && enrollment.organization_id) || (coordPolicy && coordPolicy.managed)) {
+        const orgName =
+          managedPolicy?.organization_name ||
+          enrollment?.organization_name ||
+          enrollment?.organization_id ||
+          coordPolicy?.organizationName ||
+          "Organization";
+        const ver = managedPolicy?.policy_version || coordPolicy?.policyVersion || 1;
         if (officeManagerStatus) {
-          officeManagerStatus.textContent = `Managed by Office Manager: ${policy.organizationName || "Protected Office"} (v${policy.policyVersion || 1})`;
+          officeManagerStatus.textContent = `Operating Mode: MANAGE — Enforced by ${orgName} (v${ver})`;
           officeManagerStatus.style.color = "var(--gw-emerald, #10b981)";
         }
         if (officePairingInput) officePairingInput.style.display = "none";
@@ -3001,7 +3075,7 @@ export async function initPopup(): Promise<void> {
       }
     }
     if (officeManagerStatus) {
-      officeManagerStatus.textContent = "Status: Local unmanaged";
+      officeManagerStatus.textContent = "Operating Mode: LOCAL (Standalone unmanaged protection)";
       officeManagerStatus.style.color = "inherit";
     }
     if (officePairingInput) officePairingInput.style.display = "block";
@@ -3075,7 +3149,12 @@ export async function initPopup(): Promise<void> {
 
   officeUnpairBtn?.addEventListener("click", async () => {
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      await chrome.storage.local.remove(["gw_coordinator_policy", "gw_coordinator_url"]);
+      await chrome.storage.local.remove([
+        "gw_coordinator_policy",
+        "gw_coordinator_url",
+        "gw_applied_managed_policy",
+        "gw_management_enrollment",
+      ]);
       await checkOfficeManagerPairingStatus();
       await refreshProtectionStatus();
     }

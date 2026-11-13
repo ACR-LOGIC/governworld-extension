@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 import { describe, it, expect } from "vitest";
-import { detect, maskValue, maskContext, resolveOverlaps, placeholderLabelFor } from "../src/content/detect.js";
+import { detect, maskValue, maskContext, resolveOverlaps, placeholderLabelFor, type RawMatch } from "../src/content/detect.js";
+import { parseName, isStandaloneName, isNameToken } from "../src/content/detectors/nameParser.js";
 
 describe("detect", () => {
   const ALL = [
@@ -218,5 +219,205 @@ describe("maskContext", () => {
     expect(out).not.toContain("123456");
     expect(out).not.toContain("MRN");
     expect(out).not.toContain("discharge");
+  });
+});
+
+describe("name parser", () => {
+  it("parses prefix, gender and age: Mary F. 65", () => {
+    const p = parseName("Mary F. 65");
+    expect(p.first).toBe("Mary");
+    expect(p.gender).toBe("F");
+    expect(p.age).toBe(65);
+    expect(p.middle).toEqual([]);
+    expect(p.last).toBeNull();
+  });
+
+  it("parses honorific prefix and generational suffix", () => {
+    const p = parseName("Dr. Mary Smith Jr.");
+    expect(p.prefix).toBe("Dr");
+    expect(p.first).toBe("Mary");
+    expect(p.last).toBe("Smith");
+    expect(p.suffix).toBe("Jr");
+    expect(p.credentials).toEqual([]);
+  });
+
+  it("parses professional credentials", () => {
+    const p = parseName("Robert Miller MD");
+    expect(p.first).toBe("Robert");
+    expect(p.last).toBe("Miller");
+    expect(p.credentials).toEqual(["MD"]);
+  });
+
+  it("parses compound surnames and particles", () => {
+    const p = parseName("Mary De La Cruz");
+    expect(p.first).toBe("Mary");
+    expect(p.last).toBe("Cruz");
+    expect(p.middle).toEqual(["De", "La"]);
+    expect(p.rawName).toBe("Mary De La Cruz");
+
+    const p2 = parseName("Mary Smith-Jones");
+    expect(p2.last).toBe("Smith-Jones");
+  });
+
+  it("treats single-letter F/M after an age as gender, not a middle initial", () => {
+    const p = parseName("Mary F. 65");
+    expect(p.middle).toHaveLength(0);
+    expect(p.gender).toBe("F");
+  });
+
+  it("handles single-token names", () => {
+    const smith = parseName("Smith");
+    expect(smith.first ?? smith.last).toBe("Smith");
+    expect(parseName("Mary").first).toBe("Mary");
+    expect(parseName("").first).toBeNull();
+    expect(parseName("").rawName).toBeNull();
+  });
+
+  it("exposes standalone-name and name-token classifiers", () => {
+    expect(isStandaloneName("Smith")).toBe(true);
+    expect(isStandaloneName("Smith Jones")).toBe(false);
+    expect(isStandaloneName("NotARealNameXyz")).toBe(false);
+    expect(isNameToken("Mary")).toBe(true);
+    expect(isNameToken("Smith")).toBe(true);
+    expect(isNameToken("NotARealNameXyz")).toBe(false);
+  });
+
+  it("parses multi-word honorifics, middle initial, suffix and credentials together", () => {
+    const p = parseName("Dr. John A. Smith MD Jr.");
+    expect(p.prefix).toBe("Dr");
+    expect(p.first).toBe("John");
+    expect(p.middle).toContain("A");
+    expect(p.last).toBe("Smith");
+    expect(p.suffix).toBe("Jr");
+    expect(p.credentials).toContain("MD");
+  });
+
+  it("parses multiple credentials", () => {
+    const p = parseName("Robert Miller MD RN");
+    expect(p.first).toBe("Robert");
+    expect(p.last).toBe("Miller");
+    expect(p.credentials).toContain("MD");
+    expect(p.credentials).toContain("RN");
+  });
+
+  it("parses age with tail label", () => {
+    const p = parseName("Mary 65 y/o");
+    expect(p.first).toBe("Mary");
+    expect(p.age).toBe(65);
+  });
+
+  it("captures DOB when present in the value", () => {
+    const p = parseName("Jane Smith DOB 04/22/1990");
+    expect(p.first).toBe("Jane");
+    expect(p.last).toBe("Smith");
+    expect(p.dob).toBe("04/22/1990");
+  });
+
+  it("rejects non-name lookalikes via the dictionary classifiers", () => {
+    expect(isStandaloneName("Chapter")).toBe(false);
+    expect(isStandaloneName("NotARealNameXyz")).toBe(false);
+    expect(isNameToken("Chapter")).toBe(false);
+    expect(isNameToken("NotARealNameXyz")).toBe(false);
+  });
+
+  it("parses without throwing on non-name input and assigns a best-effort first token", () => {
+    expect(() => parseName("Chapter 1")).not.toThrow();
+    expect(() => parseName("NotARealNameXyz")).not.toThrow();
+    expect(parseName("NotARealNameXyz").first).toBe("NotARealNameXyz");
+  });
+});
+
+describe("name parsedName enrichment", () => {
+  const enrich = (matches: RawMatch[]) =>
+    matches.map((m) =>
+      m.category === "possible_name" ? { ...m, parsedName: parseName(m.value) } : m
+    );
+
+  const parsed = (match: RawMatch | undefined) => {
+    expect(match).toBeDefined();
+    return match!.parsedName!;
+  };
+
+  it("attaches structured name components to possible_name matches", () => {
+    const found = enrich(detect("Patient: Mary Jane Smith", ["possible_name"]));
+    const p = parsed(found.find((m) => m.value === "Mary Jane Smith"));
+    expect(p).toMatchObject({
+      first: "Mary",
+      middle: ["Jane"],
+      last: "Smith",
+      prefix: null,
+      suffix: null,
+    });
+  });
+
+  it("attaches middle initials as a middle token", () => {
+    const found = enrich(detect("Patient: John A. Doe", ["possible_name"]));
+    const p = parsed(found.find((m) => /John/.test(m.value) && /Doe/.test(m.value)));
+    expect(p.first).toBe("John");
+    expect(p.middle).toContain("A");
+    expect(p.last).toBe("Doe");
+  });
+
+  it("attaches professional titles and credentials", () => {
+    const found = enrich(detect("Doctor: Dr. Robert Miller MD", ["possible_name"]));
+    const p = parsed(found.find((m) => /Robert/.test(m.value)));
+    expect(p.prefix).toBe("Dr");
+    expect(p.credentials).toContain("MD");
+    expect(p.first).toBe("Robert");
+    expect(p.last).toBe("Miller");
+  });
+
+  it("attaches compound surnames and particles", () => {
+    const found = enrich(detect("Patient: Maria De La Cruz", ["possible_name"]));
+    const p = parsed(found.find((m) => m.value === "Maria De La Cruz"));
+    expect(p.first).toBe("Maria");
+    expect(p.middle).toEqual(["De", "La"]);
+    expect(p.last).toBe("Cruz");
+    expect(p.rawName).toBe("Maria De La Cruz");
+  });
+
+  it("attaches age, gender and DOB context", () => {
+    const ageEnriched = enrich([
+      { category: "possible_name", confidence: 0.8, value: "Mary F. 65", start: 0, end: 9 },
+    ]);
+    const ageP = parsed(ageEnriched[0]);
+    expect(ageP.age).toBe(65);
+    expect(ageP.gender).toBe("F");
+    expect(ageP.middle).toHaveLength(0);
+
+    const dobEnriched = enrich([
+      { category: "possible_name", confidence: 0.8, value: "Jane Smith DOB 04/22/1990", start: 0, end: 26 },
+    ]);
+    const dobP = parsed(dobEnriched[0]);
+    expect(dobP.dob).toBe("04/22/1990");
+  });
+
+  it("distinguishes a titled doctor from a plain patient", () => {
+    const doctor = enrich(detect("Doctor: Dr. Elena Rossi", ["possible_name"]));
+    const patient = enrich(detect("Patient: Elena Rossi", ["possible_name"]));
+    const docP = parsed(doctor.find((m) => m.value.includes("Rossi")));
+    const patP = parsed(patient.find((m) => m.value.includes("Rossi")));
+    expect(docP.prefix).toBe("Dr");
+    expect(patP.prefix).toBeNull();
+    expect(docP.first).toBe("Elena");
+    expect(patP.first).toBe("Elena");
+  });
+
+  it("preserves value, offsets, confidence, and adds no matches", () => {
+    const before = detect("Patient: Mary Jane Smith and Dr. Robert Miller MD", [
+      "possible_name",
+    ]);
+    const after = enrich(before);
+    expect(after).toHaveLength(before.length);
+    for (const [i, m] of after.entries()) {
+      expect(m.value).toBe(before[i].value);
+      expect(m.start).toBe(before[i].start);
+      expect(m.end).toBe(before[i].end);
+      expect(m.confidence).toBe(before[i].confidence);
+      expect(m.category).toBe(before[i].category);
+    }
+    for (const m of after) {
+      if (m.category === "possible_name") expect(m.parsedName).toBeDefined();
+    }
   });
 });

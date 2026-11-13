@@ -35,6 +35,7 @@ import {
   mapNormalizedToOriginalOffset,
 } from "./normalization/unicode.js";
 import { detectNames } from "./detectors/names.js";
+import type { ParsedName } from "./detectors/nameParser.js";
 import { detectPhones } from "./detectors/internationalPhones.js";
 import {
   CHUNK,
@@ -65,6 +66,10 @@ export interface RawMatch {
   start: number;
   end: number;
   entityType?: string;
+  /** Structured name components (prefix / first / middle / last / suffix /
+   * credentials / gender / age / dob), attached only to possible_name matches
+   * by enrichPossibleNames(). Detection behavior is unchanged. */
+  parsedName?: ParsedName;
 }
 
 const CATEGORY_PRIORITY: FindingCategory[] = [
