@@ -50,7 +50,7 @@
   "dependencies": {
     "mammoth": "^1.13.0",
     "pdf-lib": "^1.17.1",
-    "pdfjs-dist": "^6.4.299",
+    "pdfjs-dist": "^6.5.438",
     "rbush": "^4.0.1",
     "tesseract.js": "^7.0.0"
   },
