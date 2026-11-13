@@ -50,78 +50,53 @@ The **GovernWorld Extension** is a fully functional, local-first browser protect
 ## Core Capabilities
 
 1. **On-Demand Page Scanning & Visual Masking:**
-   - Scan visible web page text on demand with a single click or keyboard shortcut (`Alt+Shift+S`).
-   - Highlight detected sensitive entities and apply non-destructive visual overlays directly in the DOM.
-   - Copy securely redacted plain text with sensitive values replaced by solid block placeholders `[REDACTED]`.
-   - Keyboard shortcuts: `Alt+Shift+E` opens the popup, `Alt+Shift+S` scans the page, `Alt+Shift+M` applies or removes masks, `Alt+Shift+P` opens the side panel. All four are rebindable at `chrome://extensions/shortcuts`.
+   - Scans visible page text (and report-only accessibility attributes like `aria-label`, `alt`, `placeholder`, `title`) only after explicit user action.
+   - Highlights findings, applies non-destructive visual masks in a shadow-root overlay, and copies securely redacted text (sensitive values replaced with `[REDACTED]`).
+   - Structured **possible name** findings are enriched with parsed components (prefix/first/middle/last/suffix/credentials/gender/age/DOB) for review and export; structured names are boosted before thresholding and low-structure names are not auto-selected for masking to reduce false-positive redaction.
+   - Coverage is reported honestly (including truncated/partial/no-readable-text cases). A page with no readable text is not reported as a clean scan; image-only pages can be routed into the Document Studio via detected image candidates.
+   - Keyboard shortcuts (rebindable at `chrome://extensions/shortcuts`): `Alt+Shift+E` opens popup, `Alt+Shift+S` scans page, `Alt+Shift+M` applies/removes masks, `Alt+Shift+P` opens side panel.
 
-2. **"Paste, Prompt & Submit" Shield (on-demand, active on tabs you have activated):**
-   - Intercepts paste events and prompt/form submissions (`Enter` key on chat inputs, query bars, message composers, and `<form>` submit events) in real time on web interfaces (**ChatGPT**, **Claude**, **Gemini**, **Slack**, Jira, web forms).
-   - Shows a non-intrusive floating Shadow DOM review modal with masked previews.
-   - 1-click **Sanitize & Paste / Sanitize & Send** automatically scrubs secrets/PII before inserting or submitting.
+2. **"Paste, Prompt & Submit" Shield (on-demand, policy-aware):**
+   - Intercepts `paste`, `beforeinput`, drag-and-drop text, prompt `Enter` submissions, and `<form>` submits on editable surfaces (including rich editors, open shadow roots, and same-origin iframes) in activated contexts.
+   - Shows a Shadow DOM review dialog with masked previews and actions to sanitize, send/paste unchanged, or cancel; interception is synchronous so blocked/sanitized data is not inserted/submitted.
+   - Protection modes: **Off**, **This tab** (default, no site access required), **Always on** (requires runtime-granted optional `http://*/*` + `https://*/*` access; revoking stops coverage). Status is reported only with proof (never claims active without grant/registration).
+   - Integrates with site policies, destination/compliance evaluation, and local audit recording.
 
-3. **Interactive Document Redaction Studio:**
-   - Drag-and-drop or select PDF, Microsoft Word (`.docx`), and image files (`.png`, `.jpg`, `.webp`).
-   - Interactive canvas: click finding boxes to toggle or drag with mouse to draw custom redaction boxes.
-   - Multiple Redaction Styles: **Solid Blackout**, **Clean Whiteout**, or **Compliance Text Stamp** (e.g. `[CONFIDENTIAL]`).
-   - Full-screen review page for reading a page before redacting it, with zoom to 3x native (Ctrl/Cmd + - 0) and drag-to-draw custom boxes.
-   - Reads a digitally-born PDF's own text layer and a `.docx` from the text it was laid out from, instead of running OCR over pixels it already knows. OCR is used only where a page genuinely has no text of its own — a scan, a screenshot, a photo — via a self-contained pipeline that reads bundled language data offline. This build bundles English only; the language list, the build, and the selector share one source of truth (`src/shared/ocrLanguages.ts`) so an unbundled language can never be offered.
+3. **Interactive Document Redaction Studio (PDF / DOCX / images):**
+   - Drag-and-drop/select PDF, DOCX, and image files. Long documents are disclosed before scanning and processed by user-chosen page windows (partial passes are clearly labeled and named, e.g. `*-redacted-p21-40.pdf`).
+   - Uses native text layers where available (digitally-born PDFs/DOCX layout text) and bundled offline OCR only for pages with no text of their own (this build bundles English; unbundled OCR languages fail closed).
+   - Interactive review: toggle detected boxes, draw custom boxes, choose **Blackout / Whiteout / Text Stamp**, full-screen review with zoom, then produce flattened, verified redacted output and print/PDF view. Staged document bytes stay local and are cleaned up by lifecycle/clear flows.
 
-4. **Multi-Language UI Internationalization (i18n):**
-   - Dynamic interface translation for **English**, **Spanish**, **French**, **German**, **Japanese**, **Portuguese**, and **Simplified Chinese**.
-   - Switch languages instantly in Settings; persisted in local storage.
+4. **Detection, Presets & Structured Intelligence:**
+   - Deterministic local detectors/validators across 24 categories: `email`, `phone`, `ssn`, `dob`, `medical_record_number`, `member_id`, `npi`, `dea`, `mbi`, `address`, `payment_card`, `secrets`, `possible_name`, `custom`, `canadian_sin`, `uk_nhs`, `aadhaar`, `pan_india`, `australian_tfn`, `cpf`, `ip_address`, `username`, `bank_account`, `financial`.
+   - Built-in compliance presets: **Custom, HIPAA, PCI DSS, GDPR, Developer, PIPEDA, UK GDPR/NHS, India DPDP, Australia Privacy, Brazil LGPD**. Confidence thresholds, category toggles, and custom patterns are locally configurable.
+   - Name intelligence uses `detectNames` as the sole `possible_name` span detector plus census-backed structured parsing/enrichment (`nameParser`/`nameDictionaries`) attached as `Finding.parsedName`.
 
-5. **Accessibility & Assistive Features (WCAG AAA):**
-   - **Font Scaling:** Standard (100%), Medium (115%), Large (130%), and Extra Large (150% for low vision).
-   - **High Contrast Mode:** Pure black backgrounds, cyan accents, and high-visibility 2px white borders.
-   - **Dyslexia-Friendly Spacing:** Expanded letter-spacing, line-height, and readability fonts.
-   - **Screen Reader Voice Assistance:** Web Speech API announces findings, counts, and actions aloud for blind users.
+5. **Custom Logic, Policy Studio & Governance:**
+   - Redaction/Logic Wizard for creating/testing custom detection rules locally; offline custom-rules JSON export/import with schema validation, ReDoS-safe checks, and duplicate-safe merge.
+   - Policy Studio for site-specific DLP rules (URL scopes, templates, category scopes, block/auto-redact/warn, full-site access blocking barrier) with audited enforcement.
+   - Enterprise MANAGE mode supports managed policy delivery/verification, enforced categories/modes, and ownership boundaries (see Operating Modes and `docs/ENTERPRISE_DEPLOYMENT.md`).
 
-6. **Global Compliance Presets & International Validators:**
-   - Built-in checksum validators for Canadian SIN, UK NHS, Indian Aadhaar (Verhoeff) & PAN, Australian TFN, Brazilian CPF, LOINC, and Securities CUSIP/ISIN.
-   - 1-click presets: HIPAA, PCI DSS, GDPR, PIPEDA, UK GDPR/NHS, India DPDP, Australia Privacy, Brazil LGPD, Developer.
+6. **Auditability, Exports & Reports:**
+   - ECDSA P-256 signed, metadata-only local audit trail for scans, masking, document operations, policy/preset changes, and audited actions.
+   - Exports: signed audit log, printable compliance certificate (`governworld-compliance-certificate-*.html`), and findings export as **CSV** (including structured name columns) and **JSON** (including `parsedName`).
+   - Explainable compliance/risk scoring and scorecards in page scan, Document Studio, and review surfaces (with PHI/AI-leakage evaluation logic).
 
-7. **Right-Click Context Menu Protection:**
-   - Highlight any text and right-click to *Redact selection to clipboard* or *Mask selection* without opening the popup.
+7. **UI, Accessibility & Localization:**
+   - Popup/side panel surfaces (Protection, Logic, Review, Settings) with full-screen document review.
+   - UI languages: **English, Spanish, French, German, Japanese, Portuguese, Simplified Chinese**.
+   - Accessibility: font scaling, high contrast, dyslexia-friendly spacing, reduced motion, verbose ARIA, and screen-reader announcements (Web Speech API/ARIA live regions).
 
-8. **Cryptographic Audit Log & Verifiable Compliance Certificate:**
-   - Every scan, mask application, document redaction, and preset change is recorded in an ECDSA P-256 signed audit ledger.
-   - Exports self-contained, printable HTML Compliance Certificates (`governworld-compliance-certificate-*.html`) with digital signature attestation, local-first zero-egress guarantees, and printable audit summaries for compliance reviews.
+8. **Right-Click Context Menus (on-demand):**
+   - **Scan page for sensitive data**; and when text is selected, **Redact selection to clipboard** and **Mask selected text**.
+   - Selection actions appear only with a selection. Actions report success/failure (badge/feedback) and relevant actions are audited. Entries can be disabled in settings.
 
-9. **Offline Custom Rules Backup & Migration (Export & Import):**
-   - Client-side JSON export and import for user-authored detection rules in the Logic tab.
-   - Comprehensive offline schema validation, ReDoS resistance checking, and duplicate-safe ID merging.
+9. **Clinical/PHI Evidence & Compliance Intelligence (local):**
+   - Layered clinical/PHI evidence and compliance evaluation (structured identifiers, clinical vocabulary/signatures, diagnoses/meds/procedures, domain context, and evidence aggregation) feeding explainable risk decisions and scorecards. Detection is heuristic/pattern-based and not exhaustive.
 
-10. **Policy Studio & Site-Specific DLP Governance:**
-    - User-defined URL governance rules allowing granular policy creation, toggling, deletion, export, and import.
-    - **Full Website Access Blocking:** When "Block entire website access" is enabled, matching sites are strictly restricted by an isolated Shadow DOM barrier screen preventing any page interaction, DOM access, or data leakage.
-    - **Quick Policy Templates:** Fast-setup presets for AI Chatbots (`chatgpt.com, claude.ai`), HIPAA Health Portals (`*.mychart.com`), Dev & Secrets (`github.com, gitlab.com`), and Full Site Restriction.
-    - **Granular Scope & Custom Category Picker:** Supports PHI (HIPAA), PCI DSS / Financial, API Keys & Secrets, PII, All Sensitive Categories, or granular multi-select across all 23 individual categories.
-    - **Compliance Directives & Notes:** Optional policy justification or regulatory tracking annotations (e.g. `RFC-402 Compliance Directive`).
-    - Enforcement actions:
-      - **Strict Block:** strictly prohibits pasting, prompt submission, or form submission on targeted websites with a clear rejection dialog (no raw bypass permitted).
-      - **Auto-Redact:** enforces mandatory auto-sanitization, stripping bypass actions so sensitive data cannot leave the browser unredacted.
-      - **Warn:** surfaces high-visibility policy notices while permitting user-reviewed transmission.
-    - Fully audited with ECDSA-signed audit records (`policy_created`, `policy_deleted`, `policy_enforced`).
-
-11. **Explainable Compliance Score & AI Leakage Prevention (GovernWorld Risk Formula v1):**
-    - Deterministic, mathematically provable compliance risk scoring ($0-100$) replacing opaque heuristics with auditable explanations.
-    - Generates human-readable compliance justifications that auditors and compliance officers trust: `Blocked because: Patient Name + DOB + AI Destination = 92 Risk`.
-    - **AI Leakage Rule (Strict Disallow):** When Protected Health Information (PHI) is about to leave toward an external AI system (`chatgpt.com`, `claude.ai`, `gemini.google.com`, `perplexity.ai`, `deepseek.com`, etc.) via paste or upload, it escalates immediately to `CRITICAL (100)` and hard-blocks the action with no raw bypass permitted.
-    - **Interactive Compliance Risk Scorecards:** Integrated directly into the Page Scan results, Document Studio canvas, and Full-Screen Review header, displaying real-time risk scores (0–100), color-coded risk bands (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `INFORMATIONAL`), recommended action pills (`BLOCK`, `MASK`, `WARN`, `ALLOW`), and matched HIPAA combination rule tags.
-    - Full classification breakdowns: `WHO`, `WHAT`, `WHERE`, `HOW`, and numerical factor contributions.
-
-12. **8-Layer Evidence-Based PHI Detection Graph & Layered Clinical Engine:**
-    - Operates on the GovernWorld Philosophy: *"Does this content contain evidence of a patient record, and is that data about to leave a controlled environment?"*
-    - Composable clinical evidence accumulation spanning:
-      - **Layer 1:** Structured Identifiers & Clinical Records (MRN with parentheticals/brackets, Chart Number, DOB, Encounter/Service/Admission Dates, Member/Policy/Subscriber/Group/Insurance IDs, Attending Physician with credentials like `MD`, `DO`, `NP`, `PA`, `RN`, `PhD`, Provider NPI/DEA).
-      - **Layer 2:** Medical Vocabulary Density (40+ clinical terms: pathology, radiology, triage, vital signs, biopsy, dyspnea, etc.).
-      - **Layer 3:** ICD-10 & Labeled Diagnoses (ICD codes like `E11.9`, `M54.5`, `I10`, `J45.909`, and labeled clinical diagnoses/PMH/allergies: Hypertension, Diabetes, Penicillin allergies).
-      - **Layer 4:** CPT / Procedure Codes (5-digit encounter and billing codes: `99213`, `99214`, `80053`, `87635`).
-      - **Layer 5:** Common Medication Dictionary & Prescription Regimens (Top 150+ prescribed drugs & regimens: Metformin, Lisinopril, Penicillin, Ozempic, Insulin, dosages like `10 mg daily`, `500 mg BID`).
-      - **Layer 6:** Clinical Document Signatures (Structural SOAP markers: Chief Complaint, HPI, ROS, Past Medical History, Assessment & Plan, Vitals, Discharge Summary).
-      - **Layer 7:** Healthcare EHR Domain Detection (Epic, AthenaHealth, Cerner, MyChart, eClinicalWorks, NextGen).
-      - **Layer 8:** Evidence Graph Aggregation (`NON_MEDICAL` -> `MEDICAL_CONTEXT` -> `LIKELY_HEALTHCARE` -> `LIKELY_PHI` -> `CONFIRMED_PHI`).
+10. **Optional Integrations (explicit, non-default):**
+   - Optional runtime notification permission for scan/findings notices.
+   - Optional account linking / extension-license flows (user-provided gateway origin + session credential) and community/account/policy-sync surfaces are present in UI/architecture but network/community submission/retrieval paths are disabled or gated by default in this build; core detection/redaction remains fully local and offline-capable. No scan content or raw sensitive values are transmitted by local protection flows.
 
 ---
 
@@ -396,26 +371,19 @@ npm run test:network-inspection
 
 ## Detection Categories & Global Compliance Presets
 
-The engine includes deterministic, algorithmic detectors for all primary regulatory and compliance categories:
+Deterministic, local detectors/validators cover 24 categories (configurable with per-category confidence thresholds):
 
-- **PII:** US SSN/ITIN, email addresses, phone numbers, physical addresses, dates of birth, IP addresses (IPv4/IPv6), usernames and login handles.
-- **Financial:** Payment card numbers (Luhn checksum validation), bank account and ABA routing numbers (checksum validated), International Bank Account Numbers (**IBAN** with ISO 7064 Mod-97 checksum validation for 80+ countries), salary and compensation amounts.
-- **PHI / Healthcare:** National Provider Identifiers (NPI checksum), DEA registration numbers, Medicare Beneficiary Identifiers (CMS MBI), Medical Record Numbers (MRN).
-- **International Identifiers & Travel Documents:** Canadian SIN (Luhn check), UK NHS Number (Mod-11 check), Indian Aadhaar (Verhoeff check) & PAN, Australian TFN (Mod-11 check), Brazilian CPF (Dual checksum), International Passport Numbers, and Machine Readable Zone (**MRZ** travel documents formatted to ICAO Doc 9303 TD3 standard with 7-3-1 weighted checksums).
-- **Secrets & Credentials:** API keys, AWS access keys, JWT tokens, Bearer tokens, private SSH/RSA keys, database connection strings.
-- **Custom:** User-defined rules created via the Redaction Wizard.
+| Group | Categories |
+|---|---|
+| PII / contact | `email`, `phone`, `address`, `dob`, `possible_name` (structured parsing/enrichment), `ip_address`, `username` |
+| Government / health IDs | `ssn`, `medical_record_number`, `member_id`, `npi`, `dea`, `mbi`, `canadian_sin`, `uk_nhs`, `aadhaar`, `pan_india`, `australian_tfn`, `cpf` |
+| Financial | `payment_card`, `bank_account`, `financial` |
+| Secrets / custom | `secrets`, `custom` |
 
-### Built-in Global Compliance Presets
-- **HIPAA:** Auto-selects PHI, medical record numbers, SSN, DOB, and patient contact identifiers.
-- **PCI DSS:** Auto-selects payment card numbers, card expiry, and financial account identifiers.
-- **GDPR:** Auto-selects names, emails, phone numbers, addresses, and individual identification numbers.
-- **PIPEDA:** Auto-selects Canadian SIN and personal data.
-- **UK GDPR / NHS:** Auto-selects UK NHS numbers and health records.
-- **India DPDP Act:** Auto-selects Aadhaar, PAN card, and identity identifiers.
-- **Australia Privacy Act:** Auto-selects Tax File Numbers (TFN) and personal identifiers.
-- **Brazil LGPD:** Auto-selects Brazilian CPF numbers and personal records.
-- **Developer / Secrets:** Auto-selects API keys, private keys, auth headers, cloud credentials, IP addresses, and developer usernames.
-- **Custom:** Full manual control over enabled categories and custom patterns.
+Notes: validators/checksum logic includes SSN/ITIN, Luhn payment cards, NPI/DEA/MBI, Canadian SIN, UK NHS, Aadhaar, PAN, Australian TFN, Brazilian CPF, and related international/credential patterns as implemented in `src/validators` and `src/content/detect.ts`. `possible_name` uses `detectNames` for spans plus census-backed structured parsing (`nameParser`/`nameDictionaries`) attached as `Finding.parsedName`.
+
+### Built-in Compliance Presets
+**Custom, HIPAA, PCI DSS, GDPR, Developer, PIPEDA, UK GDPR/NHS, India DPDP, Australia Privacy, Brazil LGPD.** Presets auto-select relevant categories; edits revert to Custom as applicable. Category selection and thresholds are enforced locally (and can be constrained in MANAGE mode).
 
 ---
 
@@ -447,14 +415,11 @@ The extension interface dynamically translates across 7 languages with instant s
 
 ## Interactive Redaction Studio & Custom Styles
 
-The **Document Redaction Studio** provides an interactive canvas interface:
-- **Draw Custom Boxes:** Click and drag to draw arbitrary redaction boxes on any page.
-- **Toggle Findings:** Click any detected finding box to include or exclude it from redaction.
-- **Redaction Styles:**
-  - **Blackout:** Solid opaque black rectangles (forensic and legal standard).
-  - **Whiteout:** Clean solid white fill.
-  - **Text Stamp:** Centered compliance text labels (e.g. `[REDACTED]`, `[CONFIDENTIAL]`, `[PHI REMOVED]`).
-- **Flattening:** Output files are permanently flattened in memory, preventing recovery of underlying layers.
+- **Supported inputs:** PDF, DOCX, and images (`.png`, `.jpg`, `.webp`). Digitally-born PDFs/DOCX use native text where available; OCR is used only for pages with no text of their own (English bundled; unbundled languages fail closed).
+- **Page windows:** documents longer than one pass are disclosed and scanned by user-chosen windows (e.g. pages 21–40 of 45), with persistent partial-scan warnings and windowed artifact naming.
+- **Interactive review:** toggle detected boxes, draw custom redaction boxes, choose **Blackout / Whiteout / Text Stamp**, and use full-screen review/zoom before producing output.
+- **Flattening & verification:** redactions are applied to output artifacts (not at print time), with verified/confirmed coverage stages surfaced in the workflow; print/PDF view renders the verified redacted pages.
+- **Local staging:** document bytes/previews are staged in extension-private storage and cleaned up by clear/completion/lifecycle flows (see storage section).
 
 ---
 
@@ -509,13 +474,14 @@ requested and why, and `BROWSER_SUPPORT.md` for per-browser coverage.
 ## Right-Click Context Menus
 
 GovernWorld integrates directly into the browser right-click context menu:
-- **Redact selection to clipboard:** Copies highlighted text with sensitive data masked.
-- **Mask selected text:** Immediately overlays visual privacy masks on the selected text.
-- **Scan whole page:** Triggers instant on-device scan (<kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd>).
+- **Scan page for sensitive data:** Triggers an on-demand page scan.
+- **Redact selection to clipboard:** Copies highlighted text with sensitive data masked (available when text is selected).
+- **Mask selected text:** Immediately overlays visual privacy masks on the selected text (available when text is selected).
 
-Both selection entries appear only when there is a selection to act on. The tab
-icon shows a tick when an action completed and `!` when it did not, so a
-right-click is never indistinguishable from a no-op.
+Selection actions appear only when there is a selection to act on. The tab icon
+shows a tick when an action completed and `!` when it did not, so a right-click
+is never indistinguishable from a no-op. Actions that transform/release page
+content are recorded in the local audit trail.
 
 ---
 
@@ -570,12 +536,12 @@ sequenceDiagram
 
 ---
 
-## Cloud & API Status (Locked by Default)
+## Cloud & API Status (Locked/Gated by Default)
 
 The extension is **fully functional in standalone local mode**.
-- **Disabled & Locked:** All cloud processing, remote synchronization, telemetry, and remote storage are disabled and locked by default.
-- **API-Ready Architecture:** Clean client interfaces and abstraction hooks (`src/shared/settings.ts`, `src/service-worker/index.ts`) are preserved for future optional GovernWorld platform integration.
-- **Zero Accidental Egress:** The extension does not declare host permissions or transmit telemetry.
+- **Local-first by default:** detection, OCR, and redaction run on-device. Default install declares **no install-time host permissions** (optional `http://*/*` + `https://*/*` exists only for user-approved Always-on paste protection).
+- **Gated/disabled integrations:** cloud/community submission and retrieval paths are stubbed or unavailable by default in this build; optional account/license flows are explicit and separate from scan/redaction content. Local protection flows do not transmit page/document/scan content.
+- **API-ready architecture:** interfaces/hooks exist for future optional integrations, but core functionality does not depend on them.
 
 ---
 
@@ -583,21 +549,22 @@ The extension is **fully functional in standalone local mode**.
 
 | Permission | Purpose & Justification |
 | :--- | :--- |
-| `activeTab` | Grants temporary access to the active tab's visible text **solely** when the user clicks "Scan Page". Never runs automatically. |
-| `scripting` | Injects the local scanning content script and renders visual overlay masks in the active tab. |
-| `storage` | Stores user preferences, custom wizard rules, and local audit records in `chrome.storage.local`. Exported logs are signed. |
-| `downloads` | Saves the flattened, redacted output file directly to the user's computer. |
+| `activeTab` | Grants temporary, user-gesture access to the active tab when you scan, use shortcuts, or invoke context-menu actions. Never runs automatically. |
+| `scripting` | Injects the local scanning/content script and renders visual overlay masks in the active tab after explicit user action. |
+| `storage` | Stores settings, custom rules, local audit records, and transient session/document state metadata in extension storage. |
+| `downloads` | Saves flattened, redacted output files and user-requested exports (audit/certificate/findings) to the user's computer. |
 | `offscreen` | Hosts PDF rendering and WebAssembly OCR execution without stalling the browser UI. |
-| `sidePanel` | Provides a persistent side panel (`Alt+Shift+P`) for document scanning, live wizard rule creation, and in-depth instruction viewing. |
-| `contextMenus` | Adds right-click shortcuts (*Redact selection*, *Mask element*, *Scan page*). |
-| `notifications` *(optional)* | Requested at runtime only if the user enables background completion notifications. |
+| `sidePanel` | Provides a persistent side panel (`Alt+Shift+P`) for protection, document review, logic, and settings. |
+| `contextMenus` | Adds right-click actions: **Scan page for sensitive data** and, when text is selected, **Redact selection to clipboard** and **Mask selected text**. |
+| `notifications` *(optional, runtime)* | Requested only if you enable scan/findings notifications. |
+| `http://*/*`, `https://*/*` *(optional host access, runtime)* | Requested only for **Always on** paste protection so pages can be guarded on visited sites. Default install declares no host permissions; revoking the grant stops always-on coverage. |
 
 ---
 
 ## Developer Setup & Build Commands
 
 ### Prerequisites
-- Node.js 20+
+- Node.js 22.13+ (per `package.json` engines)
 - npm 10+
 
 ### Build Commands
