@@ -536,6 +536,14 @@ body[data-reduced-motion="true"] *::after {
   color: var(--text-faint);
 }
 
+.finding__name-detail {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  margin-top: 2px;
+  word-break: break-word;
+}
+
 .finding__context {
   grid-column: 1 / -1;
   color: var(--text-faint);

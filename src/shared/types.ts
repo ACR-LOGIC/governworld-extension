@@ -13,6 +13,7 @@ import type { ImageCandidate } from "./messages";
 import type { AccountView } from "./account";
 import type { NotificationPreferences } from "./settings.js";
 import type { AuditEvent } from "./audit.js";
+import type { ParsedName } from "../content/detectors/nameParser.js";
 
 export type FindingCategory =
   | "email"
@@ -76,6 +77,8 @@ export interface Finding {
   attribute?: string;
   /** Specific PHI entity classification (e.g. "mrn", "diagnosis", "medication", "patient_name", "dob") */
   entityType?: string;
+  /** Structured name components for possible_name findings (additive; never the raw value). */
+  parsedName?: ParsedName;
   selected: boolean;
 }
 
