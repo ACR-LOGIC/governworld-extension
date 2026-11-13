@@ -4,14 +4,14 @@
 // iteration. Fourteen iterations later it held 19 archives and 273 MB, and the
 // only thing distinguishing the current one from the rest was the commit SHA in
 // the filename. That is a trap: several of those are explicitly marked
-// do-not-submit in RELEASE_EVIDENCE.md, and the wrong one being uploaded to the
+// do-not-submit in docs/releases/RELEASE_EVIDENCE.md, and the wrong one being uploaded to the
 // Chrome Web Store is not a recoverable mistake for a first listing.
 //
 // This script keeps exactly the current artefact pair and removes the rest. It
 // is deliberately conservative:
 //
 //   - The current pair is identified from the commit recorded in
-//     RELEASE_EVIDENCE.md, not from a glob, so a stale archive is never guessed
+//     docs/releases/RELEASE_EVIDENCE.md, not from a glob, so a stale archive is never guessed
 //     at.
 //   - Every archive is named `<prefix>-<sha>.<ext>`; anything that does not
 //     parse is left alone and reported, never deleted on a guess.
@@ -37,7 +37,7 @@ const apply = process.argv.includes("--apply");
 const SCRATCH = [".tmp-ui-session", ".tmp-ocr-smoke"];
 
 const currentSha = (() => {
-  const evidence = readFileSync(join(root, "RELEASE_EVIDENCE.md"), "utf8");
+  const evidence = readFileSync(join(root, "docs/releases/RELEASE_EVIDENCE.md"), "utf8");
   const m = evidence.match(/\|\s*Commit SHA\s*\|\s*`([0-9a-f]{7,40})`/);
   return m ? m[1] : null;
 })();
@@ -85,7 +85,7 @@ if (!existsSync(releaseDir)) {
 }
 
 if (!currentSha) {
-  console.error("could not read the current commit SHA from RELEASE_EVIDENCE.md; refusing to guess");
+  console.error("could not read the current commit SHA from docs/releases/RELEASE_EVIDENCE.md; refusing to guess");
   process.exit(1);
 }
 console.log(`current release commit: ${currentSha}\n`);

@@ -12,7 +12,7 @@ const extRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(extRoot, "dist-firefox");
 const manifestPath = join(dist, "manifest.json");
 
-/** The add-on ID, locked deliberately. Never regenerated (see BROWSER_SUPPORT.md). */
+/** The add-on ID, locked deliberately. Never regenerated (see docs/publishing/BROWSER_SUPPORT.md). */
 export const LOCKED_FIREFOX_ADDON_ID = "redaction@governworld.acrlogic.com";
 
 describe.skipIf(!existsSync(manifestPath))("firefox extension package", () => {

@@ -211,7 +211,7 @@ describe("a context-menu action cannot fail silently", () => {
 
   it("does not claim to mask an element it never masks", () => {
     expect(WORKER).not.toContain("Mask selected text / element");
-    for (const doc of ["README.md", "PERMISSIONS.md", "CHROMEWEBSTORE.md", "STORE_DESCRIPTION.md"]) {
+    for (const doc of ["README.md", "docs/security/PERMISSIONS.md", "docs/publishing/CHROMEWEBSTORE.md", "docs/publishing/STORE_DESCRIPTION.md"]) {
       expect(read(doc), `${doc} still claims element masking`).not.toContain("Mask selected text / element");
     }
   });

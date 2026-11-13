@@ -466,7 +466,7 @@ content script is injected on demand (via an `activeTab` grant from the
 toolbar action, the context menu, or the keyboard shortcut). Always-on is the
 explicit opt-in for standing access — requested at runtime as optional
 `http://*/*` + `https://*/*` origins (never the `<all_urls>` blanket), and
-revocable at any time. See [PERMISSIONS.md](PERMISSIONS.md) for what is
+revocable at any time. See [PERMISSIONS.md](docs/security/PERMISSIONS.md) for what is
 requested and why, and `BROWSER_SUPPORT.md` for per-browser coverage.
 
 ---

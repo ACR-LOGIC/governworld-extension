@@ -1,4 +1,4 @@
-// Verifies every SHA-256 recorded in RELEASE_EVIDENCE.md against the committed
+// Verifies every SHA-256 recorded in docs/releases/RELEASE_EVIDENCE.md against the committed
 // blob at HEAD, for both the release artifacts and the separately-uploaded
 // store images.
 //
@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const fullEvidence = readFileSync(join(root, "RELEASE_EVIDENCE.md"), "utf8");
+const fullEvidence = readFileSync(join(root, "docs/releases/RELEASE_EVIDENCE.md"), "utf8");
 
 // Only the current release is verifiable. The "Previous (superseded)" section
 // lists historical artifacts, most of which are gitignored and absent from any
@@ -71,7 +71,7 @@ for (const line of evidence.split(/\r?\n/)) {
 }
 
 if (recorded.length === 0) {
-  console.log("no digests found in RELEASE_EVIDENCE.md - is the format still the same?");
+  console.log("no digests found in docs/releases/RELEASE_EVIDENCE.md - is the format still the same?");
   process.exit(1);
 }
 
@@ -135,5 +135,5 @@ for (const { sha, name } of recorded) {
   }
 }
 
-console.log(`\n${checked - failures}/${checked} digests verified against ${basename("RELEASE_EVIDENCE.md")}`);
+console.log(`\n${checked - failures}/${checked} digests verified against ${basename("docs/releases/RELEASE_EVIDENCE.md")}`);
 process.exit(failures === 0 ? 0 : 1);

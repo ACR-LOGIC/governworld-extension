@@ -421,7 +421,7 @@ export interface ContributionBlocked {
 /**
  * Screen a contribution for literal personal data.
  *
- * PRIVACY.md promises "your contribution is the logic, not the source data", and
+ * docs/security/PRIVACY.md promises "your contribution is the logic, not the source data", and
  * the example text never being stored in `CustomPattern` is what makes that
  * structurally true for the wizard's own output. It is not true for the fields
  * a human types: a user can paste `219-09-9999` straight into `pattern`, name a

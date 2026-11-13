@@ -4,7 +4,7 @@
 // Community rules are detection *policy*. A rule that reaches the detector
 // changes what every subsequent scan of every document reports, so the inbound
 // validator is a security boundary, not a type check. The outbound screener
-// exists because PRIVACY.md promises contributions are "the logic, not the data".
+// exists because docs/security/PRIVACY.md promises contributions are "the logic, not the data".
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const VALIDATOR_KEYS = [

@@ -27,10 +27,10 @@ const read = (rel: string) => readFileSync(join(extRoot, rel), "utf8");
 const MARKETING = [
   "README.md",
   "CONTRIBUTING.md",
-  "PERMISSIONS.md",
-  "STORE_DESCRIPTION.md",
-  "CHROMEWEBSTORE.md",
-  "STORE_READINESS.md",
+  "docs/security/PERMISSIONS.md",
+  "docs/publishing/STORE_DESCRIPTION.md",
+  "docs/publishing/CHROMEWEBSTORE.md",
+  "docs/publishing/STORE_READINESS.md",
   "src/landing/index.html",
 ];
 
@@ -88,7 +88,7 @@ describe("no claim outruns the implementation", () => {
   it("keeps the narrower claim that page text and documents never leave", () => {
     // Over-correcting into vagueness would be its own failure: the guarantee is
     // real and users deserve it stated plainly.
-    for (const file of ["STORE_DESCRIPTION.md", "CHROMEWEBSTORE.md"]) {
+    for (const file of ["docs/publishing/STORE_DESCRIPTION.md", "docs/publishing/CHROMEWEBSTORE.md"]) {
       expect(read(file), `${file} dropped the egress guarantee`).toMatch(
         /page text and documents never leave/i,
       );
@@ -150,7 +150,7 @@ describe("no claim outruns the implementation", () => {
   });
 
   it("scopes the audit signature to what it actually proves", () => {
-    const store = read("CHROMEWEBSTORE.md");
+    const store = read("docs/publishing/CHROMEWEBSTORE.md");
     expect(store).toMatch(/does not prove the log is a complete history/i);
   });
 
@@ -249,7 +249,7 @@ describe("privacy statements match the code", () => {  it("does not promise dele
       /or the next Extension service-worker startup/i,
       /clear-data, or the next/i,
     ];
-    for (const file of ["PRIVACY.md", "src/popup/privacy.html", "PERMISSIONS.md"]) {
+    for (const file of ["docs/security/PRIVACY.md", "src/popup/privacy.html", "docs/security/PERMISSIONS.md"]) {
       const text = read(file).replace(/\s+/g, " ");
       for (const promise of FALSE_PROMISES) {
         expect(text, `${file} still promises deletion on service-worker restart`).not.toMatch(promise);
@@ -260,7 +260,7 @@ describe("privacy statements match the code", () => {  it("does not promise dele
   it("states why restart does not purge, rather than only omitting the promise", () => {
     // Dropping the false claim is not enough; a reader needs the reason, because
     // otherwise it looks like an oversight rather than a deliberate choice.
-    for (const file of ["PRIVACY.md", "src/popup/privacy.html"]) {
+    for (const file of ["docs/security/PRIVACY.md", "src/popup/privacy.html"]) {
       const text = read(file).replace(/\s+/g, " ");
       expect(text, `${file} does not explain the restart behaviour`).toMatch(
         /not (deleted|removed) (merely )?because/i,
@@ -270,7 +270,7 @@ describe("privacy statements match the code", () => {  it("does not promise dele
   });
 
   it("names the events that actually purge staged bytes", () => {
-    const permissions = read("PERMISSIONS.md");
+    const permissions = read("docs/security/PERMISSIONS.md");
     expect(permissions).toMatch(/browser startup/i);
     expect(permissions).toMatch(/install\/update/i);
   });

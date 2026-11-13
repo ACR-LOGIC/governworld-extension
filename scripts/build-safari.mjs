@@ -9,7 +9,7 @@
 // or the web-based packager in App Store Connect (Apple Developer Program
 // membership required). Neither is available on this build machine, so the
 // payload is built and checksummed for handoff, and packaging remains a
-// documented blocker in BROWSER_SUPPORT.md — not a fabricated artifact.
+// documented blocker in docs/publishing/BROWSER_SUPPORT.md — not a fabricated artifact.
 //
 // Safari API notes (capability-gated in code, never assumed):
 // - scripting.registerContentScripts: used when present for always-on;
@@ -70,8 +70,8 @@ for (const [from, to] of [
   ["src/popup/redact.html", "redact.html"],
   ["src/popup/review.html", "review.html"],
   ["src/popup/review.css", "review.css"],
-  ["PRIVACY.md", "PRIVACY.md"],
-  ["PERMISSIONS.md", "PERMISSIONS.md"],
+  ["docs/security/PRIVACY.md", "PRIVACY.md"],
+  ["docs/security/PERMISSIONS.md", "PERMISSIONS.md"],
 ]) {
   copyFileSync(join(root, ...from.split("/")), join(outDir, to));
 }

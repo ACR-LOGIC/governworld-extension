@@ -65,8 +65,8 @@ for (const [from, to] of [
   ["src/popup/redact.html", "redact.html"],
   ["src/popup/review.html", "review.html"],
   ["src/popup/review.css", "review.css"],
-  ["PRIVACY.md", "PRIVACY.md"],
-  ["PERMISSIONS.md", "PERMISSIONS.md"],
+  ["docs/security/PRIVACY.md", "PRIVACY.md"],
+  ["docs/security/PERMISSIONS.md", "PERMISSIONS.md"],
 ]) {
   copyFileSync(join(root, ...from.split("/")), join(outDir, to));
 }
