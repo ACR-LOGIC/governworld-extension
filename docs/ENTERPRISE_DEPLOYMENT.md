@@ -24,7 +24,7 @@ This guide details how enterprise administrators deploy, configure, and enforce 
 | `enforcedCategories` | `array` of strings | `[]` | Categories that must remain permanently active. |
 
 Supported category identifiers:
-`email`, `phone`, `ssn`, `dob`, `medical_record_number`, `member_id`, `npi`, `dea`, `mbi`, `address`, `payment_card`, `secrets`, `possible_name`, `custom`, `canadian_sin`, `uk_nhs`, `aadhaar`, `pan_india`, `australian_tfn`, `cpf`.
+`email`, `phone`, `ssn`, `dob`, `medical_record_number`, `member_id`, `npi`, `dea`, `mbi`, `address`, `payment_card`, `secrets`, `possible_name`, `custom`, `canadian_sin`, `uk_nhs`, `aadhaar`, `pan_india`, `australian_tfn`, `cpf`, `ip_address`, `username`, `bank_account`, `financial`.
 
 ---
 

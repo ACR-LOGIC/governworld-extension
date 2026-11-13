@@ -278,9 +278,9 @@ The Extension asks for the minimum permissions needed for its function:
 - `storage` — remember your settings, local rules, and masked session state.
 - `downloads` — save the flattened redacted document you create.
 - `offscreen` — run document OCR and rendering in a dedicated offscreen document.
-- `sidePanel` — show the side panel (`Alt+Shift+P`) for scanning, document redaction, notifications, and account/extension-license management.
-- Approved GovernWorld host permissions — contact only the service origins needed for explicitly enabled linked features.
-- `notifications` (optional, requested at runtime) — raise a notification when a scan finds sensitive data, only after you enable the toggle.
+- `sidePanel` - show the side panel (`Alt+Shift+P`) for scanning, document redaction, notifications, and settings/account surfaces.
+- `http://*/*`, `https://*/*` (optional host access, requested at runtime) - only for the Always-on paste-protection mode when you explicitly grant it. The default install declares no install-time host permissions. Optional account-linking and community features, when explicitly used, contact only their configured/approved GovernWorld service origins and never transmit scan content, document bytes, or masked values.
+- `notifications` (optional, requested at runtime) - raise a notification when a scan finds sensitive data, only after you enable the toggle.
 
 The extension does not request the `tabs`, `history`, `bookmarks`, `cookies`, or `webRequest` permissions, and it does not request arbitrary `*://*` host access. See `PERMISSIONS.md` for the full justification.
 

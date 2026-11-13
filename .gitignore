@@ -46,3 +46,6 @@ Thumbs.db
 # Generated release images (regenerable via scripts)
 release/images/marquee-promo-tile-1400x560.png
 release/images/store-icon-128x128.png
+
+# Repomix packs
+repomix-output.xml
