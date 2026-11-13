@@ -402,7 +402,7 @@ GovernWorld is designed to be accessible to all users, including those who are b
 
 ## Multi-Language Internationalization (i18n)
 
-The extension interface dynamically translates across 7 languages with instant switching and local persistence:
+The extension provides interface translation across 7 languages with instant switching and local persistence:
 - 🇺🇸 **English** (`en`)
 - 🇪🇸 **Español** (`es` - Spanish)
 - 🇫🇷 **Français** (`fr` - French)
