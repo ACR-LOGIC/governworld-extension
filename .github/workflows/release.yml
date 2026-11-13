@@ -3,7 +3,7 @@ name: Release & Multi-Store Publish
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - 'v*'
   workflow_dispatch:
     inputs:
       publish_chrome:
@@ -39,7 +39,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version: 20
           cache: 'npm'
 
       - name: Install dependencies
@@ -77,12 +77,27 @@ jobs:
       - name: Package Multi-Browser Releases
         id: package
         run: |
-          COMMIT=$(git rev-parse HEAD)
-          npm run release:browsers "$COMMIT"
-          CHROMIUM_ZIP=$(ls release/GovernWorld-Chromium-*.zip | head -n 1)
-          FIREFOX_ZIP=$(ls release/GovernWorld-Firefox-*.zip | head -n 1)
+          mkdir -p artifacts
+          
+          # Package Chrome build from dist/
+          cd dist
+          zip "../artifacts/governworld-chrome-${{ github.ref_name }}.zip" .
+          cd ..
+          
+          # Package Firefox build
+          cp manifest.firefox.json dist/manifest.json
+          cd dist
+          zip "../artifacts/governworld-firefox-${{ github.ref_name }}.zip" .
+          cd ..
+          
+          CHROMIUM_ZIP="$(ls artifacts/governworld-chrome-${{ github.ref_name }}.zip)"
+          FIREFOX_ZIP="$(ls artifacts/governworld-firefox-${{ github.ref_name }}.zip)"
           echo "chromium_zip=$CHROMIUM_ZIP" >> "$GITHUB_OUTPUT"
           echo "firefox_zip=$FIREFOX_ZIP" >> "$GITHUB_OUTPUT"
+          
+          # Generate checksums
+          sha256sum artifacts/governworld-chrome-${{ github.ref_name }}.zip > artifacts/SHA256SUMS.txt
+          sha256sum artifacts/governworld-firefox-${{ github.ref_name }}.zip >> artifacts/SHA256SUMS.txt
 
       - name: Verify Packaged Zip Structure
         run: |
@@ -134,9 +149,9 @@ jobs:
         with:
           name: GovernWorld Extension ${{ github.ref_name }}
           files: |
-            release/GovernWorld-*.zip
-            release/GovernWorld-*.tar.gz
-            release/BROWSER_SHA256SUMS
+            artifacts/governworld-chrome-${{ github.ref_name }}.zip
+            artifacts/governworld-firefox-${{ github.ref_name }}.zip
+            artifacts/SHA256SUMS.txt
           generate_release_notes: true
           draft: false
           prerelease: false

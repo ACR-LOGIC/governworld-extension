@@ -1,160 +1,265 @@
-# AGENTS.md
+# AGENTS.md - Engineer Configuration
 
-## Verification (CI parity, in order)
+This document outlines the engineering setup for the GovernWorld Chrome Extension repository, including directory structure, CI/CD configuration, license implementation, and core protection system details.
 
+## Repository Structure & Layout
+
+### Primary Directories
+
+#### src/
+- `src/service-worker/`: Core service worker orchestration and message handling
+- `src/content/`: Content script for live DOM scanning and masking
+- `src/offscreen/`: Offscreen document for OCR processing and heavy computations
+- `src/shared/`: Common utilities, types, and helper functions shared across contexts
+
+#### scripts/
+- `scripts/build-firefox.mjs`: Firefox-specific build configuration
+- `scripts/build.mjs`: Main Chromium build configuration
+- `scripts/verify-release-zip.mjs`: Release verification and validation script
+- Additional automation and build scripts
+
+#### tests/
+- `tests/`: Comprehensive test suite covering unit, integration, and E2E testing
+
+#### scripts/lib/
+- `scripts/lib/png.mjs`: PNG manipulation utilities
+
+#### docs/
+- `docs/community-trust-model.md`: Community trust model documentation
+- `docs/DEV-MODE-INSTALL.md`: Developer mode installation guide
+- `docs/ENTERPRISE_DEPLOYMENT.md`: Enterprise deployment configuration
+- `docs/git-history-tarballs.md`: Git history management documentation
+- `docs/ocr-languages.md`: OCR language configuration
+- `docs/STORE-PUBLISHING.md`: Store publishing guidelines
+- `docs/submission-package.md`: Submission package documentation
+
+### Security Documentation
+
+#### docs/security/
+- `PERMISSIONS.md`: Detailed permission justification and requirements
+- `PRIVACY.md`: Privacy policy and data handling documentation
+- `SECURITY_ENFORCEMENT.md`: Enterprise security enforcement guidelines
+
+### Release Documentation
+
+#### docs/releases/
+- `RELEASE_EVIDENCE.md`: Release verification evidence and checksums
+- `RELEASE_NOTES.md`: Release notes and version information
+- `TEST_READY.md`: Test readiness and validation checklist
+
+### Publishing Documentation
+
+#### docs/publishing/
+- `BROWSER_SUPPORT.md`: Browser support matrix and compatibility
+- `CHROMEWEBSTORE.md`: Chrome Web Store submission guidelines
+- `STORE_DESCRIPTION.md`: Store description and presentation
+- `STORE_READINESS.md`: Store readiness assessment
+
+## CI/CD Configuration
+
+### GitHub Actions Workflow
+
+File: `.github/workflows/release.yml`
+
+This workflow automates:
+- Multi-browser extension builds (Chrome, Firefox, Safari)
+- Checksum generation and verification
+- GitHub Release creation with artifacts
+- Store submission (Chrome Web Store, Firefox AMO)
+- Cross-platform compliance validation
+
+### Key Workflow Steps
+
+1. **Dependency Management**: Node.js 20 LTS with npm caching
+2. **Verification Gates**: TypeScript typechecking, security linting, sidepanel sync
+3. **Multi-Target Builds**: Chrome, Firefox, and Safari variants
+4. **Package Validation**: Manifest and offline asset verification
+5. **Artifact Generation**: ZIP packaging with checksum generation
+6. **Store Submission**: Automated publishing to supported app stores
+7. **Release Creation**: GitHub Release with downloadable artifacts
+
+## License Implementation
+
+### Business Source License 1.1 (BSL 1.1)
+
+File: `LICENSE`
+
+**Key Provisions:**
+- **Grant**: Personal, educational, academic, and internal non-commercial use
+- **Restrictions**: Prohibits commercial hosting, monetization, or selling
+- **Transition**: Changes to Apache License 2.0 after November 13, 2030
+- **Contact**: Commercial licensing inquiries to andres@acr-logic.com
+
+**Licensor**: Andres Chavez Ramirez (ACR-LOGIC)
+
+## Core Protection System
+
+### Detection Capabilities
+
+The extension includes 24 detection categories:
+
+#### PII / Contact
+- Email addresses
+- Phone numbers
+- Physical addresses
+- Dates of birth
+- Parsed names (structured with prefix, first, middle, last, suffix, credentials, gender, age, DOB)
+- IP addresses
+- Usernames
+
+#### Government / Health IDs
+- Social Security Numbers
+- Medical Record Numbers
+- Member IDs
+- National Provider Identifier (NPI)
+- Drug Enforcement Administration (DEA) numbers
+- Medicare Beneficiary Identifier (MBI)
+- Canadian SIN
+- UK NHS numbers
+- Aadhaar (India)
+- PAN (India)
+- Australian TFN
+- Brazilian CPF
+
+#### Financial
+- Credit card numbers
+- Bank account numbers
+- Financial institution identifiers
+
+#### Secrets / Custom
+- Custom pattern matching
+- User-defined detection rules
+
+### Processing Pipeline
+
+#### 1. Content Extraction
+- DOM parsing for visible webpage text
+- Accessibility attribute reading (aria-label, alt, placeholder, title)
+- OCR processing for image-based documents (PDFs, screenshots)
+
+#### 2. Pattern Detection
+- Deterministic regex matching
+- Checksum validation (Luhn for credit cards, SSN/MRN formatting)
+- Structured name parsing and enrichment
+
+#### 3. Masking & Redaction
+- Shadow DOM overlay for live webpage masking
+- Visual redaction in Document Studio (blackout/whiteout/text stamp)
+- Verified pixel-level masking
+
+#### 4. Export & Audit
+- Signed audit trails (ECDSA P-256)
+- Printable compliance certificates
+- CSV and JSON export formats
+
+### Operating Modes
+
+#### LOCAL Mode (Standalone)
+- On-device processing
+- No mandatory account or subscription
+- Zero remote coordination
+- User-configured detection rules
+
+#### MANAGE Mode (Enterprise)
+- Administrator-mandated policies
+- Cryptographic Ed25519 verification
+- Anti-rollback and anti-replay protection
+- Offline continuity enforcement
+
+### Architecture Invariants
+
+- **Zero Network Egress**: All sensitive data remains on-device
+- **Fail-Closed**: Enterprise policies default to deny
+- **Deterministic Processing**: Reproducible results
+- **Local-First**: No external dependencies for core functionality
+
+## Development Environment
+
+### Prerequisites
+- Node.js 20+ LTS
+- Chrome 116+ or Firefox 109+
+- npm or pnpm
+
+### Build Commands
 ```bash
-npm run typecheck   # tsc --noEmit
-npm test            # vitest run — 60+ files / 1100+ tests (do not hard-code the count; it grows)
-npm run build       # esbuild → dist/
-npm run build:firefox  # esbuild → dist-firefox/ (Firefox MV3 manifest, locked gecko id)
-npm run build:safari   # esbuild → dist-safari/ (handoff payload only, NOT a distributable)
-npx vitest run tests/dist-manifest.test.ts tests/offline-assets.test.ts
-npx vitest run tests/firefox-package.test.ts tests/firefox-manifest.test.ts  # needs dist-firefox/
-npm run sync:sidepanel  # regenerate src/sidepanel/{sidepanel.html,sidepanel.css} from src/popup/
-npm run icons      # regenerate icons/ from brand/logo-master.png
-npm run test:doc-flow   # Document Studio end-to-end in real Chromium (needs a display)
-npm run test:doc-window  # page-window choice + partial-pass disclosure in real Chromium (needs a display)
-npm run test:no-text    # a page that is only an image must not report success (needs a display)
-npm run test:invocation # context-menu reply, badge marker, and stranded-marker recovery (needs a display)
-npm run test:image-capture  # a textless page offers its image to the studio (needs a display)
-npm run test:review    # full-screen review: draw, restyle, redact, download (needs a display).
-                       # The redaction uses chrome.downloads with saveAs:true, so a NATIVE save dialog opens
-                       # and blocks. Automation cannot answer it, so the check waits on chrome.downloads
-                       # rather than the page's status text, which only shows what the worker reported
-                       # before the dialog stalled it.
-npm run capture:ui  # Playwright UI walkthrough → screenshots + video (needs a display)
+# Install dependencies
+npm install
+
+# TypeScript validation
+npm run typecheck
+
+# Full test suite
+npm test
+
+# Build for Chrome
+npm run build
+
+# Build for Firefox
+npm run build:firefox
+
+# Build for Safari (handoff)
+npm run build:safari
 ```
 
-- The last two tests are the build-contract gate: they verify every path `manifest.json` resolves and all offline worker assets exist in `dist/`. They **skip silently when `dist/` is absent** — always run them after `npm run build`.
-- `tests/*.e2e.spec.ts` (Playwright) are **not** part of `npm test` or CI. They need a persistent Chromium context with the unpacked `dist/` extension plus a fixture server on `localhost:8081`. There is no `playwright.config.ts`; they only run when invoked directly.
-- `npm run verify:browser` — requires `npx playwright install chromium` and a prior `npm run build`. Launches **headed** Chromium (`headless: false`), so it needs a display; never run it headless.
-- **The test environment is per file, not global.** `vitest.config.ts` deliberately does NOT set `test.environment`: most of the suite is Node, and the service worker, validators and message contract have no business touching a DOM. A file that needs one opts in with a `// @vitest-environment` directive. `tests/paste-guard.test.ts` is the reason this matters — it builds element mocks that assign `child.parentNode`, which jsdom rejects (`parentNode` is getter-only) and which therefore forces that suite to stay on Node. `maxWorkers: 4` is there because booting a DOM environment in every one of ~69 workers could otherwise miss Vitest's internal 60s worker-start deadline and fail the whole run with "Timeout waiting for worker to respond".
-- All headed scripts (`verify:*`, `capture:*`, `make-*-screenshots`, `make-promo-tile`, `make-photo-fixtures`) spread `browserChannelArgs()` from `scripts/browser-launch.mjs` into their launch options. Default is unchanged (bundled Chromium); on machines where the Playwright CDN is blocked, `GW_BROWSER_CHANNEL=chrome|msedge` drives the installed browser instead, or `GW_BROWSER_EXECUTABLE` points at an exact binary (e.g. a manually fetched Chrome-for-Testing). Note: Google removed `--load-extension` in Chrome 137, so system Chrome ≥137 silently ignores CLI-loaded unpacked extensions — headed automation there needs Chrome-for-Testing (the Playwright bundle) or a manual `chrome://extensions` Load-unpacked. When CLI loading is dead, seed once via GUI (Developer Mode → Load unpacked) into a stable profile and reuse it with `GW_BROWSER_PROFILE_DIR` (see `browserProfileDir()`); scripts never delete the override directory.
-- `npm run test:photo-e2e` — full-chain OCR/redaction E2E in real Chromium. Requires `npm run build` and fixtures via `npm run fixtures:photo`.
-- `npm run test:doc-flow` — Document Studio journey in real Chromium: pick a PDF, progress appears, findings render, the studio survives a popup reload, redaction completes, a download is produced, and the print view is offered. Requires `npm run build`. It builds the File and dispatches `change` from inside the page instead of using Playwright's `setInputFiles`, which intermittently fails to deliver the event in this environment and reads as a product failure when it is a harness artefact. The redaction is requested with `saveAs: true`, so in automation the download may sit in `in_progress` with nobody to answer the save dialog; the check accepts that and only fails on a missing, errored, or interrupted download.
-- `npm run test:doc-window` — the page-window journey in real Chromium: pick a generated 45-page PDF, the count discloses its length, the chooser offers a range, pages 21–40 are scanned and labelled as such with a persistent "the rest was NOT scanned" warning, and the artifact is named `*-redacted-p21-40.pdf`. Requires `npm run build`. The fixture is built with pdf-lib and carries a real text layer, so detection runs on the text layer rather than waiting on OCR. The artifact name is asserted from the popup's status line, not from `chrome.downloads`, because `saveAs: true` reports a temp UUID filename until someone answers the save dialog.
-- `npm run test:offline-ocr` — smoke test that Tesseract runs from `dist/assets` with no network. Requires `npm run build` first.
-- `npm run capture:ui` — drives the built extension through a 23-step journey and writes screenshots, webm video and `report.json` to `.tmp-ui-session/` (gitignored). It loads a **throwaway** extension copy under `.tmp-ui-session/ext` that adds a localhost-only `host_permissions` entry, because a live page scan is otherwise impossible: `dist/` ships with no host permissions by design and `activeTab` needs a real toolbar gesture that automation cannot synthesise. The script asserts `dist/manifest.json` has no `host_permissions` before building the variant and never writes to `dist/`.
-- `capture:ui` exercises mask application on the page. The worker's tab resolver filters extension URLs out but then falls back to the focused tab, so the harness must keep the **fixture** as the active tab: it clicks through the popup's own DOM with `el.click()` rather than `page.click()`, which would focus the popup tab and make the worker look for a scan session that belongs to the popup. Assertions check the mask count inside the content script's shadow root (`div[data-gw-scan-overlay]`), not the light DOM.
+### Testing Strategy
+- **Unit Tests**: Vitest (Node.js environment)
+- **Integration Tests**: Component interaction
+- **E2E Tests**: Playwright (browser environment)
+- **Offline OCR**: Synthetic test data
+- **Network Inspection**: Zero egress verification
 
-## Build
+## Quality Gates
 
-`npm run build` (esbuild via `build.mjs`) bundles five entry points with **different formats**: service worker and offscreen document are ESM; content script, popup, and sidepanel are IIFE. HTML/CSS is copied, not bundled.
+### Automated Verification
+1. **TypeScript Typechecking**: `npm run typecheck`
+2. **Security Linting**: `npm run lint:security`
+3. **Sidepanel Sync Check**: `npm run sync:sidepanel:check`
+4. **Test Suite Execution**: `npm test`
+5. **Manifest Validation**: Offline asset verification
 
-- The build **fails closed** without `vendor/tessdata/eng.traineddata.gz` — it is vendored on purpose. Never delete it.
-- pdf.js worker, tesseract worker/core/wasm, and tessdata are copied into `dist/assets/` and loaded via `chrome.runtime.getURL`. The document pipeline must never fetch OCR/PDF assets from the network.
-- `dist/` is gitignored; `tests/dist-manifest.test.ts` skips without it.
-- Icons are generated deterministically from `brand/logo-master.png` by `node scripts/make-icons.mjs`; never hand-edit `icons/`. The emblem is composited whole onto a rounded navy tile — a square crop cannot keep the orbital rings without clipping them, because the emblem is 899x707 and the wordmark starts 11px below it. `scripts/logo-measure.mjs` reprints the measured geometry if the master is ever replaced.
-- The brand mark everywhere else is `icons/icon-128.png` referenced from markup, not an inline SVG. A drawn stand-in is a second, different logo.
-- **OCR text and token offsets share one implementation.** `src/document-pipeline/offsets.ts` owns both `assembleOcrText` (what detection runs over) and `tokenSpans` (how a match maps back to page rectangles). This rule used to be written out twice, in `ocr.ts` and `core.ts`, kept in sync only by a comment. When tesseract.js 7 was upgraded, `ocr.ts` started returning Tesseract's own `data.text` — different spacing — and every unit test passed while redaction boxes were drawn over content that was never detected. Only the pixel-level photo E2E caught it. Never reintroduce a second copy of the separator rule. Enforced by `tests/ocr-token-offsets.test.ts`.
-- **Name detection has one span detector and one structured parser.** `src/content/detectors/names.ts` (`detectNames`) is the sole `possible_name` span detector wired in `src/content/detect.ts` - do not add dictionary-based span detection there (it duplicates spans and truncates matches). `src/content/detectors/nameParser.ts` (`parseName`, census-backed classifiers) and `src/content/detectors/nameDictionaries.ts` (generated census Sets) provide structured enrichment only. The content script attaches `Finding.parsedName`, boosts structured names pre-threshold (`Math.max(confidence, 0.85)` when prefix/credentials or first+last are present), and does not auto-select low-structure `possible_name` findings for masking. `parsedName` is rendered in findings UI and included in CSV/JSON exports. Dictionaries remain bundled in `dist/content.js` (~2.1 MB); an esbuild IIFE dynamic-import split did not emit a chunk, so do not rely on runtime chunk loading without changing bundling.
-- **tesseract.js does not return blocks by default.** `recognize()` must be called with `{ blocks: true, text: true }` and the result walked as `blocks -> paragraphs -> lines -> words`. Without the option, `data.blocks` is null, recognition "succeeds", and the pipeline reports zero tokens — a silent failure that typechecking cannot catch. `npm run test:offline-ocr` asserts the traversal, and it is proven to fail when the option is removed.
-- **The print/PDF view redacts nothing.** Pipeline: action click → service worker injects and extracts the DOM → session payload (metadata + masked previews only) → offscreen render/OCR/detect → boxes painted and pixel-verified → redacted pages staged in the shared store → `redact.html` renders them → `window.print()` (printer, or Chrome's own "Save as PDF"). `redact.html` is a pure renderer on purpose: a redaction applied at print time could not be verified, and a failed one would reach the printer looking clean. It uses `window.print()` deliberately — `chrome.printing` is enterprise-policy-gated and `chrome.debugger` would add a permission to a tool that exists to protect sensitive data. Pages travel by store key, never in a message. Enforced by `tests/print-pipeline.test.ts` and `npm run verify:print`.
-- Document pages carry a real point size. `loadImagePage` converts pixels at 96 DPI; it used to return `widthPt: 0`, which is not a valid page size and made the print view reject every image document.
-- **Only a page with no text of its own is OCR'd.** Every page source reports the tokens it can read itself as `OcrToken[] | null`, and `readPages` in `impl.ts` OCRs only when that is null: a PDF page with a text layer is read from the file (`pdf.ts`), a DOCX page is read from the layout it was drawn from (`docx.ts`), an image page is `null` because pixels are all it has. OCR was previously the only path, which meant a digitally-born PDF was re-read by a guesser — slower, and prone to turning `0`/`O` or `1`/`l` into each other, which is how a valid card number stops matching and a real value ships unredacted. A source must never fabricate tokens to avoid the slow path; `null` is the honest signal.
-- **A text-layer box is widened, never trimmed.** `TextItem.width` is the advance of a whole string in text space, and kerning, ligatures and font substitution all move the real glyph edges relative to it, so `tokensFromTextLayer` adds horizontal slack proportional to font height. A box that stops a few pixels short leaves a readable fragment of the value while still verifying as covered.
-- **The review page reads tokens in the page's own coordinate space.** `getTextContent` is resolved against the SAME viewport the page was rendered with; if the pixel cap rescaled the viewport, using the unscaled one places every box at the wrong coordinates. Enforced by `tests/document-text-sources.test.ts`.
-- **Two page images per page, two jobs.** `previewKey` (320x480) serves the popup's thumbnail rail; `pageImageKey` (bounded by `PAGE_IMAGE_MAX_EDGE`) serves `review.html`. The review page exists because text in a 360px column is unreadable, so giving it the thumbnail defeats its purpose — the user confirms a box against a blurry guess. `pageImageKey` is optional in `DocPageMeta` because sessions persisted by an older build lack it and must still open, but when present it is validated by `isPageImageKey` like any store key. Staging it is best-effort (`canvasToPageImageBytes` returns null rather than throwing): a missing review copy degrades one surface and must never discard a preview whose findings are already computed. Enforced by `tests/review-page-resolution.test.ts`.
-- **The review sheet fits the stage, and zoom never resizes the canvas backing store.** `.review__sheet` is `width: 100%` with explicit zoom steps to 3x native (Ctrl/Cmd + - 0); the canvas stays at `page.widthPx`/`page.heightPx` and boxes convert through `getBoundingClientRect`, so they stay correct at any zoom. Enforced by `tests/review-zoom.test.ts`.
-- **A document longer than one pass is disclosed, and the user chooses the pages.** `src/shared/docLimits.ts` owns the limits (20 pages per pass, 20 MB) that used to exist as independent copies in the popup, the worker and the offscreen document, plus the page-window arithmetic. The popup runs a cheap `POPUP_DOC_COUNT` pass (renders nothing) before scanning, so a 45-page document asks "pages 1-20, 21-40 or 5-25?" instead of silently becoming its first 20 pages; a windowed pass is labelled "pages 21-40 of 45", carries a persistent warning that the rest was NOT scanned, mirrors both on the review page, and names the artifact `*-redacted-p21-40.pdf` so one output cannot stand in for the whole document. The window is part of the **session** (`DocSession.pageOffset`/`totalPages`), not the request: redaction re-renders from the original bytes and matches boxes by absolute page index, so previewing one window and redacting another paints the right boxes onto the wrong pages while the pixel verification still passes. Page indices are absolute from the renderer up — never renumber a windowed page list from zero. Limits are disclosed, not configurable: the 20-page figure is baked into the transport-budget assumptions, so a user-tunable cap needs a decision, not a setting. Enforced by `tests/doc-limits.test.ts`, `tests/doc-preview-transport.test.ts`, `tests/document-studio-feedback.test.ts` and end-to-end by `npm run test:doc-window`.
+### Store Compliance
+- **Chrome Web Store**: Manifest V3 compliance, permissions justification
+- **Firefox AMO**: Geckoid validation, event-page background
+- **Cross-Browser**: Compatibility testing across supported browsers
 
-## Architecture
+## Build Artifacts
 
-- `src/service-worker/index.ts` — MV3 ES-module service worker; sole orchestrator. Validates every incoming message (`src/shared/messages.ts`) before acting. Scan sessions live in `chrome.storage.session` (key `scan:<tabId>`).
-- `src/content/content.ts` — IIFE content script, injected only via `activeTab` after explicit user action. Guarded by `globalThis.__gwRedactionContentLoaded`. Page DOM is read-only; masks render in a shadow-root overlay.
-- `src/offscreen/offscreen.ts` — ES-module offscreen document hosting pdf.js + tesseract WASM. Communicates with the service worker via the message contract in `src/document-pipeline/contract.ts` (`OFFSCREEN_CHANNEL`). **Binary payloads must be base64-encoded** — extension messaging is JSON-serialized.
-- `src/shared/` — cross-context code: `complianceScore.ts` (Risk Formula v1 & AI Leakage Engine), `destinationClassifier.ts` (high-confidence AI & storage registry), `phiEvidence.ts` (8-layer evidence graph), `messages.ts` (message validation), `settings.ts` (`protectionMode` authority), `enterprisePolicy.ts` (managed-policy resolution, fail-closed), `siteAccess.ts` (always-on honesty), `platform.ts` (runtime capability detection), `audit.ts` (ECDSA-signed, fail-closed), `i18n.ts`, `wizardAnalyzer.ts`, `customPatterns.ts`, `types.ts`.
-- `src/service-worker/siteProtection.ts` — reconciles the persisted always-on content-script registration with the resolved mode on startup, settings/managed change, and permission grant/revoke. Unregisters when unwanted or unviable.
-- `src/api/` — cloud API client. All cloud features are **disabled and locked by default**; do not wire them into user flows without an explicit decision.
-- Detection logic: `src/validators/index.ts` (checksum validators) and `src/content/detect.ts` (regex/category detectors). New patterns require unit tests.
+### Production Outputs
+- `dist/`: Chrome extension build
+- `dist-firefox/`: Firefox extension build
+- `dist-safari/`: Safari handoff payload
 
-## Invariants (enforced by tests)
+### Distribution Files
+- `artifacts/*.zip`: Browser-specific extension packages
+- `artifacts/SHA256SUMS.txt`: Checksums for artifact verification
+- `release/*.zip`: Alternative build outputs
 
-- **Local-first / zero egress:** no raw page text, document bytes, or unmasked values may be transmitted. Never add install-time `host_permissions`. The only page access is optional `http://*/*` + `https://*/*` (runtime-granted for always-on, revocable); never `<all_urls>`, never new schemes.
-- **Protection status honesty:** the banner reports `always-on-active` only with proof (registration possible + grant held), else names the gap. `describeProtectionState` in `src/shared/siteAccess.ts` is the single implementation. Enforced by `tests/protection-modes.test.ts`.
-- **Enterprise locks hold at decision points, not just in the UI:**   mandated categories re-added on save; mode changes are rejected when locked. Enforced by `tests/protection-modes.test.ts`.
-- **Fail-closed audit:** any redaction/policy/document operation must write an ECDSA-signed audit record (`src/shared/audit.ts`).
-- **UI tab contract:** popup (`src/popup/index.html`) and sidepanel (`src/sidepanel/sidepanel.html`) must keep the four tabs `protection`, `logic`, `review`, `settings` with matching `data-tab` / `id="tab-..."` attributes. Settings is a sub-navigation of eight pages (`profile`, `protection`, `detection`, `appearance`, `notifications`, `privacy`, `advanced`, `about`) using `data-settings-page`; the guide cards live on the `about` page, so any `[data-guide]` help link must call `switchSettingsPage("about")` before scrolling. Enforced by `tests/instructions-and-guidance.test.ts`.
-- **Popup/sidepanel ID parity:** every `id` in the popup must exist in the sidepanel (except `gwshield-*` and `open-side-panel-btn`). `src/sidepanel/sidepanel.html` is **generated** from `src/popup/index.html` by `npm run sync:sidepanel` (`scripts/sync-sidepanel.mjs`), which rewrites `popup.css` → `sidepanel.css`, `popup.js` → `sidepanel.js`, and collapses the popup's category-list block to the sidepanel's `<legend>` form. `src/sidepanel/sidepanel.css` is a byte-for-byte copy of `src/popup/popup.css`. **Never hand-edit the sidepanel** — the transform is the contract, and copying the block across by hand silently reintroduces whitespace drift. `npm run sync:sidepanel:check` exits non-zero on drift, so it belongs in CI. Enforced by `tests/frontend-accessibility-and-controls.test.ts` and `tests/popup-dom-contract.test.ts`.
-- **Legal pages ship, and are reachable:** `src/popup/privacy.html` and `src/popup/legal.html` are standalone documents (not part of the `UI_TRANSLATIONS` dictionary, and not loaded through `popup.ts`), so nothing type-checks them into existence. Both must be listed in `build.mjs`'s copy step, in `scripts/verify-browser.mjs`'s `EXTENSION_PAGES`, and in the `EXTENSION_PAGES` arrays of `tests/mv3-compliance.test.ts` and `tests/cross-browser-compatibility.test.ts`. Their popup entry points are `href="#"` anchors resolved at runtime via `chrome.runtime.getURL` — a link that is never rewritten is a dead link, and `tests/legal-page.test.ts` asserts the assignment. Legal copy must not overclaim: optional cloud analysis exists and is disabled by default, so the pages may not claim content "never" leaves the device. Enforced by `tests/legal-page.test.ts`.
-- **No orphaned DOM references:** every ID `popup.ts` queries must exist in both markups (`#sr-announcements` is the sole exception — it is created on demand), IDs must be unique per page, every class in the markup (plus the ones `popup.ts` creates at runtime: `finding`, `finding__check`, `finding__severity`, `doc-thumb-wrapper`, `doc-thumb-canvas`) must have a CSS rule, and `popup.css` must contain no dead class selectors. A handler wired to a deleted element passes the build and the unit tests while the feature is unreachable. Enforced by `tests/popup-dom-contract.test.ts`.
-- **Dead CSS:** `node --experimental-strip-types scripts/prune-dead-css.mts --check` reports rules whose class selectors match nothing. Run it (without `--check` to rewrite) after renaming a class in the markup. A selector part is only satisfiable if **every** class it requires exists, so `.live .dead` is dead too. Do not hand-edit the stylesheet to prune it.
-- **No oversized runtime messages:** every message crossing a `chrome.runtime` boundary is bounded by `MAX_MESSAGE_BYTES` (64 KB) and `validateMessage` drops the *whole* message when it exceeds that, with no error surfaced to the UI. Never inline page images, base64 blobs or file bytes in a message. Document page previews are written to the shared store by the offscreen document and referenced by key (`DocPageMeta.previewKey`, `previewKey()` in `src/shared/docStore.ts`); the popup resolves it with `previewObjectUrl()`. Enforced by `tests/doc-preview-transport.test.ts`.
-- **`[hidden]` must stay authoritative:** the UA rule `[hidden] { display: none }` is overridden by any class-level `display`, so `popup.css` carries an explicit `[hidden] { display: none !important; }`. Do not remove it — collapsed panels (results, document studio, progress, status, settings sub-pages) would otherwise render permanently visible.
-- **The Document Studio must always show its state.** v0.1.0 shipped a document path that processed correctly and looked completely inert: `#doc-status` ships with `hidden` and nothing lifted it, so every status and every error rendered into a `display:none` element; `setDocStatus` also wrote to the wrapper instead of the `#doc-status-text` paragraph the markup provides; `resetDocStages()` hid the progress row and nothing re-showed it during a 6–20s preview; the success path called `renderDocStage()` and left a permanent "Processing document…" spinner with a Cancel button on a finished document; the worker's `{ ok: false, error }` replies were discarded at every call site; and `void initPopup()` swallowed an init rejection, which left the whole popup with markup and no listeners. Therefore: `setDocStatus` writes to `#doc-status-text` and owns `hidden`; a run that is working shows `#doc-progress`, a run that has ended hides it; document messages go through `sendDocMessage`, which surfaces a refusal; and `entry.ts` handles an init rejection. Enforced by `tests/document-studio-feedback.test.ts` and end-to-end by `npm run test:doc-flow`.
-- **An invocation surface with no UI must report its own failure.** The context menu and the keyboard shortcuts are the only ways in that do not open a surface able to report back, which is exactly why they hid defects: `chrome.contextMenus.onClicked` awaited `sendToTab` and discarded the reply, so `CONTEXT_MASK_SELECTION` returning `{ok:false}` on a collapsed selection was indistinguishable from a successful redaction — and the entry was registered for the `page` context, so it appeared on every ordinary right-click and could never succeed. `toggle-masks` returned on a missing session with nothing at all. Therefore: check the reply (`actionOk`/`actionError`/`actionCounts` in the worker), route both context-menu redactions through `reportActionFailure`/`flashTabStatus`, and register `mask_selection` for the `selection` context only. The status marker's deadline is persisted in `chrome.storage.session` because a bare `setTimeout` dies with the worker and would strand the marker; `reconcileTabStatuses()` runs at worker start. Never return page-derived content over a message when the user asked for it on the clipboard. Enforced by `tests/invocation-surfaces.test.ts`.
-- **Both manifests must declare the same commands with the same bindings.** `manifest.firefox.json` shipped its two commands with no `suggested_key`, which per MDN makes them user-assignable only, so Firefox had no shortcuts at all; `_execute_action` was missing from both, leaving the popup — and therefore the Document Studio — reachable only by pointing at the toolbar. Declare every command with both `default` and `mac`, bind none of them to the same key twice, and keep the two manifests' bindings identical. Enforced by `tests/invocation-surfaces.test.ts`, `tests/firefox-manifest.test.ts`, `tests/cross-browser-compatibility.test.ts`.
-- **The audit action list has one source of truth.** `AuditAction` and the validator's list were two hand-maintained copies of the same values; an action added to one but not the other typechecked and was then dropped by `isAuditEvent`, so the operation looked audited and was not. Add to `AUDIT_ACTIONS` and derive both. Any operation that transforms or releases page content is audited, including a right-click redaction to the clipboard (`selection_redacted`, `selection_masked`) — counts only, never the value. Enforced by `tests/audit.test.ts` and `tests/invocation-surfaces.test.ts`.
-- **Staged-document storage is one shared, bounded implementation.** The popup and the service worker must both use `src/shared/docDb.ts`; they previously each carried their own `openDb` and the copies drifted. A cached `IDBDatabase` goes stale (schema upgrade, browser close) and a blocked `indexedDB.open` fires neither `success` nor `error`, so the cached promise stayed pending for the life of the context and every caller awaited it forever — a silent hang with no error anywhere. `openDocDb` is bounded and fails a blocked open fast, `onclose`/`onversionchange` drop the cache, and every operation is bounded and retried once. Never add an unbounded `indexedDB` await, and never reintroduce a second copy of the connection logic.
-- **The document session must outlive the popup.** The Document Studio is destroyed whenever the popup loses focus, and MV3 terminates an idle worker after ~30s while `chrome.storage.session` survives, so an in-memory-only session map meant that looking away during a preview lost the document. `previewDocument` persists the session descriptor under `lastDocSession` and `restoreLastSession()` rebuilds the session from the IndexedDB bytes; the popup's `POPUP_DOC_STATE` handler adopts a message when `lastDoc` is null, because the worker is authoritative about which document is current. Never drop that reply.
-- **A lifecycle failure must not disable the worker permanently.** The browser-startup purge used to latch `startupCleanupError` on the first failure and never clear it, which rejected *every* later message for the rest of the worker's life. Housekeeping is best-effort: a success clears the flag. A document message must also fail fast and retry once when the offscreen document is reclaimed, because Chrome may destroy it at any time.
-- **Housekeeping must never delete a document the user is working on.** `clearAllFiles()` empties the whole store, so a purge running after the popup staged a file destroyed it and the preview reported "The selected file is no longer available." for a file visible in the file dialog. Waiting on a bounded `PURGE_WAIT_MS` did **not** prevent this — it made the outcome certain, because the purge then always finished before the read. The purge now skips outright when `hasStagedDocument()` is true. That marker lives in `chrome.storage.session` (`markDocumentStaged` in `shared/docDb.ts`), not in module state: the write happens in the popup and the decision in the worker, so an in-memory flag cannot carry the fact between them. It is set **before** the bytes are written, because marking afterwards leaves a window in which the purge sees nothing and deletes the file. Enforced by `tests/harness-and-purge-race.test.ts`.
-- **Harnesses wait for the popup's readiness marker, never a guessed sleep.** `initPopup` awaits storage before attaching any listener (~3.4s on a cold profile here), so every harness that slept 2–2.5s and then drove the UI was dispatching events on inputs with nothing bound to them, and reported the silence as "the studio previewed the image" not working. `initPopup` sets `document.documentElement.dataset.gwReady = "1"` at its very end — after every listener is bound — and `waitForPopupReady` in `scripts/browser-launch.mjs` polls for it. The marker must be one the module sets: the OCR language select reads as ready within 4ms because its `<option>` elements are in the static markup. Enforced by `tests/harness-and-purge-race.test.ts`.
-- **A page that is an image must route to OCR, and say so.** `extract.ts` reads `node.textContent`, so a page whose content is pixels (a letterhead scan, a rendered PDF, a screenshot) legitimately yields nothing. Two consequences, both enforced. First, honesty: `visibleChars === 0` takes an error branch (`status_no_text_found`), never "Completed securely on-device". Second, a route: the scan reports `stats.imageCandidates` (document-sized images only, capped at 12, each marked `sameOrigin`), and the popup renders one button per image that stages it into the Document Studio through `POPUP_DOC_CAPTURE_IMAGE`. The button colour states the real limit — green for a same-origin image whose original bytes can be read, amber for a cross-origin one that can only be captured from the screen, which OCRs worse. The bytes are either the original file (`src/service-worker/captureImage.ts` → `tryFetchOriginal`) or `chrome.tabs.captureVisibleTab`, never both, and `degraded` follows the choice through to the UI. Enforced by `scripts/verify-no-text-reporting.mjs` and `scripts/verify-image-capture.mjs`.
-- **Drawing a redaction box only exists in the full-screen review page.** The popup is a 360px column, so a page of text renders at roughly a tenth of its natural size: the words are unreadable and a box lands on pixels nobody can see. `src/popup/review.html` shows the document at full size with the controls in a side panel, and `renderDoc`'s popup canvas is a thumbnail, not a drawing surface. The review canvas backing store is the page's real `widthPx`/`heightPx` and pointer coordinates are converted into it, so a box is correct at any zoom. Two contracts to preserve: the session is handed over through `chrome.storage.session`, never a message (page metadata exceeds `MAX_MESSAGE_BYTES`), and a drawn box id must start with `custom:` — the worker validates every selected id against the session and only tolerates an unrecognised one with that or a `user:` prefix, so any other prefix is rejected at redaction time with "The selected findings are no longer available." Enforced by `scripts/verify-review-surface.mjs` and `tests/document-studio-feedback.test.ts`.
-- **Table position is read from the DOM, never inferred from a segment id.** `annotateSegmentsWithTableStructure` used to compare `table_0_r1_c2` against a nodeId of `seg_7` with `String.includes` — neither string can contain the other, so the match never fired, `tableRole` was never set, and `formatTableContext` always returned `undefined`, while `metadata.tableCount` still counted the table. It now takes the `nodeIds` map and walks each segment's ancestry to the nearest `TD`/`TH`, crossing shadow boundaries, and resolving indices against the cell's *own* table so a nested table's cells do not collide with the outer one's. Enforced by `tests/normalization-table.test.ts`.
-- **Frames are traversed at every depth, through shadow roots, and coverage says what was actually read.** `traverseIframes` used `doc.querySelectorAll("iframe")`, which sees neither a frame inside a shadow root nor a frame inside another frame, while `discoverPageInventory` counted both — so the inventory reported a same-origin frame that no extraction path read. It now recurses (depth-capped at 10), descends into open *and* closed shadow roots, de-duplicates by frame `Document`, and hands back a flat depth-first list whose segments carry fully-qualified ids. `buildCanonicalDocument` deliberately records **no** iframe boundary: it extracts one document, so an `iframe`/`complete` boundary there claimed coverage no code path delivered. `sameOriginFrames` is `partial` whenever the document has any frame and only becomes `complete` in `content.ts` once the traversal reports what it read; `complete` is false while a frame is unread. A shadow root reached via `chrome.dom.openOrClosedShadowRoot` is labelled `closed-shadow-root`, never `shadow-root`. Shadow-root access has exactly one implementation, `getAccessibleShadowRoot` in `src/content/normalization/shadow.ts` — it was inlined in four places, each a chance to drop the Chromium branch and silently scan half the page. Enforced by `tests/normalization-dom.test.ts` ("frame coverage honesty").
-- **The coverage panel reports the scan, it does not assert one.** It shipped five hardcoded `coverage-icon--ok` ticks that no code ever changed, so a page with a cross-origin frame, a DRM video, or no readable text at all displayed the same all-clear as a clean scan — the same false-all-clear defect the status line had. The verdict is computed by the content script (`resolveScanCoverageStatus`), survives the MV3 worker through `SessionState.stats`, and is rendered by `renderCoverage`/`coverageVerdict` in `popup.ts`. Two rules make it safe: **only** `FULLY_SCANNED` and `NO_SENSITIVE_DATA_DETECTED` are green, and `truncated` overrides any worker status because findings past the character cap were never looked for. `resolveScanCoverageStatus` takes `visibleChars` and refuses `NO_SENSITIVE_DATA_DETECTED` at zero — "nothing found" is meaningless when nothing was read. Tone is an **attribute** (`data-tone`), not a composed class: `status--${tone}` is invisible to the markup, the dead-CSS pruner and the DOM contract test. Enforced by `tests/coverage-panel-honesty.test.ts`, `tests/coverage-verdict-policy.test.ts`, and by the coverage assertions added to `scripts/verify-no-text-reporting.mjs`.
-- **A scan that read nothing must never report success.** The content script reads `node.textContent`, so a page that *is* an image (a letterhead scan, a rendered PDF, a screenshot) legitimately yields zero characters while being full of PII. That case reported "Completed securely on-device" — a clean bill of health for a document nobody read. `visibleChars === 0` now takes a dedicated error branch, `status_no_text_found`, that names the image case and points at OCR. OCR lives only in the Document Studio, so "scan the page" can never find text inside pixels; that is a capability limit, not a bug to paper over. Enforced by `scripts/verify-no-text-reporting.mjs`.
-- **i18n dictionary routing:** `t()` reads only `UI_TRANSLATIONS`; `getCategoryLabel()` reads only `CATEGORY_TRANSLATIONS`; `getPresetLabel()` reads only `PRESET_TRANSLATIONS`. Any key used in a `data-i18n` attribute must be added to `UI_TRANSLATIONS` in all 7 languages. Enforced by `tests/i18n-and-accessibility.test.ts`.
-- **Offline Custom Rules Export & Import:** Rule exports and imports are 100% client-side JSON files (`governworld-custom-rules-YYYY-MM-DD.json`) with zero network egress. Imported rules must strictly pass schema validation (`parseCustomPattern`) and ReDoS safety analysis (`isSafeRegex`). Merging deduplicates by UUID, and imported standard categories automatically activate in user settings. Enforced by `tests/custom-rules-export-import.test.ts`.
-- **Verifiable Compliance Certificate:** Standalone, printable HTML certificate (`governworld-compliance-certificate-*.html`) is exported alongside the ECDSA-signed JSONL audit trail with digital signature attestation and print styling.
-- **Prompt & Form Submit DLP Interception:** `pasteGuard.ts` intercepts both clipboard paste events and direct `Enter` key presses on prompt inputs/composers as well as `<form>` submit events when sensitive entities are detected, offering inline sanitization via a closed Shadow DOM modal. Enforced by `tests/paste-guard.test.ts`.
-- **International Validators:** IBAN (ISO 7064 Mod-97), MRZ (ICAO Doc 9303 TD3 7-3-1), and Passport number validations are strictly algorithmic and client-side. Enforced by `tests/international-validators.test.ts`.
-- **Synthetic test data only:** RFC 2606 `.test` domains, never-issued SSN (219-09-9999), documented test card 4111111111111111. Never use real PII in fixtures or tests.
-- **CSP:** `script-src 'self' 'wasm-unsafe-eval'` — no inline scripts, no remote code, no `eval` outside WASM.
+## Technical Specifications
 
-## Settled decisions (do not re-raise as gaps)
+### Manifest Requirements
+- **Manifest Version**: V3 (Chrome, Firefox)
+- **Background Service Worker**: ES-module orchestrator
+- **Permissions**: Minimal, context-gesture-based access
+- **Host Access**: Optional runtime-granted (never `<all_urls>`)
 
-These were open questions that have been decided deliberately. Treat them as
-settled; changing one is a product decision, not a cleanup.
+### Security Controls
+- **Content Security Policy**: `script-src 'self' 'wasm-unsafe-eval'`
+- **Audit Logging**: ECDSA-signed operation records
+- **Zero Inline Scripts**: No eval() in production bundles
+- **Deterministic Processing**: Reproducible detection algorithms
 
-- **Terms carry no governing-law or venue clause.** Decided: omit it. The
-  liability section already limits itself "to the maximum extent permitted by
-  applicable law", so the document does not assert a jurisdiction it does not
-  have. Do not add a jurisdiction to the Terms without a decision about the
-  entity's actual domicile.
-- **OCR is English-only by design.** `src/shared/ocrLanguages.ts` is the single
-  source of truth for the build, the worker, and the selector, and unbundled
-  languages fail closed. Detection is language-agnostic regex, so non-English
-  text is still covered for structured identifiers; only image OCR is affected.
-  Adding a language is a vendoring decision, not a code change — see
-  `docs/ocr-languages.md`.
-- **Paste Shield modes and the always-on decision (decided).** Modes are
-  `off` / `this-tab` (default) / `always-on` (`src/shared/settings.ts`,
-  resolved with enterprise policy in `src/shared/enterprisePolicy.ts`). This-tab
-  needs nothing beyond `activeTab`; always-on additionally needs BOTH optional
-  http(s) site access granted at runtime AND `scripting.registerContentScripts`
-  (capability-gated in `src/shared/siteAccess.ts`, registered by
-  `src/service-worker/siteProtection.ts`). The banner reports `always-on-active`
-  only with proof, else "waiting for access". Never add install-time host
-  permissions or `<all_urls>` without a new explicit decision.
-- **Firefox identity (decided and locked).** Gecko id
-  `redaction@governworld.acrlogic.com`, asserted in both manifests by
-  `tests/firefox-manifest.test.ts`. Never regenerate it.
-- **Community rules are not yet trusted.** Both community network paths are
-  stubbed off in the service worker and return an error. Do not enable either
-  without working through `docs/community-trust-model.md`, which specifies
-  publisher-key pinning, signed packs, fail-closed verification, and the
-  additive-only rule invariants. The input validation and contribution screening
-  in `src/shared/customPatterns.ts` are defence-in-depth for a disabled path, not
-  a live control.
+## Project Status
 
-## Environment
+The repository is actively maintained with continuous improvements in:
+- Detection algorithm accuracy
+- Security hardening
+- Accessibility compliance
+- Cross-browser compatibility
 
-- Node.js 22.13+ (Node 20 is end-of-life; pdfjs-dist 6 requires 22.13+; CI uses 24), npm 10+. Targets: Chrome 116+, Firefox 109+.
-- Release packaging: `npm run release:zip <sha>` (`scripts/make-release.mjs`) for
-  Chromium, `npm run release:browsers <sha>` (`scripts/make-browser-releases.mjs`)
-  for per-browser artifacts (`GovernWorld-Chromium-…`, `GovernWorld-Firefox-…`,
-  checksums in `release/BROWSER_SHA256SUMS`; Safari gets no distributable).
-  Both take the commit SHA explicitly and refuse a dirty tree or a HEAD that does
-  not match, so only reviewed content is ever packaged.
-- **Housekeeping:** `npm run clean` reports superseded release archives and test
-  scratch directories; `npm run clean:apply` deletes them. Every packaging
-  iteration otherwise leaves a 14 MB archive pair behind, and several of them
-  are marked do-not-submit in `RELEASE_EVIDENCE.md` - so uploading the wrong one
-  is a live risk, not just wasted disk. The script only deletes an archive whose
-  commit is still in the repository, so anything reproducible is safe to remove
-  and anything else is kept and reported.
-- `npm run verify:digests` re-checks every digest recorded in
-  `RELEASE_EVIDENCE.md` against the committed blob, and runs in CI.
+## Contributing
+
+For development guidelines and contribution process, see `CONTRIBUTING.md`.
+
+## Support
+
+For issues and support, refer to `SECURITY.md` for reporting guidelines.

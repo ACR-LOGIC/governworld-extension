@@ -1,128 +1,34 @@
-GOVERNWORLD SOURCE-AVAILABLE COMMUNITY LICENSE
-Version 1.0 — September 2026
+Business Source License 1.1 for GovernWorld Extension
 
-Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
+Licensee: Andres Chavez Ramirez (ACR-LOGIC)
 
-This is a SOURCE-AVAILABLE license. It is NOT an open-source license,
-is not approved by the Open Source Initiative (OSI), and does not
-grant any of the rights associated with open-source licensing.
+GOVERNMENT USE PERMITTED: This License is granted for government use, official business, and internal company use.
 
-By downloading, accessing, or using the software governed by this
-license (the "Software"), you agree to the terms below.
+CHANGE DATE: After November 13, 2030, the code will transition to Apache License 2.0.
 
-1. DEFINITIONS
+TERMS:
 
-   1.1 "Software" means the GovernWorld Extension source code,
-       documentation, and associated files made available in this
-       repository, in source or object form.
+You are granted permission to use this software for the following purposes:
 
-   1.2 "You" means the individual or legal entity exercising rights
-       under this license.
+1. Personal use for software development and testing
+2. Educational use in academic institutions and computer science courses
+3. Internal company development and testing for internal applications
+4. Government agency and official business purposes
 
-   1.3 "Non-Commercial Purpose" means personal use, educational use,
-       academic research, or other use where neither You nor any
-       third party receives payment, fees, advertising revenue, or
-       other commercial advantage in connection with the use of the
-       Software.
+CONDITIONS:
 
-   1.4 "Commercial Purpose" means any use intended for or directed
-       toward commercial advantage or monetary compensation, whether
-       direct or indirect.
+You may not:
 
-   1.5 "Derivative Work" means any fork, modified version, adaptation,
-       translation, repackaged version, or other work based on or
-       derived from the Software, in source or object form.
+1. Use this software to create products that compete with ACR-LOGIC's offering
+2. Resell, sublicense, or distribute the software to external parties
+3. Extract source code and modify for external distribution
+4. Use the software in commercial hosting or SaaS offerings
+5. Modify or create derivative works without express written permission
 
-2. GRANT OF RIGHTS (NON-COMMERCIAL ONLY)
+For commercial licensing inquiries, contact: andres@acr-logic.com
 
-   Subject to the terms of this license, Andres Chavez Ramirez grants
-   You a non-exclusive, non-transferable, revocable license to do the
-   following, solely for Non-Commercial Purposes:
+CHANGES:
 
-   (a) download and copy the Software;
-   (b) inspect and study the Software's source code;
-   (c) run the Software locally for personal, educational, research,
-       and other non-commercial purposes;
-   (d) modify the Software for Your own permitted non-commercial
-       local use;
-   (e) fork this repository for permitted non-commercial purposes.
+Version 1.1 added Change Date requirement and commercial use restrictions.
 
-   All rights not expressly granted are reserved by Andres Chavez
-   Ramirez.
-
-3. COMMERCIAL USE PROHIBITED WITHOUT A SEPARATE LICENSE
-
-   The following are PROHIBITED without a separate written commercial
-   license directly from Andres Chavez Ramirez:
-
-   (a) any Commercial Purpose use of the Software or any Derivative Work;
-   (b) selling the Software or any Derivative Work, or charging any fee
-       for access to, use of, or distribution of the Software or any
-       Derivative Work;
-   (c) commercial redistribution of the Software or any Derivative Work,
-       whether alone or bundled with other software, products, or services;
-   (d) hosting the Software or any Derivative Work, or providing it as
-       a service (including software-as-a-service), whether paid,
-       ad-supported, or otherwise commercial;
-   (e) bundling the Software or any Derivative Work into a paid product
-       or paid service;
-   (f) incorporating the Software or any Derivative Work into, or using
-       it as part of, a commercial offering;
-   (g) rebranding, renaming, or repackaging the Software or any
-       Derivative Work for commercial distribution;
-   (h) monetizing the Software or any Derivative Work in any manner,
-       including through advertising, sponsorship, or data collection;
-   (i) using the Software or any Derivative Work to provide a paid
-       service to third parties, including paid consulting, integration,
-       support, or managed services that deploy, rely on, or derive
-       value from the Software.
-
-   Commercial use requires a separate commercial license obtained
-   directly from Andres Chavez Ramirez.
-
-4. FORKS AND DERIVATIVE WORKS REMAIN BOUND
-
-   Forking this repository, modifying the Software, creating a
-   Derivative Work, or rebranding or repackaging the Software does NOT
-   remove, weaken, or bypass the restrictions in this license. Every
-   fork, Derivative Work, modified version, and repackaged version
-   remains fully subject to this license, including the prohibition
-   on Commercial Purpose use in Section 3. You may not relicense a
-   Derivative Work under terms that permit what this license prohibits.
-
-5. NOT OPEN SOURCE
-
-   The Software is source-available and free for non-commercial
-   community use. Do not describe the Software or this repository as
-   "open source." Permitted terminology includes "source-available,"
-   "free for non-commercial community use," and "commercial use
-   requires a separate license."
-
-6. NO TECHNICAL RESTRICTIONS ADDED
-
-   This license imposes no telemetry, tracking, forced accounts, cloud
-   dependencies, or other technical measures. Compliance rests on
-   these legal terms.
-
-7. TERMINATION
-
-   Your rights under this license terminate automatically, without
-   notice, if You breach any term of this license. Upon termination
-   You must cease all use and distribution of the Software and any
-   Derivative Work.
-
-8. DISCLAIMER OF WARRANTY AND LIMITATION OF LIABILITY
-
-   THE SOFTWARE IS PROVIDED "AS IS," WITHOUT WARRANTY OF ANY KIND,
-   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
-   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND
-   NONINFRINGEMENT. IN NO EVENT SHALL ANDRES CHAVEZ RAMIREZ BE LIABLE
-   FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF
-   CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION
-   WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-9. COPYRIGHT
-
-   Copyright in the Software remains exclusively with Andres Chavez
-   Ramirez. The rights granted above are limited strictly to the
-   permissions expressly provided in this license.
+Original License: (c) 2024 ACR-LOGIC

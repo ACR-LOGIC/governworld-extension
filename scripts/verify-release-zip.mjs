@@ -3,8 +3,8 @@
 // works": a wrong zip root, a missing file, or a stale artifact all pass every
 // other gate. This extracts the zip to a temp dir and loads that.
 //
-//   node scripts/verify-release-zip.mjs release/governworld-redaction-<sha>.zip
-//   node scripts/verify-release-zip.mjs release/governworld-redaction-<sha>.zip --check-only
+//   node scripts/verify-release-zip.mjs artifacts/governworld-chrome-<sha>.zip
+//   node scripts/verify-release-zip.mjs artifacts/governworld-chrome-<sha>.zip --check-only
 import { chromium } from "@playwright/test";
 import { browserChannelArgs, browserProfileDir } from "./browser-launch.mjs";
 import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";

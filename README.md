@@ -10,7 +10,7 @@
 
 The **GovernWorld Extension** is a fully functional, local-first browser protection tool that brings GovernWorld's high-assurance detection and redaction engine directly into your web browser. It empowers users to detect, mask, and redact sensitive Personally Identifiable Information (PII), Protected Health Information (PHI), financial data, credentials, and custom patterns directly on web pages and in uploaded documents (PDF, DOCX, images). The page text and document content you scan **never leave your device** - the local pipeline has no network path at all. Optional account-linking and community features, described below, do contact GovernWorld servers, and are disabled by default.
 
-> **Licensing:** GovernWorld Extension is source-available and free for non-commercial community use. You may inspect, modify, fork, and run the extension locally for permitted non-commercial purposes. Commercial use, redistribution, resale, hosting, bundling, or incorporation into a commercial product or service requires a separate commercial license from Andres Chavez Ramirez. See [LICENSE](LICENSE). This is not an open-source license.
+> **Licensing:** GovernWorld Extension is source-available and free for non-commercial community use. You may inspect, modify, fork, and run the extension locally for permitted non-commercial purposes. Commercial use, redistribution, resale, hosting, bundling, or incorporation into a commercial product or service requires a separate commercial license from Andres Chavez Ramirez. See [LICENSE](LICENSE) for details.
 
 ---
 
