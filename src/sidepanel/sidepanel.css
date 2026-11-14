@@ -864,6 +864,13 @@ body[data-reduced-motion="true"] *::after {
   gap: 8px;
   transition: border-color var(--transition-base), box-shadow var(--transition-base), transform var(--transition-fast);
   box-shadow: var(--shadow-sm);
+  outline: none;
+}
+
+.guide-card:focus-visible {
+  border-color: var(--accent);
+  box-shadow: var(--shadow-md);
+  transform: none;
 }
 
 .guide-card:hover {
