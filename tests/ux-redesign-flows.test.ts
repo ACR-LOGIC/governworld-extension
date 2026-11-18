@@ -644,4 +644,92 @@ describe("UI/UX Redesign Behavioral Flows (JSDOM)", () => {
     expect(events.indexOf("sidePanel.open")).toBeGreaterThan(-1);
     expect(events.indexOf("sidePanel.open")).toBeLessThan(events.indexOf("storage.set.done"));
   });
+
+  it("wires all backend capabilities and provides in-place step-by-step instructional guides", async () => {
+    const { chromeMock } = await setupPopupHarness();
+    const getSentMessages = () =>
+      (chromeMock.runtime as { sendMessage: ReturnType<typeof vi.fn> }).sendMessage.mock.calls.map(
+        (c) => c[0] as Record<string, unknown>
+      );
+
+    // 1. All 4 tab how-to instruction cards exist
+    expect(document.getElementById("protection-howto-card")).toBeTruthy();
+    expect(document.getElementById("doc-howto-card")).toBeTruthy();
+    expect(document.getElementById("logic-howto-card")).toBeTruthy();
+    expect(document.getElementById("review-howto-card")).toBeTruthy();
+
+    // 2. Clicking a [data-guide] link opens the in-place contextual guide modal without leaving the current tab
+    const howToScanLink = document.querySelector('[data-guide="guide-page-scan"]') as HTMLButtonElement;
+    expect(howToScanLink).toBeTruthy();
+    howToScanLink.click();
+    await flushAsync();
+
+    const guideDialog = document.getElementById("contextual-guide-dialog") as HTMLDialogElement;
+    expect(guideDialog.open).toBe(true);
+    expect(document.getElementById("contextual-guide-title")?.textContent).toBe("Page Scan");
+    expect(document.getElementById("contextual-guide-body")?.textContent).toContain("Alt+Shift+S");
+    // Still on Protection tab until user asks to view all guides
+    expect((document.getElementById("tab-protection") as HTMLElement).hidden).toBe(false);
+
+    // Clicking "View All 21 Guides" navigates to Settings -> About and highlights the target card
+    (document.getElementById("contextual-guide-open-about") as HTMLButtonElement).click();
+    await flushAsync();
+    expect(guideDialog.open).toBe(false);
+    expect((document.getElementById("tab-settings") as HTMLElement).hidden).toBe(false);
+    expect((document.getElementById("settings-page-about") as HTMLElement).hidden).toBe(false);
+    expect((document.getElementById("about-guides-details") as HTMLDetailsElement).open).toBe(true);
+    expect(document.getElementById("guide-page-scan")?.classList.contains("guide-card--highlight")).toBe(true);
+
+    // 3. Account disconnect, Enterprise MANAGE enrollment/sync/unenroll, and Gateway OAuth/API actions
+    (document.getElementById("account-clear-btn") as HTMLButtonElement).click();
+    expect(getSentMessages().some((m) => m.type === "POPUP_ACCOUNT_CLEAR")).toBe(true);
+
+    (document.getElementById("mgmt-org-id-input") as HTMLInputElement).value = "org-acme-01";
+    (document.getElementById("mgmt-org-name-input") as HTMLInputElement).value = "Acme Health";
+    (document.getElementById("mgmt-emp-id-input") as HTMLInputElement).value = "emp-42";
+    (document.getElementById("mgmt-enroll-btn") as HTMLButtonElement).click();
+    expect(
+      getSentMessages().some(
+        (m) =>
+          m.type === "POPUP_MANAGEMENT_ENROLL" &&
+          m.organizationId === "org-acme-01" &&
+          m.employeeId === "emp-42"
+      )
+    ).toBe(true);
+
+    (document.getElementById("mgmt-sync-policy-btn") as HTMLButtonElement).click();
+    expect(getSentMessages().some((m) => m.type === "POPUP_SYNC_MANAGED_POLICY")).toBe(true);
+
+    (document.getElementById("mgmt-unenroll-btn") as HTMLButtonElement).click();
+    expect(getSentMessages().some((m) => m.type === "POPUP_MANAGEMENT_UNENROLL")).toBe(true);
+
+    (document.getElementById("oauth-connect-btn") as HTMLButtonElement).click();
+    expect(getSentMessages().some((m) => m.type === "POPUP_OAUTH_CONNECT")).toBe(true);
+
+    (document.getElementById("api-sync-policy-btn") as HTMLButtonElement).click();
+    expect(getSentMessages().some((m) => m.type === "POPUP_API_SYNC_POLICY")).toBe(true);
+
+    (document.getElementById("api-disconnect-btn") as HTMLButtonElement).click();
+    expect(getSentMessages().some((m) => m.type === "POPUP_API_DISCONNECT")).toBe(true);
+
+    // 4. Wizard Step 4 saves contextCues, captureGroup, minLength, and maxLength
+    (document.getElementById("open-wizard-btn") as HTMLButtonElement).click();
+    (document.getElementById("wizard-rule-name") as HTMLInputElement).value = "Badge ID";
+    (document.getElementById("wizard-regex-input") as HTMLInputElement).value = "BADGE-(\\d{5})";
+    (document.getElementById("wizard-rule-cues") as HTMLInputElement).value = "badge, employee";
+    (document.getElementById("wizard-rule-group") as HTMLInputElement).value = "1";
+    (document.getElementById("wizard-rule-min-len") as HTMLInputElement).value = "5";
+    (document.getElementById("wizard-rule-max-len") as HTMLInputElement).value = "12";
+    (document.getElementById("wizard-save-btn") as HTMLButtonElement).click();
+
+    const saveMsg = getSentMessages().find((m) => m.type === "POPUP_CUSTOM_PATTERN_SAVE") as
+      | { pattern: { name: string; captureGroup: number; contextCues: string[]; minLength: number; maxLength: number } }
+      | undefined;
+    expect(saveMsg).toBeTruthy();
+    expect(saveMsg?.pattern.name).toBe("Badge ID");
+    expect(saveMsg?.pattern.captureGroup).toBe(1);
+    expect(saveMsg?.pattern.contextCues).toEqual(["badge", "employee"]);
+    expect(saveMsg?.pattern.minLength).toBe(5);
+    expect(saveMsg?.pattern.maxLength).toBe(12);
+  });
 });

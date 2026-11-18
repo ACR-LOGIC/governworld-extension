@@ -130,6 +130,29 @@
         </div>
       </div>
 
+      <details id="protection-howto-card" class="howto-card">
+        <summary class="howto-card__summary">
+          <span data-i18n="howto_protection_title">How to Use Protection (Step-by-Step Guide)</span>
+          <span class="guide-badge" data-i18n="howto_badge">3 Workflows</span>
+        </summary>
+        <div class="howto-card__body">
+          <ol class="howto-steps">
+            <li>
+              <strong data-i18n="howto_prot_step1_title">1. Scan &amp; Mask Webpages (Alt+Shift+S):</strong>
+              <span data-i18n="howto_prot_step1_desc">Click Scan This Page to detect 24 categories of PII, PHI, financial data, and secrets on-device. Review the Compliance Risk Scorecard, check or uncheck findings, then click Apply Masks (Alt+Shift+M) to cover values on the page, Copy Redacted for sanitized text, or Export (CSV/JSON).</span>
+            </li>
+            <li>
+              <strong data-i18n="howto_prot_step2_title">2. Guard AI Prompts &amp; Forms (Paste Shield):</strong>
+              <span data-i18n="howto_prot_step2_desc">Active in This Tab after you open GovernWorld (or across all sites when Always On is enabled). Pasting sensitive text into ChatGPT, Claude, Slack, or forms opens an in-page shield where you can Sanitize &amp; Paste, Paste Unchanged, or Cancel.</span>
+            </li>
+            <li>
+              <strong data-i18n="howto_prot_step3_title">3. Redact Documents Locally:</strong>
+              <span data-i18n="howto_prot_step3_desc">Drop a PDF, Word (.docx), or image below (up to 20 MB, 20 pages per pass). Toggle detected boxes or drag with Draw Box, pick Blackout/Whiteout/Stamp, and click Redact &amp; Download for a pixel-verified flattened file.</span>
+            </li>
+          </ol>
+        </div>
+      </details>
+
       <div id="scan-summary" class="scan-summary" hidden>
         <p id="status" class="status-text"></p>
         <p id="summary-chars" class="footnote"></p>
@@ -200,12 +223,18 @@
           <strong id="doc-filename" class="doc-filename"></strong>
           <span id="doc-page-count" class="footnote"></span>
         </div>
+        <div id="doc-howto-card" class="howto-inline">
+          <strong data-i18n="howto_doc_title">Document Studio Instructions:</strong>
+          <span data-i18n="howto_doc_steps">1. Click a box on any page thumbnail to toggle it, or drag with Draw Box to add custom regions. 2. Draw boxes on 3+ pages and click Learn Location Rule to save a reusable page-region detector. 3. Pick Blackout, Whiteout, or Text Stamp, then click Open full-screen review or Redact &amp; Download.</span>
+        </div>
         <div class="doc-toolbar" role="toolbar" aria-label="Document Studio canvas tools">
           <button id="tool-draw-box" class="tool-btn tool-btn--active" type="button" data-i18n="tool_draw_box">✏️ Draw Box</button>
           <button id="tool-clear-custom" class="tool-btn" type="button" data-i18n="tool_clear_custom">🧹 Clear Drawn</button>
           <button id="tool-toggle-all-doc" class="tool-btn" type="button" data-i18n="tool_toggle_all">☑️ Toggle All</button>
+          <button id="tool-save-location-rule" class="tool-btn" type="button" data-i18n="tool_save_location">📍 Learn Location Rule</button>
           <button type="button" class="help-link help-link--sm" data-guide="guide-doc-redact" data-i18n="doc_guide_btn" data-i18n-aria-label="guide-doc-redact">Document guide ↗</button>
         </div>
+        <p id="doc-location-rule-status" class="footnote" role="status" aria-live="polite" hidden></p>
         <div id="doc-thumbs" class="doc-thumbs" role="region" aria-label="Document page review thumbnails"></div>
         <div class="doc-style-controls" style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
           <div class="form-row" style="margin-top: 0;">
@@ -338,6 +367,28 @@
         <button type="button" class="help-link help-link--sm" data-guide="guide-wizard" data-i18n="wizard_guide_btn" data-i18n-aria-label="guide-wizard">Wizard guide ↗</button>
       </div>
       <p class="footnote" data-i18n="logic_desc">Create and manage personal detection logic. All processing happens locally on your device.</p>
+      <details id="logic-howto-card" class="howto-card">
+        <summary class="howto-card__summary">
+          <span data-i18n="howto_logic_title">How to Build Personal Rules &amp; Website Policies</span>
+          <span class="guide-badge" data-i18n="howto_steps_badge">Step-by-Step</span>
+        </summary>
+        <div class="howto-card__body">
+          <ol class="howto-steps">
+            <li>
+              <strong data-i18n="howto_logic_step1_title">1. Personal Detection Wizard (4 Steps):</strong>
+              <span data-i18n="howto_logic_step1_desc">Click + Create Personal Logic → Step 1: Enter 2+ positive examples (or import a .txt/.csv file) and optional negative examples → Step 2: Pick a generated regex proposal → Step 3: Test live against sample text → Step 4: Set rule name, category, confidence, optional nearby Context Cues, and Min/Max length.</span>
+            </li>
+            <li>
+              <strong data-i18n="howto_logic_step2_title">2. Location-Aware Document Rules:</strong>
+              <span data-i18n="howto_logic_step2_desc">In Document Studio, draw boxes around a recurring field (such as a header ID) on at least 3 pages and click Learn Location Rule to save a normalized coordinate rule.</span>
+            </li>
+            <li>
+              <strong data-i18n="howto_logic_step3_title">3. Policy Studio (Website DLP Rules):</strong>
+              <span data-i18n="howto_logic_step3_desc">Click + Create Site Policy → pick a Quick Template (AI Chatbots, Health Portals, Dev &amp; Secrets, Block Full Site) or type a domain (e.g. chatgpt.com) → choose data scope and action (Strict Block, Auto-Redact, or Warn).</span>
+            </li>
+          </ol>
+        </div>
+      </details>
       <div class="logic-actions">
         <button id="open-wizard-btn-2" class="btn btn--primary" type="button" data-i18n="create_custom_rule">+ Create Personal Logic</button>
         <div class="logic-actions-row">
@@ -389,6 +440,28 @@
         <h2 data-i18n="review_title">Review</h2>
         <button type="button" class="help-link help-link--sm" data-guide="guide-verification" data-i18n="info_btn" data-i18n-aria-label="guide-verification">Info ↗</button>
       </div>
+      <details id="review-howto-card" class="howto-card">
+        <summary class="howto-card__summary">
+          <span data-i18n="howto_review_title">How to Read Coverage &amp; Verify Audit Logs</span>
+          <span class="guide-badge" data-i18n="howto_audit_badge">Verification</span>
+        </summary>
+        <div class="howto-card__body">
+          <ol class="howto-steps">
+            <li>
+              <strong data-i18n="howto_rev_step1_title">1. Recent Protection Telemetry:</strong>
+              <span data-i18n="howto_rev_step1_desc">Shows cumulative findings detected, items masked or redacted, and pages/documents scanned across your local audit log.</span>
+            </li>
+            <li>
+              <strong data-i18n="howto_rev_step2_title">2. Honest Scan Coverage:</strong>
+              <span data-i18n="howto_rev_step2_desc">Green (✓) means every discovered region was inspected. Amber (!) or Red (✕) warns when cross-origin iframes, DRM media, or deferred images could not be inspected automatically.</span>
+            </li>
+            <li>
+              <strong data-i18n="howto_rev_step3_title">3. Signed Audit &amp; Compliance Certificate:</strong>
+              <span data-i18n="howto_rev_step3_desc">Click Export Signed Audit below to download your ECDSA P-256 signed .jsonl log, .sig.json cryptographic proof, and printable HTML Compliance Certificate.</span>
+            </li>
+          </ol>
+        </div>
+      </details>
       <div class="review-overview-grid">
         <div class="review-stats">
           <h3 data-i18n="recent_protection">Recent Protection</h3>
@@ -438,7 +511,10 @@
         </div>
       </div>
       <div class="activity-section">
-        <h3 data-i18n="activity_title">Activity</h3>
+        <div class="section-header">
+          <h3 data-i18n="activity_title">Activity</h3>
+          <button id="review-export-audit-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="export_audit_btn">Export signed audit log</button>
+        </div>
         <p id="activity-empty" class="footnote" data-i18n="activity_empty">No recent activity. Scan a page to get started.</p>
         <ul id="activity-list" class="findings-list"></ul>
       </div>
@@ -511,6 +587,9 @@
               <p id="account-plan" class="footnote"></p>
             </div>
             <p id="account-managed-note" class="footnote" hidden data-i18n="account_managed_note">You can view and change organization settings.</p>
+            <div class="form-row">
+              <button id="account-clear-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="disconnect_account_btn">Disconnect account</button>
+            </div>
             <hr class="section-divider" />
           </div>
 
@@ -539,6 +618,51 @@
               </div>
             </div>
           </div>
+
+          <!-- Enterprise Signed Policy Enrollment & Sync (POPUP_MANAGEMENT_*) -->
+          <details id="enterprise-mgmt-card" class="about-collapsible">
+            <summary data-i18n="mgmt_card_title">Enterprise Device Enrollment &amp; Signed Policy Sync</summary>
+            <div class="about-collapsible__body">
+              <p class="footnote" data-i18n="mgmt_card_desc">Enroll this browser installation with your organization's Ed25519 policy coordinator or force-sync the active managed policy.</p>
+              <p id="mgmt-status-text" class="footnote" role="status" aria-live="polite" data-i18n="mgmt_status_default">Operating Mode: LOCAL (Unenrolled)</p>
+              <div class="form-row">
+                <label for="mgmt-org-id-input" data-i18n="mgmt_org_id_label">Organization ID</label>
+                <input id="mgmt-org-id-input" type="text" placeholder="org-acme-01" />
+              </div>
+              <div class="form-row">
+                <label for="mgmt-org-name-input" data-i18n="mgmt_org_name_label">Organization Name (Optional)</label>
+                <input id="mgmt-org-name-input" type="text" placeholder="Acme Health" />
+              </div>
+              <div class="form-row">
+                <label for="mgmt-emp-id-input" data-i18n="mgmt_emp_id_label">Employee / Device Label</label>
+                <input id="mgmt-emp-id-input" type="text" placeholder="emp-1042" />
+              </div>
+              <div class="form-row">
+                <label for="mgmt-coord-url-input" data-i18n="mgmt_coord_url_label">Coordinator URL (Optional)</label>
+                <input id="mgmt-coord-url-input" type="url" placeholder="http://127.0.0.1:4820" />
+              </div>
+              <div class="office-card__actions">
+                <button id="mgmt-enroll-btn" class="btn btn--primary btn--sm" type="button" data-i18n="mgmt_enroll_btn">Enroll Device</button>
+                <button id="mgmt-sync-policy-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="mgmt_sync_btn">Sync Policy</button>
+                <button id="mgmt-unenroll-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="mgmt_unenroll_btn">Unenroll</button>
+              </div>
+            </div>
+          </details>
+
+          <!-- Optional OAuth & Gateway API Connection -->
+          <details id="gateway-api-card" class="about-collapsible">
+            <summary data-i18n="api_card_title">Workspace OAuth &amp; Gateway API Connection (Optional)</summary>
+            <div class="about-collapsible__body">
+              <p class="footnote" data-i18n="api_card_desc">Optional workspace connection for team policy sync and rule submissions. Local scanning works without connecting.</p>
+              <div class="office-card__actions">
+                <button id="oauth-connect-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="oauth_connect_btn">Sign in with OAuth</button>
+                <button id="api-sync-policy-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="api_sync_policy_btn">Sync Workspace Policy</button>
+                <button id="api-disconnect-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="api_disconnect_btn">Disconnect API</button>
+              </div>
+              <p id="oauth-status" class="footnote" role="status" aria-live="polite"></p>
+              <p id="api-connection-status" class="footnote" role="status" aria-live="polite"></p>
+            </div>
+          </details>
           <hr class="section-divider" />
 
           <!-- Organization settings. Hidden entirely for members: a member sees
@@ -658,6 +782,24 @@
             <p class="footnote" data-i18n="categories_label">Protection Categories</p>
             <fieldset id="category-list" class="category-list" aria-label="Detection categories list"></fieldset>
             <p class="footnote" data-i18n="threshold_disclosure">Compliance presets choose which categories are detected. Every finding above a category's confidence threshold is reported; nothing is silently discarded.</p>
+          <div class="form-row">
+            <label for="threshold-category-select" data-i18n="threshold_category_label">Category confidence threshold</label>
+            <div class="threshold-controls">
+              <select id="threshold-category-select" class="preset-select" aria-label="Category for threshold">
+                <option value="email">Email</option>
+              </select>
+              <select id="threshold-value-select" class="preset-select" aria-label="Minimum confidence threshold">
+                <option value="0" data-i18n="threshold_all">0% (Report all)</option>
+                <option value="0.5">50%</option>
+                <option value="0.7">70%</option>
+                <option value="0.8">80%</option>
+                <option value="0.85">85%</option>
+                <option value="0.9">90%</option>
+                <option value="0.95">95%</option>
+              </select>
+              <button id="threshold-apply-all-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="threshold_apply_all">Apply to All</button>
+            </div>
+          </div>
           <label class="toggle-row">
             <input id="placeholder-toggle" type="checkbox" role="switch" aria-checked="false" />
             <span data-i18n="placeholder_toggle">Show redaction labels</span>
@@ -822,6 +964,16 @@
             </select>
           </div>
           <div class="form-row">
+            <label for="max-visible-chars-input" data-i18n="max_visible_chars_label">Max visible characters per page scan</label>
+            <input id="max-visible-chars-input" type="number" min="100" max="2000000" step="1000" value="250000" />
+            <span class="footnote" data-i18n="max_visible_chars_hint">Default: 250,000 characters. Pages longer than this limit report a partial scan notice.</span>
+          </div>
+          <div class="form-row">
+            <label for="max-node-chars-input" data-i18n="max_node_chars_label">Max characters per DOM text node</label>
+            <input id="max-node-chars-input" type="number" min="10" max="500000" step="500" value="10000" />
+            <span class="footnote" data-i18n="max_node_chars_hint">Default: 10,000 characters per DOM node to prevent single-node UI stalls.</span>
+          </div>
+          <div class="form-row">
             <span class="form-label" data-i18n="ocr_arch_label">OCR Architecture</span>
             <p class="footnote">Tesseract WASM with local language data</p>
           </div>
@@ -976,30 +1128,128 @@
             </div>
           </details>
 
-          <details class="about-collapsible" id="about-guides-details">
-            <summary data-i18n="about_guides_summary">Feature guides (21 topics)</summary>
+          <details class="about-collapsible" id="about-guides-details" open>
+            <summary data-i18n="about_guides_summary">Feature guides &amp; step-by-step instructions (21 topics)</summary>
             <div class="guide-container" style="margin-top: 10px;">
-              <div id="guide-overview" class="guide-card"><h4 data-i18n="guide-overview">Overview</h4><p class="footnote">GovernWorld protects sensitive data locally on your device.</p></div>
-              <div id="guide-local-mode" class="guide-card"><h4 data-i18n="guide-local-mode">Local Mode</h4><p class="footnote">All scanning and redaction runs on your device. Page text and documents stay on this device.</p></div>
-              <div id="guide-page-scan" class="guide-card"><h4 data-i18n="guide-page-scan">Page Scan</h4><p class="footnote">Click Scan to detect sensitive data on the current page.</p></div>
-              <div id="guide-masking" class="guide-card"><h4 data-i18n="guide-masking">Masking</h4><p class="footnote">Select findings to apply visual masks.</p></div>
-              <div id="guide-doc-redact" class="guide-card"><h4 data-i18n="guide-doc-redact">Document Redaction</h4><p class="footnote">Upload PDF, DOCX, or images for local redaction.</p></div>
-              <div id="guide-verification" class="guide-card"><h4 data-i18n="guide-verification">Verification</h4><p class="footnote">Redaction is verified at the pixel level.</p></div>
-              <div id="guide-wizard" class="guide-card"><h4 data-i18n="guide-wizard">Wizard</h4><p class="footnote">Create custom detection logic from examples.</p></div>
-              <div id="guide-categories" class="guide-card"><h4 data-i18n="guide-categories">Categories</h4><p class="footnote">24 detection categories (23 built-in plus custom rules) covering PII, PHI, financial, and secrets.</p></div>
-              <div id="guide-paste-guard" class="guide-card"><h4 data-i18n="guide-paste-guard">Paste Guard</h4><p class="footnote">Guards pastes into chats, forms, and editors. Off, this tab (default), or always on with approved site access.</p></div>
-              <div id="guide-context-menus" class="guide-card"><h4 data-i18n="guide-context-menus">Context Menus</h4><p class="footnote">Right-click to redact, mask, or scan.</p></div>
-              <div id="guide-ocr-languages" class="guide-card"><h4 data-i18n="guide-ocr-languages">OCR Languages</h4><p class="footnote">English (eng) in this build. Additional languages can be added by bundling their traineddata; nothing is downloaded at runtime.</p></div>
-              <div id="guide-redaction-styles" class="guide-card"><h4 data-i18n="guide-redaction-styles">Redaction Styles</h4><p class="footnote">Blackout, whiteout, or text stamp.</p></div>
-              <div id="guide-accessibility" class="guide-card"><h4 data-i18n="guide-accessibility">Accessibility</h4><p class="footnote">High contrast, dyslexia mode, reduced motion, speech.</p></div>
-              <div id="guide-languages" class="guide-card"><h4 data-i18n="guide-languages">Languages</h4><p class="footnote">7 UI languages with instant switching.</p></div>
-              <div id="guide-notifications" class="guide-card"><h4 data-i18n="guide-notifications">Notifications</h4><p class="footnote" data-i18n="guide_notifications_desc">Configure how alerts appear across icon badges, in-page toasts, and desktop notifications without leaking sensitive data.</p></div>
-              <div id="guide-settings" class="guide-card"><h4 data-i18n="guide-settings">Settings</h4><p class="footnote">Organized by Profile, Protection, Detection, Appearance, and more.</p></div>
-              <div id="guide-shortcuts" class="guide-card"><h4 data-i18n="guide-shortcuts">Shortcuts</h4><p class="footnote">Alt+Shift+S scan, Alt+Shift+M masks, Alt+Shift+P side panel.</p></div>
-              <div id="guide-troubleshooting" class="guide-card"><h4 data-i18n="guide-troubleshooting">Troubleshooting</h4><p class="footnote">If scan fails, try refreshing the page and scanning again.</p></div>
-              <div id="guide-cloud" class="guide-card"><h4 data-i18n="guide-cloud">Cloud</h4><p class="footnote">Cloud features are optional and disabled by default.</p></div>
-              <div id="guide-privacy" class="guide-card"><h4 data-i18n="guide-privacy">Privacy</h4><p class="footnote">Zero page or document transmission. All processing is local.</p></div>
-              <div id="guide-contributions" class="guide-card"><h4 data-i18n="guide-contributions">Contributions</h4><p class="footnote">Community rule packs are <strong>not active in this release</strong>. Nothing you write leaves your device: rule sharing is disabled and there is no server to send it to. Your local logic stays local and works exactly as it does now.</p></div>
+              <div id="guide-overview" class="guide-card">
+                <h4 data-i18n="guide-overview">Overview</h4>
+                <p class="footnote">GovernWorld protects sensitive data locally on your device across three workflows: live webpage scanning &amp; masking, in-page Paste Shield for AI chats and forms, and Document Studio redaction for PDFs, Word files, and images.</p>
+              </div>
+              <div id="guide-local-mode" class="guide-card">
+                <h4 data-i18n="guide-local-mode">Local Mode</h4>
+                <p class="footnote">All scanning and redaction runs on your device by default with no account required. Page text and documents stay on this device. In MANAGE mode, your organization administrator enforces locked compliance policies.</p>
+              </div>
+              <div id="guide-page-scan" class="guide-card">
+                <h4 data-i18n="guide-page-scan">Page Scan — How to Scan a Webpage</h4>
+                <ol class="guide-steps footnote">
+                  <li>Open any regular <code>http://</code> or <code>https://</code> webpage.</li>
+                  <li>Click <strong>Scan This Page</strong> in the Protection tab (or press <code>Alt+Shift+S</code>).</li>
+                  <li>Review the <strong>Compliance Risk Scorecard (0–100)</strong> and the list of detected findings.</li>
+                  <li>Check or uncheck individual findings, then click <strong>Apply Masks</strong>, <strong>Copy Redacted</strong>, or <strong>Export (CSV/JSON)</strong>.</li>
+                </ol>
+              </div>
+              <div id="guide-masking" class="guide-card">
+                <h4 data-i18n="guide-masking">Masking — How Live Page Masks Work</h4>
+                <ol class="guide-steps footnote">
+                  <li>After scanning a page, keep the checkboxes checked for values you want to hide on-screen.</li>
+                  <li>Click <strong>Apply Masks</strong> (or press <code>Alt+Shift+M</code>) to draw non-destructive Shadow DOM privacy blocks over the page before screen-sharing or taking screenshots.</li>
+                  <li>Use <strong>Undo</strong> to revert the last mask change, <strong>Remove All</strong> to clear overlays, or <strong>Copy Redacted</strong> to copy text with sensitive values replaced by <code>[REDACTED]</code>.</li>
+                </ol>
+              </div>
+              <div id="guide-doc-redact" class="guide-card">
+                <h4 data-i18n="guide-doc-redact">Document Redaction — Step-by-Step Studio Guide</h4>
+                <ol class="guide-steps footnote">
+                  <li>Drag and drop a <strong>PDF (.pdf)</strong>, <strong>Word (.docx)</strong>, or <strong>Image (.png, .jpg, .webp)</strong> up to 20 MB into the upload box (in Popup mode, GovernWorld automatically opens the persistent Side Panel so the file picker never closes your session).</li>
+                  <li>For documents over 20 pages, choose which 20-page window to scan first.</li>
+                  <li>Click findings on page thumbnails to toggle them, or use <strong>✏️ Draw Box</strong> to drag custom redaction boxes. Draw boxes on 3+ pages and click <strong>📍 Learn Location Rule</strong> to save a reusable coordinate rule.</li>
+                  <li>Select <strong>Blackout</strong>, <strong>Whiteout</strong>, or <strong>Text Stamp</strong>, then click <strong>Open full-screen review</strong> or <strong>Redact &amp; Download</strong> to save a flattened, pixel-verified copy.</li>
+                </ol>
+              </div>
+              <div id="guide-verification" class="guide-card">
+                <h4 data-i18n="guide-verification">Verification &amp; Compliance Certificates</h4>
+                <ol class="guide-steps footnote">
+                  <li>When you redact a document, GovernWorld re-reads the rendered output pixels to confirm every selected region is covered before declaring it verified.</li>
+                  <li>In the <strong>Review</strong> tab, check the <strong>Coverage</strong> grid to see whether all page content, images, and OCR regions were inspected.</li>
+                  <li>Click <strong>Export signed audit log</strong> to download the ECDSA P-256 signed <code>.jsonl</code> log, <code>.sig.json</code> signature, and printable <strong>Compliance Certificate</strong>.</li>
+                </ol>
+              </div>
+              <div id="guide-wizard" class="guide-card">
+                <h4 data-i18n="guide-wizard">Wizard — Creating Custom Detection Rules</h4>
+                <ol class="guide-steps footnote">
+                  <li>Go to the <strong>Logic</strong> tab and click <strong>+ Create Personal Logic</strong>.</li>
+                  <li><strong>Step 1:</strong> Paste 2 or more positive examples (one per line, e.g. <code>EMP-104928</code>) or click <strong>Import File ↗</strong>, plus optional negative examples that should NOT match, then click <strong>Analyze</strong>.</li>
+                  <li><strong>Step 2 &amp; 3:</strong> Select a proposed regular expression and test it live against sample text.</li>
+                  <li><strong>Step 4:</strong> Enter a Rule Name, Category, Confidence threshold (0–1), optional <strong>Context Cues</strong> (nearby keywords), and Min/Max length, then click <strong>Save Rule</strong>.</li>
+                </ol>
+              </div>
+              <div id="guide-categories" class="guide-card">
+                <h4 data-i18n="guide-categories">Categories &amp; Confidence Thresholds (24 Detectors)</h4>
+                <p class="footnote">Includes 24 detection categories (23 built-in plus custom rules) across PII, HIPAA/PHI (MRN, NPI, DEA, MBI), financial (Luhn payment cards, bank accounts, CUSIP/ISIN/IBAN), international IDs (SIN, NHS, Aadhaar, PAN, TFN, CPF), and developer secrets. In <strong>Settings → Detection</strong>, pick a compliance preset (HIPAA, PCI DSS, GDPR, etc.), toggle categories, and set per-category confidence thresholds.</p>
+              </div>
+              <div id="guide-paste-guard" class="guide-card">
+                <h4 data-i18n="guide-paste-guard">Paste Guard — Protecting AI Prompts &amp; Forms</h4>
+                <ol class="guide-steps footnote">
+                  <li><strong>This Tab (Default):</strong> Requires zero install-time host permissions; activates on the current tab once you open or scan with GovernWorld.</li>
+                  <li><strong>Always On:</strong> Toggle <strong>Always protect all sites</strong> in <strong>Settings → Protection</strong> and approve the browser site-access prompt (revocable anytime) to guard every tab automatically.</li>
+                  <li>When you paste sensitive data into ChatGPT, Claude, Gemini, Slack, or web forms, Paste Shield pauses the paste and lets you choose <strong>Sanitize &amp; Paste</strong>, <strong>Paste Unchanged</strong>, or <strong>Cancel</strong>.</li>
+                </ol>
+              </div>
+              <div id="guide-context-menus" class="guide-card">
+                <h4 data-i18n="guide-context-menus">Context Menus — Right-Click Actions</h4>
+                <ol class="guide-steps footnote">
+                  <li>Highlight any text on a webpage and <strong>right-click</strong> to open the browser context menu.</li>
+                  <li>Choose <strong>Scan page for sensitive data</strong>, <strong>Redact selection to clipboard</strong> (copies sanitized text with <code>[REDACTED]</code>), or <strong>Mask selected text</strong> (covers the selection in-place).</li>
+                  <li>Enable or disable right-click menus anytime in <strong>Settings → Protection → Context Menu Protection</strong>.</li>
+                </ol>
+              </div>
+              <div id="guide-ocr-languages" class="guide-card">
+                <h4 data-i18n="guide-ocr-languages">OCR Languages</h4>
+                <p class="footnote">English (eng) in this build. Additional languages can be added by bundling their traineddata; nothing is downloaded at runtime. Select your bundled OCR language in Document Studio or Settings → Advanced before scanning image-based PDFs or screenshots.</p>
+              </div>
+              <div id="guide-redaction-styles" class="guide-card">
+                <h4 data-i18n="guide-redaction-styles">Redaction Styles — Blackout, Whiteout &amp; Stamp</h4>
+                <p class="footnote">Choose how redacted boxes are baked into downloaded documents: <strong>Blackout</strong> (solid opaque black rectangle), <strong>Whiteout</strong> (solid white box with subtle border), or <strong>Text Stamp</strong> (opaque box stamped with <code>[REDACTED]</code>, <code>[CONFIDENTIAL]</code>, <code>[PHI REMOVED]</code>, or custom text). Set your default style in <strong>Settings → Protection</strong>.</p>
+              </div>
+              <div id="guide-accessibility" class="guide-card">
+                <h4 data-i18n="guide-accessibility">Accessibility — Vision, Motion &amp; Screen Readers</h4>
+                <p class="footnote">In <strong>Settings → Appearance &amp; Accessibility</strong>, customize Text Size (Default to Extra Large), <strong>High Contrast</strong> borders, <strong>Dyslexia-Friendly Mode</strong> spacing, <strong>Reduced Motion</strong>, <strong>Speech Announcements</strong> (Web Speech API audio readouts), and <strong>Verbose ARIA Mode</strong>.</p>
+              </div>
+              <div id="guide-languages" class="guide-card">
+                <h4 data-i18n="guide-languages">Languages — 7 Localized UI Languages</h4>
+                <p class="footnote">Switch the entire interface instantaneously in <strong>Settings → Appearance &amp; Accessibility → Language</strong> between English, Español, Français, Deutsch, 日本語, Português, and 简体中文.</p>
+              </div>
+              <div id="guide-notifications" class="guide-card">
+                <h4 data-i18n="guide-notifications">Notifications &amp; Zero-Knowledge Privacy Mode</h4>
+                <p class="footnote" data-i18n="guide_notifications_desc">Configure how alerts appear across icon badges, in-page toasts, and desktop notifications without leaking sensitive data. Switch Notification Privacy Mode to Minimal to hide category names from alert banners.</p>
+              </div>
+              <div id="guide-settings" class="guide-card">
+                <h4 data-i18n="guide-settings">Settings — Navigating All 8 Sections</h4>
+                <p class="footnote">Use the top-right circular <strong>Profile Avatar</strong> menu or the <strong>Settings</strong> tab to access: <strong>Profile &amp; Account</strong> (Office Manager pairing, Enterprise Device Enrollment, OAuth/API), <strong>Protection</strong>, <strong>Detection</strong> (presets, 24 categories, confidence thresholds), <strong>Appearance</strong>, <strong>Notifications</strong>, <strong>Privacy</strong>, <strong>Advanced</strong> (scan limits &amp; OCR), and <strong>About &amp; Diagnostics</strong>.</p>
+              </div>
+              <div id="guide-shortcuts" class="guide-card">
+                <h4 data-i18n="guide-shortcuts">Shortcuts — Keyboard Hotkeys</h4>
+                <p class="footnote">Press <code>Alt+Shift+S</code> to scan the active page, <code>Alt+Shift+M</code> to toggle visual masks on/off after a scan, and <code>Alt+Shift+P</code> to open the persistent Side Panel workspace. Customize shortcuts at <code>chrome://extensions/shortcuts</code>.</p>
+              </div>
+              <div id="guide-troubleshooting" class="guide-card">
+                <h4 data-i18n="guide-troubleshooting">Troubleshooting — Common Questions</h4>
+                <ul class="guide-steps footnote">
+                  <li><strong>Scan says restricted or unavailable:</strong> Browser internal pages (<code>chrome://</code>, <code>edge://</code>, <code>about:</code>, Chrome Web Store) block extensions by browser security policy. Test on any regular <code>https://</code> website.</li>
+                  <li><strong>Page has 0 characters:</strong> The page is likely a scanned image or canvas; use the offered <strong>Capture Image to Document Studio</strong> button to run local OCR.</li>
+                  <li><strong>Paste Shield says Waiting for access:</strong> Click the <strong>Paste Shield</strong> pill or <strong>Grant site access</strong> in Settings → Protection to approve browser host permissions.</li>
+                </ul>
+              </div>
+              <div id="guide-cloud" class="guide-card">
+                <h4 data-i18n="guide-cloud">Cloud &amp; Enterprise Coordination</h4>
+                <p class="footnote">Cloud analysis is disabled by default so all page and document scanning runs locally on your device. Optional Organization Gateway, OAuth, and Local Office Manager pairing in <strong>Settings → Profile &amp; Account</strong> synchronize compliance policies without sending raw page or document text.</p>
+              </div>
+              <div id="guide-privacy" class="guide-card">
+                <h4 data-i18n="guide-privacy">Privacy &amp; Zero-Egress Guarantee</h4>
+                <p class="footnote">Page text and documents stay on this device. Findings store only masked previews (e.g. <code>***-**-4829</code>), and staged document bytes are wiped when cleared, after redaction, or on browser startup.</p>
+              </div>
+              <div id="guide-contributions" class="guide-card">
+                <h4 data-i18n="guide-contributions">Contributions</h4>
+                <p class="footnote">Community rule packs are <strong>not active in this release</strong>. Nothing you write leaves your device: rule sharing is disabled and there is no server to send it to. Your local logic stays local and works exactly as it does now.</p>
+              </div>
             </div>
           </details>
         </div>
@@ -1150,12 +1400,35 @@
           <label for="wizard-rule-confidence" data-i18n="wizard_confidence_label">Confidence (0-1)</label>
           <input id="wizard-rule-confidence" type="number" min="0" max="1" step="0.05" value="0.85" />
         </div>
+        <div class="form-row">
+          <label for="wizard-rule-cues" data-i18n="wizard_cues_label">Context cues (optional nearby keywords, comma-separated)</label>
+          <input id="wizard-rule-cues" type="text" placeholder="patient, badge, account, ticket" />
+        </div>
+        <div class="form-row">
+          <label for="wizard-rule-group" data-i18n="wizard_capture_group_label">Capture group (0 = full match, 1–9 = subgroup)</label>
+          <input id="wizard-rule-group" type="number" min="0" max="9" step="1" value="0" />
+        </div>
+        <div class="form-row">
+          <label for="wizard-rule-min-len" data-i18n="wizard_min_len_label">Min match length (optional)</label>
+          <input id="wizard-rule-min-len" type="number" min="1" max="512" step="1" placeholder="e.g. 4" />
+          <label for="wizard-rule-max-len" data-i18n="wizard_max_len_label">Max match length (optional)</label>
+          <input id="wizard-rule-max-len" type="number" min="1" max="512" step="1" placeholder="e.g. 64" />
+        </div>
         <p id="wizard-step4-error" class="summary__note status--error" hidden role="alert"></p>
         <div class="dialog-actions">
           <button id="wizard-back-4" class="btn btn--ghost btn--sm" type="button" data-i18n="wizard_back_btn">Back</button>
           <button id="wizard-save-btn" class="btn btn--primary btn--sm" type="button" data-i18n="wizard_save_btn">Save Rule</button>
         </div>
       </div>
+    </div>
+  </dialog>
+
+  <dialog id="contextual-guide-dialog" class="dialog dialog--large" aria-labelledby="contextual-guide-title">
+    <h3 id="contextual-guide-title" data-i18n="guide_dialog_title">Feature Guide</h3>
+    <div id="contextual-guide-body" class="contextual-guide-body"></div>
+    <div class="dialog-actions">
+      <button id="contextual-guide-open-about" class="btn btn--ghost btn--sm" type="button" data-i18n="guide_open_all_btn">View All 21 Guides</button>
+      <button id="contextual-guide-close" class="btn btn--primary btn--sm" type="button" data-i18n="guide_got_it_btn">Got It — Return to Work</button>
     </div>
   </dialog>
 

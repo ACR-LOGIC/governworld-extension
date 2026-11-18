@@ -217,6 +217,7 @@ function normalizeFindingArray(value: unknown): Finding[] | null {
     endOffset: finding.endOffset,
     rects: finding.rects.map((rect) => ({ ...rect })),
     ...(finding.contextPreview !== undefined ? { contextPreview: finding.contextPreview } : {}),
+    ...(finding.entityType !== undefined ? { entityType: finding.entityType } : {}),
     ...(finding.attribute !== undefined ? { attribute: finding.attribute } : {}),
     selected: finding.selected,
   }));

@@ -2761,5 +2761,102 @@ body[data-reduced-motion="true"] *::after {
 
 .office-card__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+/* ---------- Step-by-Step How-To & Contextual Guide Drawer ---------- */
+.howto-card {
+  margin-top: 8px;
+  margin-bottom: 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.howto-card__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+  cursor: pointer;
+  user-select: none;
+}
+
+.howto-card__body {
+  padding: 0 10px 10px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.howto-steps {
+  margin: 8px 0 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.howto-steps strong {
+  color: var(--text);
+}
+
+.howto-inline {
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.howto-inline strong {
+  color: var(--accent);
+  margin-right: 4px;
+}
+
+.threshold-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.threshold-controls .preset-select {
+  flex: 1 1 110px;
+  min-width: 0;
+}
+
+.guide-steps {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  line-height: 1.45;
+}
+
+.contextual-guide-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-top: 6px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  max-height: 300px;
+  overflow-y: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text);
 }

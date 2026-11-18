@@ -67,6 +67,7 @@ import type {
 } from "../shared/types.js";
 import type { ParsedName } from "../content/detectors/nameParser.js";
 import { loadCustomPatterns, saveCustomPatterns, parseCustomPattern, type CustomPattern, type CommunityAccount, type CommunityRule } from "../shared/customPatterns.js";
+import { inferLocationRule, type SelectionSample } from "../shared/locationAwareWizard.js";
 import { parseSampleLines, type WizardAnalysis } from "../shared/wizardAnalyzer.js";
 import type { ImageCandidate } from "../shared/messages.js";
 
@@ -434,6 +435,25 @@ export async function renderCategories(settings: {
     list.appendChild(label);
   }
   updatePresetSelector(settings.enabledCategories);
+
+  const thresholdCatSelect = document.getElementById("threshold-category-select") as HTMLSelectElement | null;
+  const thresholdValSelect = document.getElementById("threshold-value-select") as HTMLSelectElement | null;
+  if (thresholdCatSelect) {
+    const prevCat = (thresholdCatSelect.value as FindingCategory) || "email";
+    thresholdCatSelect.replaceChildren();
+    for (const category of ALL_CATEGORIES) {
+      const opt = document.createElement("option");
+      opt.value = category;
+      opt.textContent = getCategoryLabel(lang, category);
+      thresholdCatSelect.appendChild(opt);
+    }
+    thresholdCatSelect.value = ALL_CATEGORIES.includes(prevCat) ? prevCat : "email";
+    if (thresholdValSelect) {
+      const storedSettings = await loadSettings();
+      const currentThresh = storedSettings.confidenceThresholds[thresholdCatSelect.value as FindingCategory] ?? 0;
+      thresholdValSelect.value = String(currentThresh);
+    }
+  }
 }
 
 /** The preset whose category set exactly matches the given set, else "custom". */
@@ -609,6 +629,10 @@ export function renderFindings(findings: Finding[]): void {
     const head = el("div", "finding__head");
     const category = el("div", "finding__category", getCategoryLabel(currentLang, finding.category));
     head.append(category);
+    if (finding.entityType && finding.entityType !== finding.category) {
+      const entityBadge = el("span", "finding__badge-attr", finding.entityType.toUpperCase());
+      head.append(entityBadge);
+    }
     if (reportOnly) {
       const attrBadge = el(
         "span",
@@ -625,6 +649,10 @@ export function renderFindings(findings: Finding[]): void {
     const meta = el("div", "finding__meta");
     const confidence = el("span", "finding__confidence", `${Math.round(finding.confidence * 100)}% confidence`);
     meta.append(confidence);
+    if (finding.contextPreview) {
+      const ctxSpan = el("span", "finding__confidence", `Context: ${finding.contextPreview}`);
+      meta.append(ctxSpan);
+    }
     if (finding.category === "possible_name" && finding.parsedName) {
       const detail = el("div", "finding__name-detail", nameDetailText(finding.parsedName));
       meta.append(detail);
@@ -2081,24 +2109,68 @@ function initTabs(): { switchTab: (tabId: string) => void; switchSettingsPage: (
     });
   });
 
-  const helpLinks = document.querySelectorAll<HTMLElement>("[data-guide]");
-  helpLinks.forEach((link) => {
-    link.addEventListener("click", (e) => {
-      e.preventDefault();
-      const guideId = link.getAttribute("data-guide");
-      if (!guideId) return;
-      switchTab("settings");
-      // Guide cards live in the About sub-page inside a collapsible section.
-      switchSettingsPage("about");
-      const guidesDetails = document.getElementById("about-guides-details") as HTMLDetailsElement | null;
-      if (guidesDetails) guidesDetails.open = true;
-      const targetEl = document.getElementById(guideId);
+  const contextualGuideDialog = document.getElementById("contextual-guide-dialog") as HTMLDialogElement | null;
+  const contextualGuideTitle = document.getElementById("contextual-guide-title") as HTMLHeadingElement | null;
+  const contextualGuideBody = document.getElementById("contextual-guide-body") as HTMLDivElement | null;
+  const contextualGuideOpenAbout = document.getElementById("contextual-guide-open-about") as HTMLButtonElement | null;
+  const contextualGuideClose = document.getElementById("contextual-guide-close") as HTMLButtonElement | null;
+  let activeGuideId: string | null = null;
+  let lastGuideTrigger: HTMLElement | null = null;
+
+  contextualGuideClose?.addEventListener("click", () => {
+    contextualGuideDialog?.close();
+    lastGuideTrigger?.focus();
+  });
+
+  contextualGuideOpenAbout?.addEventListener("click", () => {
+    contextualGuideDialog?.close();
+    switchTab("settings");
+    switchSettingsPage("about");
+    const guidesDetails = document.getElementById("about-guides-details") as HTMLDetailsElement | null;
+    if (guidesDetails) guidesDetails.open = true;
+    if (activeGuideId) {
+      const targetEl = document.getElementById(activeGuideId);
       if (targetEl) {
         targetEl.scrollIntoView({ behavior: "smooth", block: "start" });
         targetEl.classList.remove("guide-card--highlight");
         void targetEl.offsetWidth;
         targetEl.classList.add("guide-card--highlight");
       }
+    }
+  });
+
+  const helpLinks = document.querySelectorAll<HTMLElement>("[data-guide]");
+  helpLinks.forEach((link) => {
+    link.addEventListener("click", (e) => {
+      e.preventDefault();
+      const guideId = link.getAttribute("data-guide");
+      if (!guideId) return;
+      activeGuideId = guideId;
+      lastGuideTrigger = link;
+      const guidesDetails = document.getElementById("about-guides-details") as HTMLDetailsElement | null;
+      if (guidesDetails) guidesDetails.open = true;
+      const targetEl = document.getElementById(guideId);
+      if (targetEl) {
+        targetEl.classList.remove("guide-card--highlight");
+        void targetEl.offsetWidth;
+        targetEl.classList.add("guide-card--highlight");
+      }
+      if (contextualGuideDialog && contextualGuideTitle && contextualGuideBody && targetEl) {
+        const heading = targetEl.querySelector("h4");
+        contextualGuideTitle.textContent = heading?.textContent ?? "Feature Guide";
+        contextualGuideBody.replaceChildren();
+        for (const child of Array.from(targetEl.childNodes)) {
+          if (child === heading) continue;
+          contextualGuideBody.appendChild(child.cloneNode(true));
+        }
+        if (typeof contextualGuideDialog.showModal === "function") {
+          contextualGuideDialog.showModal();
+          return;
+        }
+      }
+      switchTab("settings");
+      switchSettingsPage("about");
+      targetEl?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   });
 
@@ -2655,10 +2727,57 @@ export async function initPopup(): Promise<void> {
   const toolDrawBox = document.getElementById("tool-draw-box") as HTMLButtonElement | null;
   const toolClearCustom = document.getElementById("tool-clear-custom") as HTMLButtonElement | null;
   const toolToggleAllDoc = document.getElementById("tool-toggle-all-doc") as HTMLButtonElement | null;
+  const toolSaveLocationRule = document.getElementById("tool-save-location-rule") as HTMLButtonElement | null;
+  const docLocationRuleStatus = document.getElementById("doc-location-rule-status") as HTMLParagraphElement | null;
 
   toolDrawBox?.addEventListener("click", () => {
     currentStudioTool = "draw";
     toolDrawBox.classList.add("tool-btn--active");
+  });
+
+  toolSaveLocationRule?.addEventListener("click", () => {
+    if (!lastDoc) return;
+    const samples: SelectionSample[] = [];
+    for (const page of lastDoc.pages) {
+      for (const finding of page.findings) {
+        if (finding.category === "custom" && finding.rects.length > 0) {
+          const rect = finding.rects[0];
+          if (rect) {
+            samples.push({
+              pageNumber: page.index + 1,
+              pageWidth: page.widthPx,
+              pageHeight: page.heightPx,
+              rect,
+            });
+          }
+        }
+      }
+    }
+    const analysis = inferLocationRule(samples);
+    if (docLocationRuleStatus) {
+      docLocationRuleStatus.hidden = false;
+      if (!analysis.eligible || !analysis.rule) {
+        docLocationRuleStatus.textContent = analysis.reasons.join(" ");
+        return;
+      }
+      const rulePattern: CustomPattern = {
+        id: crypto.randomUUID(),
+        name: `Document Region (${Math.round(analysis.rule.region.x * 100)}%, ${Math.round(analysis.rule.region.y * 100)}%)`,
+        category: "custom",
+        confidence: analysis.rule.confidence,
+        createdAt: new Date().toISOString(),
+        source: "local",
+        contributionStatus: "local_only",
+        strategy: "location",
+        location: analysis.rule,
+      };
+      void chrome.runtime.sendMessage({
+        type: "POPUP_CUSTOM_PATTERN_SAVE",
+        requestId: requestId(),
+        pattern: rulePattern,
+      });
+      docLocationRuleStatus.textContent = `Saved reusable Location Rule (${Math.round(analysis.rule.confidence * 100)}% consistency across ${samples.length} boxes).`;
+    }
   });
 
   toolClearCustom?.addEventListener("click", () => {
@@ -3206,6 +3325,61 @@ export async function initPopup(): Promise<void> {
     });
   }
 
+  // --- Per-Category Confidence Thresholds & Scan Budget Controls ---
+  const thresholdCategorySelect = document.getElementById("threshold-category-select") as HTMLSelectElement | null;
+  const thresholdValueSelect = document.getElementById("threshold-value-select") as HTMLSelectElement | null;
+  const thresholdApplyAllBtn = document.getElementById("threshold-apply-all-btn") as HTMLButtonElement | null;
+
+  thresholdCategorySelect?.addEventListener("change", async () => {
+    if (!thresholdValueSelect) return;
+    const current = await loadSettings();
+    const cat = thresholdCategorySelect.value as FindingCategory;
+    const val = current.confidenceThresholds?.[cat] ?? 0.7;
+    thresholdValueSelect.value = val.toFixed(2);
+  });
+
+  thresholdValueSelect?.addEventListener("change", async () => {
+    if (!thresholdCategorySelect) return;
+    const cat = thresholdCategorySelect.value as FindingCategory;
+    const val = parseFloat(thresholdValueSelect.value) || 0.7;
+    const current = await loadSettings();
+    const updatedThresholds = { ...(current.confidenceThresholds ?? {}), [cat]: val } as Record<FindingCategory, number>;
+    await saveSettings({ ...current, confidenceThresholds: updatedThresholds });
+  });
+
+  thresholdApplyAllBtn?.addEventListener("click", async () => {
+    if (!thresholdValueSelect) return;
+    const val = parseFloat(thresholdValueSelect.value) || 0.7;
+    const current = await loadSettings();
+    const updatedThresholds = { ...(current.confidenceThresholds ?? {}) } as Record<FindingCategory, number>;
+    for (const cat of ALL_CATEGORIES) {
+      updatedThresholds[cat] = val;
+    }
+    await saveSettings({ ...current, confidenceThresholds: updatedThresholds });
+  });
+
+  const maxVisibleCharsInput = document.getElementById("max-visible-chars-input") as HTMLInputElement | null;
+  if (maxVisibleCharsInput) {
+    maxVisibleCharsInput.value = String(settings.maxVisibleChars);
+    maxVisibleCharsInput.addEventListener("change", async () => {
+      const parsed = Math.max(1000, Math.min(2_000_000, parseInt(maxVisibleCharsInput.value, 10) || 250_000));
+      maxVisibleCharsInput.value = String(parsed);
+      const current = await loadSettings();
+      await saveSettings({ ...current, maxVisibleChars: parsed });
+    });
+  }
+
+  const maxNodeCharsInput = document.getElementById("max-node-chars-input") as HTMLInputElement | null;
+  if (maxNodeCharsInput) {
+    maxNodeCharsInput.value = String(settings.maxNodeChars);
+    maxNodeCharsInput.addEventListener("change", async () => {
+      const parsed = Math.max(200, Math.min(100_000, parseInt(maxNodeCharsInput.value, 10) || 4000));
+      maxNodeCharsInput.value = String(parsed);
+      const current = await loadSettings();
+      await saveSettings({ ...current, maxNodeChars: parsed });
+    });
+  }
+
   // --- Reset Settings & Clear Audit Controls ---
   const resetSettingsBtn = document.getElementById("reset-settings-btn") as HTMLButtonElement | null;
   const resetConfirmDialog = document.getElementById("reset-confirm-dialog") as HTMLDialogElement | null;
@@ -3268,6 +3442,13 @@ export async function initPopup(): Promise<void> {
     if (defaultDocStampInput) defaultDocStampInput.value = defaults.defaultStampText;
     if (ocrLangSelect) ocrLangSelect.value = defaults.ocrLanguage;
     if (docOcrLangSelect) docOcrLangSelect.value = defaults.ocrLanguage;
+    if (maxVisibleCharsInput) maxVisibleCharsInput.value = String(defaults.maxVisibleChars);
+    if (maxNodeCharsInput) maxNodeCharsInput.value = String(defaults.maxNodeChars);
+    if (thresholdCategorySelect && thresholdValueSelect) {
+      const selectedCat = (thresholdCategorySelect.value as FindingCategory) || "email";
+      const val = defaults.confidenceThresholds?.[selectedCat] ?? 0.7;
+      thresholdValueSelect.value = val.toFixed(2);
+    }
 
     speakAnnouncement(t(defaults.language, "speech_settings_reset"), defaults);
   });
@@ -3292,6 +3473,9 @@ export async function initPopup(): Promise<void> {
   });
 
   document.getElementById("export-audit-btn")?.addEventListener("click", () => {
+    void sendMessage({ type: "POPUP_EXPORT_AUDIT", requestId: requestId() });
+  });
+  document.getElementById("review-export-audit-btn")?.addEventListener("click", () => {
     void sendMessage({ type: "POPUP_EXPORT_AUDIT", requestId: requestId() });
   });
 
@@ -3498,6 +3682,106 @@ export async function initPopup(): Promise<void> {
     });
   });
 
+  const accountClearBtn = document.getElementById("account-clear-btn") as HTMLButtonElement | null;
+  accountClearBtn?.addEventListener("click", () => {
+    if (accountStatus) accountStatus.textContent = "Disconnecting account…";
+    void chrome.runtime.sendMessage({
+      type: "POPUP_ACCOUNT_CLEAR",
+      requestId: requestId(),
+    });
+  });
+
+  // ---------- Enterprise Management Enrollment & Gateway API Controls ----------
+  const mgmtStatusText = document.getElementById("mgmt-status-text") as HTMLParagraphElement | null;
+  const mgmtOrgIdInput = document.getElementById("mgmt-org-id-input") as HTMLInputElement | null;
+  const mgmtOrgNameInput = document.getElementById("mgmt-org-name-input") as HTMLInputElement | null;
+  const mgmtEmpIdInput = document.getElementById("mgmt-emp-id-input") as HTMLInputElement | null;
+  const mgmtCoordUrlInput = document.getElementById("mgmt-coord-url-input") as HTMLInputElement | null;
+  const mgmtEnrollBtn = document.getElementById("mgmt-enroll-btn") as HTMLButtonElement | null;
+  const mgmtSyncPolicyBtn = document.getElementById("mgmt-sync-policy-btn") as HTMLButtonElement | null;
+  const mgmtUnenrollBtn = document.getElementById("mgmt-unenroll-btn") as HTMLButtonElement | null;
+
+  mgmtEnrollBtn?.addEventListener("click", () => {
+    const organizationId = mgmtOrgIdInput?.value.trim() || "";
+    const organizationName = mgmtOrgNameInput?.value.trim() || undefined;
+    const employeeId = mgmtEmpIdInput?.value.trim() || "";
+    const coordinatorUrl = mgmtCoordUrlInput?.value.trim() || undefined;
+    if (!organizationId || !employeeId) {
+      if (mgmtStatusText) {
+        mgmtStatusText.textContent = "Organization ID and Employee ID are required to enroll.";
+      }
+      return;
+    }
+    if (mgmtStatusText) mgmtStatusText.textContent = "Enrolling device in Enterprise MANAGE mode…";
+    void chrome.runtime.sendMessage({
+      type: "POPUP_MANAGEMENT_ENROLL",
+      requestId: requestId(),
+      organizationId,
+      ...(organizationName ? { organizationName } : {}),
+      employeeId,
+      ...(coordinatorUrl ? { coordinatorUrl } : {}),
+    });
+  });
+
+  mgmtSyncPolicyBtn?.addEventListener("click", () => {
+    if (mgmtStatusText) mgmtStatusText.textContent = "Syncing signed enterprise policy…";
+    void chrome.runtime.sendMessage({
+      type: "POPUP_SYNC_MANAGED_POLICY",
+      requestId: requestId(),
+      force: true,
+    });
+  });
+
+  mgmtUnenrollBtn?.addEventListener("click", () => {
+    if (mgmtStatusText) mgmtStatusText.textContent = "Returning to standalone LOCAL mode…";
+    void chrome.runtime.sendMessage({
+      type: "POPUP_MANAGEMENT_UNENROLL",
+      requestId: requestId(),
+    });
+  });
+
+  const oauthConnectBtn = document.getElementById("oauth-connect-btn") as HTMLButtonElement | null;
+  const apiSyncPolicyBtn = document.getElementById("api-sync-policy-btn") as HTMLButtonElement | null;
+  const apiDisconnectBtn = document.getElementById("api-disconnect-btn") as HTMLButtonElement | null;
+  const oauthStatus = document.getElementById("oauth-status") as HTMLParagraphElement | null;
+  const apiConnectionStatus = document.getElementById("api-connection-status") as HTMLParagraphElement | null;
+
+  oauthConnectBtn?.addEventListener("click", () => {
+    if (oauthStatus) {
+      oauthStatus.hidden = false;
+      oauthStatus.textContent = "Checking OAuth connection status…";
+    }
+    void chrome.runtime.sendMessage({
+      type: "POPUP_OAUTH_CONNECT",
+      requestId: requestId(),
+    });
+  });
+
+  apiSyncPolicyBtn?.addEventListener("click", () => {
+    if (apiConnectionStatus) {
+      apiConnectionStatus.textContent = "Requesting gateway policy sync…";
+    }
+    const gwOrigin = originInput?.value.trim().replace(/\/+$/, "");
+    if (gwOrigin && /^https:\/\/[^/]+$/.test(gwOrigin)) {
+      void chrome.runtime.sendMessage({
+        type: "POPUP_API_CONNECT",
+        requestId: requestId(),
+        apiUrl: gwOrigin,
+      });
+    }
+    void chrome.runtime.sendMessage({
+      type: "POPUP_API_SYNC_POLICY",
+      requestId: requestId(),
+    });
+  });
+
+  apiDisconnectBtn?.addEventListener("click", () => {
+    void chrome.runtime.sendMessage({
+      type: "POPUP_API_DISCONNECT",
+      requestId: requestId(),
+    });
+  });
+
   // ---------- Office Manager Pairing Controls ----------
   const officePairBtn = document.getElementById("office-pair-btn") as HTMLButtonElement | null;
   const officeUnpairBtn = document.getElementById("office-unpair-btn") as HTMLButtonElement | null;
@@ -3657,6 +3941,10 @@ export async function initPopup(): Promise<void> {
   const wizardRuleName = document.getElementById("wizard-rule-name") as HTMLInputElement | null;
   const wizardRuleCategory = document.getElementById("wizard-rule-category") as HTMLSelectElement | null;
   const wizardRuleConfidence = document.getElementById("wizard-rule-confidence") as HTMLInputElement | null;
+  const wizardRuleCues = document.getElementById("wizard-rule-cues") as HTMLInputElement | null;
+  const wizardRuleGroup = document.getElementById("wizard-rule-group") as HTMLInputElement | null;
+  const wizardRuleMinLen = document.getElementById("wizard-rule-min-len") as HTMLInputElement | null;
+  const wizardRuleMaxLen = document.getElementById("wizard-rule-max-len") as HTMLInputElement | null;
   const wizardBack4 = document.getElementById("wizard-back-4") as HTMLButtonElement | null;
   const wizardSaveBtn = document.getElementById("wizard-save-btn") as HTMLButtonElement | null;
 
@@ -3689,6 +3977,10 @@ export async function initPopup(): Promise<void> {
     wizardTestSample.value = "";
     wizardRuleName.value = "";
     wizardRuleConfidence.value = "0.85";
+    if (wizardRuleCues) wizardRuleCues.value = "";
+    if (wizardRuleGroup) wizardRuleGroup.value = "0";
+    if (wizardRuleMinLen) wizardRuleMinLen.value = "";
+    if (wizardRuleMaxLen) wizardRuleMaxLen.value = "";
     if (wizardStep1Error) {
       wizardStep1Error.textContent = "";
       wizardStep1Error.hidden = true;
@@ -3894,17 +4186,31 @@ export async function initPopup(): Promise<void> {
       wizardStep4Error.textContent = "";
       wizardStep4Error.hidden = true;
     }
+    const rawCues = wizardRuleCues?.value
+      ? wizardRuleCues.value
+          .split(",")
+          .map((c) => c.trim())
+          .filter(Boolean)
+      : [];
+    const parsedGroup = wizardRuleGroup ? Math.max(0, Math.min(20, parseInt(wizardRuleGroup.value, 10) || 0)) : 0;
+    const parsedMinLen = wizardRuleMinLen?.value ? Math.max(1, parseInt(wizardRuleMinLen.value, 10) || 0) : undefined;
+    const parsedMaxLen = wizardRuleMaxLen?.value ? Math.max(1, parseInt(wizardRuleMaxLen.value, 10) || 0) : undefined;
+
     const pattern: CustomPattern = {
       id: crypto.randomUUID(),
       name,
       category: wizardRuleCategory.value as any,
       pattern: patternStr,
       flags: "gi",
-      captureGroup: 0,
+      captureGroup: parsedGroup,
       confidence: parseFloat(wizardRuleConfidence.value) || 0.85,
       createdAt: new Date().toISOString(),
       source: "local",
       contributionStatus: "local_only",
+      strategy: "text",
+      ...(rawCues.length > 0 ? { contextCues: rawCues } : {}),
+      ...(parsedMinLen !== undefined && parsedMinLen > 0 ? { minLength: parsedMinLen } : {}),
+      ...(parsedMaxLen !== undefined && parsedMaxLen > 0 ? { maxLength: parsedMaxLen } : {}),
     };
 
     void chrome.runtime.sendMessage({
@@ -4063,18 +4369,40 @@ export async function initPopup(): Promise<void> {
         badge.dataset.level = "high";
         actionsDiv.append(badge, delBtn);
       } else {
-        const contribBtn = document.createElement("button");
-        contribBtn.className = "btn btn--ghost btn--sm";
-        contribBtn.textContent = "Unavailable";
-        contribBtn.disabled = true;
-        contribBtn.title = "Community contributions are unavailable until server authorization and consent recording are configured.";
-        actionsDiv.append(contribBtn, delBtn);
+        const submitLogicBtn = document.createElement("button");
+        submitLogicBtn.className = "btn btn--ghost btn--sm";
+        submitLogicBtn.textContent = "Share Rule";
+        submitLogicBtn.title = "Submit anonymized rule pattern (requires consent or connected gateway)";
+        submitLogicBtn.addEventListener("click", () => {
+          contributeTargetPatternId = pat.id;
+          if (contribConsentDialog && typeof contribConsentDialog.showModal === "function") {
+            if (contribConsentCheckbox) contribConsentCheckbox.checked = false;
+            if (contribConfirmBtn) contribConfirmBtn.disabled = true;
+            contribConsentDialog.showModal();
+          } else {
+            void chrome.runtime.sendMessage({
+              type: "POPUP_API_SUBMIT_LOGIC",
+              requestId: requestId(),
+              patternId: pat.id,
+            });
+          }
+        });
+        actionsDiv.append(submitLogicBtn, delBtn);
       }
 
       topRow.append(nameSpan, actionsDiv);
 
       const codeBox = document.createElement("code");
-      codeBox.textContent = `/${pat.pattern}/${pat.flags} [${pat.category}]`;
+      if (pat.strategy === "location" && pat.location) {
+        codeBox.textContent = `Location Box (${Math.round(pat.location.region.x * 100)}%, ${Math.round(pat.location.region.y * 100)}%, ${Math.round(pat.location.region.width * 100)}×${Math.round(pat.location.region.height * 100)}%) [${pat.category}]`;
+      } else {
+        const cuesSuffix = pat.contextCues?.length ? ` cues: ${pat.contextCues.join(", ")}` : "";
+        const lenSuffix =
+          pat.minLength !== undefined || pat.maxLength !== undefined
+            ? ` len: ${pat.minLength ?? 1}–${pat.maxLength ?? "∞"}`
+            : "";
+        codeBox.textContent = `/${pat.pattern}/${pat.flags} [${pat.category}]${cuesSuffix}${lenSuffix}`;
+      }
       codeBox.style.fontSize = "11px";
       codeBox.style.color = "var(--text-muted)";
       codeBox.style.marginTop = "4px";
@@ -4863,6 +5191,54 @@ export async function initPopup(): Promise<void> {
       return;
     }
     if (message.type === "POPUP_OAUTH_STATUS") {
+      if (oauthStatus) {
+        oauthStatus.hidden = false;
+        oauthStatus.textContent = message.message || (message.connected ? `Connected (${message.tenantName ?? message.tenantId ?? "Workspace"})` : "Not connected via OAuth.");
+      }
+      return;
+    }
+    if (message.type === "POPUP_API_STATUS_STATE") {
+      if (apiConnectionStatus) {
+        const stateLabel = message.connectionState ? `Gateway API: ${message.connectionState}` : "Gateway API: disconnected";
+        apiConnectionStatus.textContent = message.error ? `${stateLabel} (${message.error})` : stateLabel;
+      }
+      if (apiDisconnectBtn) {
+        apiDisconnectBtn.hidden = message.connectionState !== "connected";
+      }
+      return;
+    }
+    if (message.type === "POPUP_API_POLICY_STATE") {
+      if (apiConnectionStatus) {
+        apiConnectionStatus.textContent = message.success
+          ? `Policy synced (${message.rulesCount ?? 0} rules, v${message.policyVersion ?? "1"}).`
+          : message.error || "Gateway policy sync unavailable.";
+      }
+      return;
+    }
+    if (message.type === "POPUP_API_SUBMIT_RESULT" || message.type === "POPUP_COMMUNITY_CONTRIBUTE_RESULT") {
+      if (communityAccountStatus) {
+        communityAccountStatus.textContent = message.success
+          ? "Rule submitted for review."
+          : message.error || "Rule submission unavailable.";
+      }
+      return;
+    }
+    if (message.type === "POPUP_MANAGEMENT_STATUS_STATE") {
+      if (mgmtStatusText) {
+        if (message.error) {
+          mgmtStatusText.textContent = message.error;
+        } else if (message.enrolled && message.mode === "MANAGE") {
+          const orgLabel = message.organizationName || message.organizationId || "Organization";
+          const verLabel = message.appliedPolicyVersion !== undefined ? ` (Policy v${message.appliedPolicyVersion})` : "";
+          mgmtStatusText.textContent = `MANAGE Mode enrolled: ${orgLabel}${verLabel}`;
+        } else {
+          mgmtStatusText.textContent = "Standalone (LOCAL Mode)";
+        }
+      }
+      if (mgmtUnenrollBtn) {
+        mgmtUnenrollBtn.hidden = !message.enrolled;
+      }
+      void refreshProtectionStatus();
       return;
     }
     if (message.type === "POPUP_CUSTOM_PATTERNS_STATE") {
@@ -4941,6 +5317,11 @@ export async function initPopup(): Promise<void> {
 
   const initialTab = await getActiveWebTab().catch(() => undefined);
   void sendMessage({ type: "POPUP_GET_STATE", requestId: requestId(), ...(initialTab?.id ? { tabId: initialTab.id } : {}) });
+  void loadCustomPatterns().then(renderCustomPatterns).catch(() => {});
+  void chrome.runtime.sendMessage({ type: "POPUP_CUSTOM_PATTERNS_GET", requestId: requestId() }).catch(() => {});
+  void chrome.runtime.sendMessage({ type: "POPUP_COMMUNITY_ACCOUNT_GET", requestId: requestId() }).catch(() => {});
+  void chrome.runtime.sendMessage({ type: "POPUP_MANAGEMENT_GET_STATUS", requestId: requestId() }).catch(() => {});
+  void chrome.runtime.sendMessage({ type: "POPUP_API_GET_STATUS", requestId: requestId() }).catch(() => {});
 
   // Check for Side Panel handoff from toolbar popup
   async function checkWizardSidePanelHandoff(): Promise<void> {
