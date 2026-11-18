@@ -290,10 +290,10 @@ const MODAL_STYLES = `
   z-index: 2;
   width: 380px;
   max-width: calc(100vw - 32px);
-  background: #0f172a;
-  border: 1px solid #334155;
+  background: #111a2b;
+  border: 1px solid #2e405c;
   border-radius: 12px;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(34, 211, 238, 0.15);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(34, 211, 238, 0.18);
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -355,8 +355,8 @@ const MODAL_STYLES = `
 }
 
 .gw-content {
-  background: #1e293b;
-  border: 1px solid #334155;
+  background: #0d1424;
+  border: 1px solid #1e2b40;
   border-radius: 8px;
   padding: 10px;
   max-height: 160px;
@@ -425,14 +425,14 @@ const MODAL_STYLES = `
 }
 
 .gw-btn-primary {
-  background: #0284c7;
-  color: #ffffff;
-  border-color: #0369a1;
+  background: linear-gradient(135deg, #0ea5e9 0%, #06b6d4 100%);
+  color: #04121d;
+  border-color: #0ea5e9;
   font-weight: 600;
 }
 
 .gw-btn-primary:hover {
-  background: #0369a1;
+  background: linear-gradient(135deg, #38bdf8 0%, #22d3ee 100%);
 }
 
 .gw-btn-ghost {

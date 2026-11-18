@@ -3,17 +3,17 @@
    controls beside it, so a drawn box lands on text the user can actually read. */
 
 :root {
-  --bg: #0b1220;
-  --surface: #111c2e;
-  --border: #1e293b;
+  --bg: #0a0f1a;
+  --surface: #111a2b;
+  --border: #1e2b40;
   --text: #e2e8f0;
   --muted: #94a3b8;
   --accent: #22d3ee;
   --ok: #34d399;
   --warning: #fbbf24;
   --danger: #f87171;
-  --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
-  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --sans: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: "SFMono-Regular", "Cascadia Code", Consolas, monospace;
 }
 
 * {

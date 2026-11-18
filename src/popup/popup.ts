@@ -31,7 +31,11 @@ import {
   queryAlwaysOnCapability,
   type AlwaysOnCapability,
 } from "../shared/siteAccess.js";
-import { recordAudit } from "../shared/audit.js";
+import { AUDIT_KEY, recordAudit, type AuditEvent } from "../shared/audit.js";
+import {
+  DOCUMENT_PIPELINE_UNAVAILABLE_MESSAGE,
+  isDocumentPipelineSupported,
+} from "../shared/platform.js";
 import {
   loadSitePolicies,
   saveSitePolicies,
@@ -762,6 +766,37 @@ function renderState(state: PopupState): void {
       badge.classList.remove("badge--managed", "badge--cloud");
     }
   }
+  const avatarBtn = document.getElementById("profile-avatar-btn");
+  const popoverMode = document.getElementById("profile-popover-mode");
+  if (avatarBtn) {
+    avatarBtn.classList.toggle("profile-avatar-btn--managed", state.operatingMode === "MANAGE");
+    avatarBtn.classList.toggle("profile-avatar-btn--local", state.operatingMode !== "MANAGE" && !avatarBtn.classList.contains("profile-avatar-btn--linked"));
+  }
+  if (popoverMode) {
+    popoverMode.textContent = state.operatingMode === "MANAGE" ? "MANAGE · Enterprise Enforced" : "LOCAL · Standalone";
+  }
+
+  const liveScanVal = document.getElementById("live-scan-value");
+  if (liveScanVal) {
+    if (state.scanning) {
+      liveScanVal.textContent = t(currentLang, "status_val_scanning");
+      liveScanVal.setAttribute("data-tone", "warn");
+    } else if (state.error) {
+      liveScanVal.textContent = "Check page";
+      liveScanVal.setAttribute("data-tone", "warn");
+    } else if (state.scanned) {
+      if (state.findings.length > 0) {
+        liveScanVal.textContent = `${state.findings.length} found`;
+        liveScanVal.setAttribute("data-tone", "warn");
+      } else {
+        liveScanVal.textContent = "Clean";
+        liveScanVal.removeAttribute("data-tone");
+      }
+    } else {
+      liveScanVal.textContent = t(currentLang, "status_val_ready");
+      liveScanVal.setAttribute("data-tone", "muted");
+    }
+  }
   if (scanBtn) {
     scanBtn.disabled = state.scanning;
     scanBtn.textContent = state.scanning ? t(currentLang, "scanning_btn") : t(currentLang, "scan_page_btn");
@@ -842,6 +877,116 @@ function renderState(state: PopupState): void {
   if (cloudRadio && cloudRadio.checked !== (state.mode === "cloud")) cloudRadio.checked = state.mode === "cloud";
 
   renderCoverage(state);
+  void refreshReviewTelemetry(state);
+}
+
+async function refreshReviewTelemetry(currentState?: PopupState | null): Promise<void> {
+  const findingsCountEl = document.getElementById("review-findings-count");
+  const protectedCountEl = document.getElementById("review-protected-count");
+  const pagesCountEl = document.getElementById("review-pages-count");
+  const activityEmpty = document.getElementById("activity-empty");
+  const activityList = document.getElementById("activity-list");
+
+  let events: AuditEvent[] = [];
+  try {
+    if (typeof chrome !== "undefined" && chrome.storage?.local) {
+      const stored = (await chrome.storage.local.get(AUDIT_KEY)) as Record<string, unknown>;
+      const raw = stored?.[AUDIT_KEY];
+      if (Array.isArray(raw)) {
+        events = raw.filter((e): e is AuditEvent => Boolean(e && typeof e === "object" && "action" in e));
+      }
+    }
+  } catch {
+    // Ignore storage read errors in restricted unit-test contexts
+  }
+
+  const sumCounts = (counts?: Record<string, number>): number =>
+    counts ? Object.values(counts).reduce((acc, n) => acc + (typeof n === "number" ? n : 0), 0) : 0;
+
+  let totalFindings = 0;
+  let totalProtected = 0;
+  let totalPages = 0;
+
+  for (const ev of events) {
+    const count = sumCounts(ev.counts);
+    if (ev.action === "page_scan_completed") {
+      totalFindings += count;
+      totalPages += 1;
+    } else if (ev.action === "doc_previewed") {
+      totalFindings += count;
+      totalPages += ev.pages ?? 1;
+    } else if (
+      ev.action === "masks_applied" ||
+      ev.action === "selection_redacted" ||
+      ev.action === "selection_masked" ||
+      ev.action === "doc_redacted" ||
+      ev.action === "policy_enforced"
+    ) {
+      totalProtected += Math.max(count, ev.action === "doc_redacted" ? 1 : 0);
+      if (ev.action === "doc_redacted") totalPages += ev.pages ?? 1;
+    }
+  }
+
+  const stateToUse = currentState ?? lastState;
+  if (events.length === 0 && stateToUse?.scanned) {
+    totalFindings = stateToUse.findings.length;
+    totalPages = 1;
+  }
+
+  if (findingsCountEl) findingsCountEl.textContent = String(totalFindings);
+  if (protectedCountEl) protectedCountEl.textContent = String(totalProtected);
+  if (pagesCountEl) pagesCountEl.textContent = String(totalPages);
+
+  if (activityList && activityEmpty) {
+    activityList.replaceChildren();
+    const recent = [...events].reverse().slice(0, 12);
+    activityEmpty.hidden = recent.length > 0;
+    const actionLabels: Record<string, string> = {
+      page_scan_completed: "Page scan completed",
+      masks_applied: "Page masks applied",
+      masks_removed: "Page masks removed",
+      selection_redacted: "Selection redacted",
+      selection_masked: "Selection masked",
+      doc_previewed: "Document scanned",
+      doc_redacted: "Document redacted",
+      doc_cleared: "Document cleared",
+      session_cleared: "Session cleared",
+      preset_applied: "Compliance preset applied",
+      preset_overridden: "Categories customized",
+      account_linked: "Workspace linked",
+      policy_created: "Site policy saved",
+      policy_deleted: "Site policy deleted",
+      policy_enforced: "Site policy enforced",
+    };
+
+    for (const ev of recent) {
+      const li = document.createElement("li");
+      li.className = "activity-item";
+
+      const main = document.createElement("div");
+      main.className = "activity-item__main";
+
+      const title = document.createElement("span");
+      title.className = "activity-item__title";
+      title.textContent = actionLabels[ev.action] ?? ev.action;
+
+      const meta = document.createElement("span");
+      meta.className = "activity-item__meta";
+      const timeStr = ev.ts ? new Date(ev.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+      const parts = [ev.host, ev.pages ? `${ev.pages}p` : "", timeStr].filter(Boolean);
+      meta.textContent = parts.join(" · ");
+
+      main.append(title, meta);
+
+      const badge = document.createElement("span");
+      badge.className = "count-badge";
+      const n = sumCounts(ev.counts);
+      badge.textContent = n > 0 ? String(n) : ev.outcome.toUpperCase();
+
+      li.append(main, badge);
+      activityList.appendChild(li);
+    }
+  }
 }
 
 /**
@@ -1810,7 +1955,7 @@ function clearDocUi(): void {
 }
 
 /** Wire tab navigation and contextual guidance links. */
-function initTabs(): void {
+function initTabs(): { switchTab: (tabId: string) => void; switchSettingsPage: (pageId: string) => void } {
   const tabButtons = document.querySelectorAll<HTMLButtonElement>(".tab-btn");
   const tabPanels = document.querySelectorAll<HTMLElement>(".tab-panel");
 
@@ -1834,9 +1979,6 @@ function initTabs(): void {
     });
   });
 
-  const settingsGear = document.getElementById("settings-gear-btn");
-  settingsGear?.addEventListener("click", () => switchTab("settings"));
-
   const helpLinks = document.querySelectorAll<HTMLElement>("[data-guide]");
   helpLinks.forEach((link) => {
     link.addEventListener("click", (e) => {
@@ -1844,8 +1986,10 @@ function initTabs(): void {
       const guideId = link.getAttribute("data-guide");
       if (!guideId) return;
       switchTab("settings");
-      // Guide cards live in the About sub-page, which is hidden by default.
+      // Guide cards live in the About sub-page inside a collapsible section.
       switchSettingsPage("about");
+      const guidesDetails = document.getElementById("about-guides-details") as HTMLDetailsElement | null;
+      if (guidesDetails) guidesDetails.open = true;
       const targetEl = document.getElementById(guideId);
       if (targetEl) {
         targetEl.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -1882,15 +2026,6 @@ function initTabs(): void {
     });
   });
 
-  const openDocBtn = document.getElementById("open-doc-btn");
-  openDocBtn?.addEventListener("click", () => {
-    const dropzone = document.getElementById("doc-dropzone");
-    if (dropzone) {
-      const fileInput = document.getElementById("doc-file-input") as HTMLInputElement | null;
-      fileInput?.click();
-    }
-  });
-
   const openWizardBtn2 = document.getElementById("open-wizard-btn-2");
   openWizardBtn2?.addEventListener("click", () => {
     const wizardBtn = document.getElementById("open-wizard-btn") as HTMLButtonElement | null;
@@ -1899,8 +2034,11 @@ function initTabs(): void {
 
   const coverageDetailsBtn = document.getElementById("coverage-details-btn");
   coverageDetailsBtn?.addEventListener("click", () => {
+    switchTab("settings");
     switchSettingsPage("privacy");
   });
+
+  return { switchTab, switchSettingsPage };
 }
 
 export interface ProtectionStatusSnapshot {
@@ -1969,6 +2107,37 @@ export async function refreshProtectionStatus(): Promise<ProtectionStatusSnapsho
   const stateLine = document.getElementById("protection-state");
   if (stateLine) stateLine.textContent = t(lang, stateKey);
 
+  const livePasteVal = document.getElementById("live-paste-value");
+  if (livePasteVal) {
+    if (state === "off") {
+      livePasteVal.textContent = t(lang, "status_val_off");
+      livePasteVal.setAttribute("data-tone", "muted");
+    } else if (state === "always-on-waiting-access") {
+      livePasteVal.textContent = t(lang, "status_val_waiting");
+      livePasteVal.setAttribute("data-tone", "warn");
+    } else if (state === "always-on-active") {
+      livePasteVal.textContent = t(lang, "status_val_always_on");
+      livePasteVal.removeAttribute("data-tone");
+    } else {
+      livePasteVal.textContent = t(lang, "status_val_this_tab");
+      livePasteVal.removeAttribute("data-tone");
+    }
+  }
+
+  const docsSupported = isDocumentPipelineSupported();
+  const liveDocsVal = document.getElementById("live-docs-value");
+  if (liveDocsVal) {
+    liveDocsVal.textContent = docsSupported ? t(lang, "status_val_ready") : t(lang, "status_val_chromium_only");
+    if (docsSupported) liveDocsVal.removeAttribute("data-tone");
+    else liveDocsVal.setAttribute("data-tone", "muted");
+  }
+  const diagDocVal = document.getElementById("diag-doc-value");
+  const diagOcrVal = document.getElementById("diag-ocr-value");
+  if (!docsSupported) {
+    if (diagDocVal) diagDocVal.textContent = t(lang, "status_val_chromium_only");
+    if (diagOcrVal) diagOcrVal.textContent = t(lang, "status_val_chromium_only");
+  }
+
   const managedNotice = document.getElementById("managed-lock-notice");
   if (managedNotice) {
     managedNotice.hidden = !effective.locked;
@@ -2001,7 +2170,28 @@ export async function refreshProtectionStatus(): Promise<ProtectionStatusSnapsho
 
 /** Shared popup/panel bootstrap. */
 export async function initPopup(): Promise<void> {
-  initTabs();
+  const { switchTab, switchSettingsPage } = initTabs();
+
+  const isSidePanelContext =
+    window.location.pathname.toLowerCase().includes("sidepanel") ||
+    new URLSearchParams(window.location.search).get("view") === "sidepanel" ||
+    window.innerHeight > 600;
+  document.documentElement.dataset.surface = isSidePanelContext ? "sidepanel" : "popup";
+
+  const openSidePanelHeaderBtn = document.getElementById("open-side-panel-btn") as HTMLButtonElement | null;
+  if (openSidePanelHeaderBtn) {
+    openSidePanelHeaderBtn.hidden = isSidePanelContext;
+  }
+
+  let currentWindowId: number | undefined;
+  try {
+    if (typeof chrome !== "undefined" && chrome.windows?.getCurrent) {
+      const win = await chrome.windows.getCurrent();
+      currentWindowId = win?.id;
+    }
+  } catch {
+    // Ignore in unit-test environments without chrome.windows
+  }
 
   const settings = await loadSettings();
   currentLang = settings.language;
@@ -2009,6 +2199,92 @@ export async function initPopup(): Promise<void> {
   applyUiLanguage(settings.language);
   applyAccessibilitySettings(settings);
   await refreshProtectionStatus();
+  await refreshReviewTelemetry();
+
+  // First-Run Welcome Card (wired to settings.disclosureAcknowledged)
+  const welcomeCard = document.getElementById("first-run-welcome") as HTMLElement | null;
+  const welcomeDismissBtn = document.getElementById("welcome-dismiss-btn") as HTMLButtonElement | null;
+  const welcomeAlwaysOnBtn = document.getElementById("welcome-always-on-btn") as HTMLButtonElement | null;
+  if (welcomeCard) {
+    welcomeCard.hidden = settings.disclosureAcknowledged === true;
+  }
+  welcomeDismissBtn?.addEventListener("click", async () => {
+    if (welcomeCard) welcomeCard.hidden = true;
+    const current = await loadSettings();
+    await saveSettings({ ...current, disclosureAcknowledged: true });
+  });
+  welcomeAlwaysOnBtn?.addEventListener("click", async () => {
+    const granted = await requestSiteAccess();
+    const current = await loadSettings();
+    if (granted) {
+      await saveSettings({
+        ...current,
+        disclosureAcknowledged: true,
+        protectionMode: "always-on",
+        pasteGuardEnabled: true,
+      });
+    } else {
+      await saveSettings({ ...current, disclosureAcknowledged: true });
+      switchTab("settings");
+      switchSettingsPage("protection");
+    }
+    if (welcomeCard) welcomeCard.hidden = true;
+    await refreshProtectionStatus();
+  });
+
+  // Circular Profile Avatar & Popover
+  const profileAvatarBtn = document.getElementById("profile-avatar-btn") as HTMLButtonElement | null;
+  const profilePopover = document.getElementById("profile-popover") as HTMLElement | null;
+  const setPopoverOpen = (open: boolean): void => {
+    if (!profilePopover || !profileAvatarBtn) return;
+    profilePopover.hidden = !open;
+    profileAvatarBtn.setAttribute("aria-expanded", open ? "true" : "false");
+  };
+  profileAvatarBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const nextOpen = Boolean(profilePopover?.hidden);
+    setPopoverOpen(nextOpen);
+  });
+  document.addEventListener("click", (e) => {
+    if (!profilePopover || profilePopover.hidden) return;
+    const target = e.target as Node | null;
+    if (target && !profilePopover.contains(target) && target !== profileAvatarBtn && !profileAvatarBtn?.contains(target)) {
+      setPopoverOpen(false);
+    }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && profilePopover && !profilePopover.hidden) {
+      setPopoverOpen(false);
+      profileAvatarBtn?.focus();
+    }
+  });
+  document.getElementById("profile-goto-account-btn")?.addEventListener("click", () => {
+    setPopoverOpen(false);
+    switchTab("settings");
+    switchSettingsPage("profile");
+  });
+  document.getElementById("profile-goto-protection-btn")?.addEventListener("click", () => {
+    setPopoverOpen(false);
+    switchTab("settings");
+    switchSettingsPage("protection");
+  });
+  document.getElementById("profile-goto-appearance-btn")?.addEventListener("click", () => {
+    setPopoverOpen(false);
+    switchTab("settings");
+    switchSettingsPage("appearance");
+  });
+
+  // Live Paste Shield pill shortcut
+  document.getElementById("live-paste-pill")?.addEventListener("click", async () => {
+    const snap = await loadProtectionStatus();
+    if (snap.effective.mode === "always-on" && !snap.capability.siteAccessGranted) {
+      await requestSiteAccess();
+      await refreshProtectionStatus();
+      return;
+    }
+    switchTab("settings");
+    switchSettingsPage("protection");
+  });
   try {
     const tab = await getActiveWebTab();
     if (tab?.url) currentWebTabUrl = tab.url;
@@ -2159,10 +2435,29 @@ export async function initPopup(): Promise<void> {
   });
 
   const exportBtn = document.getElementById("export-findings-btn") as HTMLButtonElement | null;
-  exportBtn?.addEventListener("click", async () => {
+  const exportFormatMenu = document.getElementById("export-format-menu") as HTMLElement | null;
+  const exportCsvBtn = document.getElementById("export-csv-btn") as HTMLButtonElement | null;
+  const exportJsonBtn = document.getElementById("export-json-btn") as HTMLButtonElement | null;
+  const exportCancelBtn = document.getElementById("export-cancel-btn") as HTMLButtonElement | null;
+
+  exportBtn?.addEventListener("click", () => {
     if (!lastState || lastState.findings.length === 0) return;
-    const format = window.confirm("Export as CSV? (Cancel for JSON)") ? "csv" : "json";
-    await exportFindings(lastState.findings, format);
+    if (exportFormatMenu) {
+      exportFormatMenu.hidden = !exportFormatMenu.hidden;
+    }
+  });
+  exportCsvBtn?.addEventListener("click", async () => {
+    if (exportFormatMenu) exportFormatMenu.hidden = true;
+    if (!lastState || lastState.findings.length === 0) return;
+    await exportFindings(lastState.findings, "csv");
+  });
+  exportJsonBtn?.addEventListener("click", async () => {
+    if (exportFormatMenu) exportFormatMenu.hidden = true;
+    if (!lastState || lastState.findings.length === 0) return;
+    await exportFindings(lastState.findings, "json");
+  });
+  exportCancelBtn?.addEventListener("click", () => {
+    if (exportFormatMenu) exportFormatMenu.hidden = true;
   });
 
   docFile?.addEventListener("change", async () => {
@@ -2419,9 +2714,43 @@ export async function initPopup(): Promise<void> {
     openWindowDialog(total, (doc.pageOffset ?? 0) + doc.pages.length + 1);
   });
 
+  const openDocBtn = document.getElementById("open-doc-btn") as HTMLButtonElement | null;
+  const triggerDocumentSelection = async (): Promise<void> => {
+    if (!isDocumentPipelineSupported()) {
+      setDocStatus(DOCUMENT_PIPELINE_UNAVAILABLE_MESSAGE, true);
+      return;
+    }
+    if (
+      !isSidePanelContext &&
+      typeof chrome !== "undefined" &&
+      chrome.sidePanel?.open &&
+      currentWindowId !== undefined
+    ) {
+      try {
+        await chrome.storage.local.set({ docHandoffPending: { timestamp: Date.now() } });
+        await chrome.sidePanel.open({ windowId: currentWindowId });
+        window.close();
+        return;
+      } catch (err) {
+        console.warn("[GovernWorld] SidePanel doc handoff fallback:", sanitizeErrorForLog(err));
+      }
+    }
+    docFile?.click();
+  };
+  openDocBtn?.addEventListener("click", () => {
+    void triggerDocumentSelection();
+  });
+
   const dropzone = document.getElementById("doc-dropzone") as HTMLDivElement | null;
   if (dropzone && docFile) {
+    if (!isDocumentPipelineSupported()) {
+      setDocStatus(DOCUMENT_PIPELINE_UNAVAILABLE_MESSAGE, false);
+    }
     const handleDroppedFile = async (file: File): Promise<void> => {
+      if (!isDocumentPipelineSupported()) {
+        setDocStatus(DOCUMENT_PIPELINE_UNAVAILABLE_MESSAGE, true);
+        return;
+      }
       if (file.size > MAX_DOC_BYTES) {
         setDocStatus(t(currentLang, "doc_too_large", { size: MAX_DOC_BYTES_LABEL }), true);
         return;
@@ -2442,6 +2771,10 @@ export async function initPopup(): Promise<void> {
         setDocStatus(error instanceof Error ? error.message : "Could not read this file.", true);
       }
     };
+    dropzone.addEventListener("click", (e) => {
+      if (e.target === docFile) return;
+      void triggerDocumentSelection();
+    });
     dropzone.addEventListener("dragover", (e) => {
       e.preventDefault();
       dropzone.classList.add("doc-dropzone--active");
@@ -2458,7 +2791,7 @@ export async function initPopup(): Promise<void> {
     dropzone.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        docFile.click();
+        void triggerDocumentSelection();
       }
     });
   }
@@ -2824,7 +3157,8 @@ export async function initPopup(): Promise<void> {
   });
   clearAuditConfirm?.addEventListener("click", async () => {
     clearAuditDialog?.close();
-    await chrome.storage.local.remove(["audit_log", "audit_key"]);
+    await chrome.storage.local.remove(["auditLog", "auditCheckpointState"]);
+    await refreshReviewTelemetry();
     const current = await loadSettings();
     speakAnnouncement(t(current.language, "audit_cleared"), current);
   });
@@ -2995,6 +3329,31 @@ export async function initPopup(): Promise<void> {
     if (orgSettings) orgSettings.hidden = !canManage;
     if (orgSettingsWall) orgSettingsWall.hidden = !connected || canManage;
     if (accountManagedNote) accountManagedNote.hidden = !canManage;
+
+    const avatarBtn = document.getElementById("profile-avatar-btn");
+    const avatarInitials = document.getElementById("profile-avatar-initials");
+    const popoverAvatar = document.getElementById("profile-popover-avatar");
+    const popoverName = document.getElementById("profile-popover-name");
+    const popoverSubtitle = document.getElementById("profile-popover-subtitle");
+    const lang = accountLanguage();
+
+    if (connected && view?.userEmail) {
+      const initials = view.userEmail.slice(0, 2).toUpperCase();
+      if (avatarInitials) avatarInitials.textContent = initials;
+      if (popoverAvatar) popoverAvatar.textContent = initials;
+      if (popoverName) popoverName.textContent = view.userEmail;
+      if (popoverSubtitle) popoverSubtitle.textContent = view.tenantName ?? view.tenantId ?? "Linked workspace";
+      avatarBtn?.classList.add("profile-avatar-btn--linked");
+      avatarBtn?.classList.remove("profile-avatar-btn--local");
+    } else {
+      if (popoverAvatar) popoverAvatar.textContent = "L";
+      if (popoverName) popoverName.textContent = t(lang, "profile_local_title");
+      if (popoverSubtitle) popoverSubtitle.textContent = t(lang, "profile_local_subtitle");
+      avatarBtn?.classList.remove("profile-avatar-btn--linked");
+      if (!avatarBtn?.classList.contains("profile-avatar-btn--managed")) {
+        avatarBtn?.classList.add("profile-avatar-btn--local");
+      }
+    }
   }
   renderAccountView(null);
 
@@ -3122,28 +3481,12 @@ export async function initPopup(): Promise<void> {
         await checkOfficeManagerPairingStatus();
         await refreshProtectionStatus();
       }
-    } catch (err: any) {
-      // Fallback pairing simulation for local testing if coordinator port is mock
+    } catch (err: unknown) {
       if (officeManagerStatus) {
-        officeManagerStatus.textContent = "Simulated Managed Enrollment Applied (Office Active).";
-        officeManagerStatus.style.color = "var(--gw-emerald, #10b981)";
+        const detail = err instanceof Error ? err.message : "Connection refused";
+        officeManagerStatus.textContent = `Unable to reach Office Coordinator at 127.0.0.1:4820 (${detail}). Ensure the service is running.`;
+        officeManagerStatus.style.color = "var(--gw-crimson, #ef4444)";
       }
-      await chrome.storage.local.set({
-        gw_coordinator_policy: {
-          managed: true,
-          valid: true,
-          protectionMode: "always-on",
-          userCanDisable: false,
-          enforcedCategories: ["email", "phone", "ssn", "medical_record_number", "payment_card"],
-          networkDestinationPolicy: "public_only",
-          networkAllowlist: [],
-          organizationName: "GovernWorld Medical Practice",
-          policyVersion: 1,
-        },
-        gw_coordinator_url: "http://127.0.0.1:4820",
-      });
-      await checkOfficeManagerPairingStatus();
-      await refreshProtectionStatus();
     }
   });
 
@@ -3229,6 +3572,9 @@ export async function initPopup(): Promise<void> {
     wizardStep4.hidden = step !== 4;
   }
 
+  const wizardStep1Error = document.getElementById("wizard-step1-error") as HTMLParagraphElement | null;
+  const wizardStep4Error = document.getElementById("wizard-step4-error") as HTMLParagraphElement | null;
+
   openWizardBtn?.addEventListener("click", () => {
     if (!wizardPosInput || !wizardNegInput || !wizardRegexInput || !wizardTestSample || !wizardRuleName || !wizardRuleConfidence || !wizardDialog) return;
     wizardPosInput.value = "";
@@ -3237,6 +3583,14 @@ export async function initPopup(): Promise<void> {
     wizardTestSample.value = "";
     wizardRuleName.value = "";
     wizardRuleConfidence.value = "0.85";
+    if (wizardStep1Error) {
+      wizardStep1Error.textContent = "";
+      wizardStep1Error.hidden = true;
+    }
+    if (wizardStep4Error) {
+      wizardStep4Error.textContent = "";
+      wizardStep4Error.hidden = true;
+    }
     if (wizardImportStatus) {
       wizardImportStatus.textContent = "";
       wizardImportStatus.hidden = true;
@@ -3294,20 +3648,6 @@ export async function initPopup(): Promise<void> {
     reader.readAsText(file);
   }
 
-  // 1. Detect whether we are running inside the ephemeral toolbar popup or persistent sidepanel.
-  const isSidePanelContext =
-    window.location.pathname.toLowerCase().includes("sidepanel") ||
-    new URLSearchParams(window.location.search).get("view") === "sidepanel" ||
-    window.innerHeight > 600;
-
-  // 2. Pre-cache current windowId on load so we don't lose the user gesture on an async tabs.query() call
-  let currentWindowId: number | undefined;
-  if (typeof chrome !== "undefined" && chrome.windows?.getCurrent) {
-    chrome.windows.getCurrent((win) => {
-      currentWindowId = win?.id;
-    });
-  }
-
   wizardImportFileBtn?.addEventListener("click", async (e) => {
     e.preventDefault();
 
@@ -3322,7 +3662,7 @@ export async function initPopup(): Promise<void> {
       const draftNegative = wizardNegInput?.value || "";
       const ruleNameInput = wizardRuleName?.value || "";
 
-      chrome.storage.local.set({
+      await chrome.storage.local.set({
         wizardHandoffPending: {
           step: 1,
           draftPositiveExamples: draftExamples,
@@ -3369,9 +3709,16 @@ export async function initPopup(): Promise<void> {
     if (pos.length === 0) {
       void (async () => {
         const current = await loadSettings();
-        alert(t(current.language, "wizard_need_positive"));
+        if (wizardStep1Error) {
+          wizardStep1Error.textContent = t(current.language, "wizard_need_positive");
+          wizardStep1Error.hidden = false;
+        }
       })();
       return;
+    }
+    if (wizardStep1Error) {
+      wizardStep1Error.textContent = "";
+      wizardStep1Error.hidden = true;
     }
     void chrome.runtime.sendMessage({
       type: "POPUP_WIZARD_ANALYZE",
@@ -3421,8 +3768,15 @@ export async function initPopup(): Promise<void> {
     const name = wizardRuleName.value.trim() || "Custom Pattern";
     const patternStr = wizardRegexInput.value.trim();
     if (!patternStr) {
-      alert("Please enter a valid regex pattern.");
+      if (wizardStep4Error) {
+        wizardStep4Error.textContent = t(currentLang, "wizard_need_pattern");
+        wizardStep4Error.hidden = false;
+      }
       return;
+    }
+    if (wizardStep4Error) {
+      wizardStep4Error.textContent = "";
+      wizardStep4Error.hidden = true;
     }
     const pattern: CustomPattern = {
       id: crypto.randomUUID(),
@@ -4539,7 +4893,29 @@ export async function initPopup(): Promise<void> {
     }
   }
 
+  async function checkDocSidePanelHandoff(): Promise<void> {
+    if (!isSidePanelContext || typeof chrome === "undefined" || !chrome.storage?.local) return;
+    try {
+      const data = await chrome.storage.local.get("docHandoffPending");
+      const handoff = data?.docHandoffPending as { timestamp?: number } | undefined;
+      if (!handoff || typeof handoff !== "object" || Date.now() - (handoff.timestamp ?? 0) > 30_000) return;
+      await chrome.storage.local.remove("docHandoffPending");
+      switchTab("protection");
+      setDocStatus(t(currentLang, "doc_handoff_hint"), false);
+      const dz = document.getElementById("doc-dropzone");
+      if (dz) {
+        dz.classList.add("wizard-dropzone-highlight");
+        dz.focus({ preventScroll: true });
+        dz.scrollIntoView({ behavior: "smooth", block: "center" });
+        window.setTimeout(() => dz.classList.remove("wizard-dropzone-highlight"), 4200);
+      }
+    } catch {
+      // Ignore
+    }
+  }
+
   void checkWizardSidePanelHandoff();
+  void checkDocSidePanelHandoff();
 
   // Readiness marker for the automated harnesses, set only once every listener
   // above is bound.
