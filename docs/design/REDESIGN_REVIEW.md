@@ -109,6 +109,6 @@ All screenshots below were captured in **headed Chromium (`dist/`)** with zero c
 - `src/popup/popup.ts` — Context-aware header & Side Panel auto-hide, avatar/popover state & keyboard handling, live protection strip & Firefox `isDocumentPipelineSupported()` honesty, `disclosureAcknowledged` welcome card, Popup -> Side Panel doc handoff, wired Review telemetry & `#coverage-details-btn`, fixed `#clear-audit-btn` storage keys, removed fake Office Manager lock fallback, replaced `confirm()`/`alert()`.
 - `src/sidepanel/sidepanel.html` & `src/sidepanel/sidepanel.css` — Synced via `npm run sync:sidepanel`.
 - `src/popup/review.css`, `src/popup/redact.html`, `src/content/toast.ts`, `src/content/pasteGuard.ts` — Harmonized Obsidian-Slate + Cyan Shield tokens and full-width `redact.html` fix.
-- `src/shared/i18n.ts` — Added all new UI keys across all 7 languages (`en, es, fr, de, ja, pt, zh`) and removed `"Proactive"` wording.
-- `tests/ux-redesign-flows.test.ts` — Automated contract tests for the redesigned flows and bug fixes.
+- `src/shared/i18n.ts` — Added all new UI, Wizard, notification, status-strip, profile/mode, activity, and Office Manager keys across all 7 languages (`en, es, fr, de, ja, pt, zh`), removed `"Proactive"` / `"100% local"` / `"never uploaded"` / `"never leaks"` claims across all 7 locales, and updated `filter_all` from `(19)` to `(24)`.
+- `tests/ux-redesign-flows.test.ts` — Automated JSDOM behavioral flow tests, layout/CSS/HTML contract tests, and 7-locale `i18n.ts` claims/key-completeness guards.
 - `docs/design/UI_UX_REDESIGN_PLAN.md`, `docs/design/REDESIGN_REVIEW.md`, `docs/design/screenshots/{before,after}/*.png`.

@@ -577,10 +577,12 @@ export function renderFindings(findings: Finding[]): void {
   const applyBtn = document.getElementById("apply-masks-btn") as HTMLButtonElement | null;
   if (!list || !count || !applyBtn) return;
   list.replaceChildren();
-  count.textContent = `${findings.length} detected`;
+  count.textContent = t(currentLang, "findings_detected_count", { count: findings.length });
   let selected = 0;
+  let selectable = 0;
   for (const finding of findings) {
     const reportOnly = finding.source === "attr";
+    if (!reportOnly) selectable += 1;
     if (finding.selected) selected += 1;
     const item = el("li", "finding");
     if (reportOnly) item.classList.add("finding--report-only");
@@ -641,6 +643,20 @@ export function renderFindings(findings: Finding[]): void {
   } else {
     applyBtn.textContent = t(currentLang, "apply_masks_btn");
   }
+  const hasFindings = findings.length > 0;
+  const toggleAllBtn = document.getElementById("toggle-all-findings-btn") as HTMLButtonElement | null;
+  const exportFindingsBtn = document.getElementById("export-findings-btn") as HTMLButtonElement | null;
+  const undoMasksBtn = document.getElementById("undo-masks-btn") as HTMLButtonElement | null;
+  const removeMasksBtn = document.getElementById("remove-masks-btn") as HTMLButtonElement | null;
+  const copyBtn = document.getElementById("copy-redacted-btn") as HTMLButtonElement | null;
+  const exportMenu = document.getElementById("export-format-menu") as HTMLElement | null;
+  if (toggleAllBtn) toggleAllBtn.disabled = selectable === 0;
+  if (exportFindingsBtn) exportFindingsBtn.disabled = !hasFindings;
+  applyBtn.disabled = !hasFindings || selected === 0;
+  if (undoMasksBtn) undoMasksBtn.disabled = !hasFindings;
+  if (removeMasksBtn) removeMasksBtn.disabled = !hasFindings;
+  if (copyBtn) copyBtn.disabled = !hasFindings || selected === 0;
+  if (!hasFindings && exportMenu) exportMenu.hidden = true;
 }
 
 /**
@@ -747,8 +763,106 @@ function nothingToReadOrAbsent(state: PopupState): boolean {
   return !state.scanned || state.visibleChars === 0 || (state.visibleChars < 300 && state.findings.length === 0);
 }
 
-function renderState(state: PopupState): void {
+let lastAccountView: AccountView | null = null;
+let lastOperatingMode: "LOCAL" | "MANAGE" = "LOCAL";
+
+function createProfileSilhouetteSvg(): SVGSVGElement {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  svg.setAttribute("width", "16");
+  svg.setAttribute("height", "16");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  const path = document.createElementNS(ns, "path");
+  path.setAttribute("d", "M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2");
+  const circle = document.createElementNS(ns, "circle");
+  circle.setAttribute("cx", "12");
+  circle.setAttribute("cy", "7");
+  circle.setAttribute("r", "4");
+  svg.append(path, circle);
+  return svg;
+}
+
+function syncProfilePopoverSummary(): void {
+  const lang = currentLang;
+  const view = lastAccountView;
+  const connected = view?.connected === true;
+  const isManaged = lastOperatingMode === "MANAGE";
   const badge = document.getElementById("mode-badge") as HTMLSpanElement | null;
+  const avatarBtn = document.getElementById("profile-avatar-btn");
+  const avatarInitials = document.getElementById("profile-avatar-initials");
+  const popoverAvatar = document.getElementById("profile-popover-avatar");
+  const popoverName = document.getElementById("profile-popover-name");
+  const popoverSubtitle = document.getElementById("profile-popover-subtitle");
+  const popoverMode = document.getElementById("profile-popover-mode");
+
+  if (badge) {
+    if (isManaged) {
+      badge.textContent = "MANAGE";
+      badge.classList.add("badge--managed");
+      badge.classList.remove("badge--cloud");
+    } else {
+      badge.textContent = "LOCAL";
+      badge.classList.remove("badge--managed");
+      badge.classList.remove("badge--cloud");
+    }
+  }
+
+  if (connected && view?.userEmail) {
+    const initials = view.userEmail.slice(0, 2).toUpperCase();
+    const modeAttr = isManaged ? "managed" : "linked";
+    if (avatarInitials) avatarInitials.textContent = initials;
+    if (popoverAvatar) {
+      popoverAvatar.textContent = initials;
+      popoverAvatar.dataset.mode = modeAttr;
+    }
+    if (popoverName) popoverName.textContent = view.userEmail;
+    if (popoverSubtitle) popoverSubtitle.textContent = view.tenantName ?? view.tenantId ?? t(lang, "profile_linked_workspace");
+    if (popoverMode) {
+      popoverMode.textContent = isManaged ? t(lang, "profile_mode_managed") : t(lang, "profile_mode_linked");
+      popoverMode.dataset.mode = modeAttr;
+    }
+    avatarBtn?.classList.add("profile-avatar-btn--linked");
+    avatarBtn?.classList.toggle("profile-avatar-btn--managed", isManaged);
+    avatarBtn?.classList.remove("profile-avatar-btn--local");
+  } else if (isManaged) {
+    if (avatarInitials) avatarInitials.replaceChildren(createProfileSilhouetteSvg());
+    if (popoverAvatar) {
+      popoverAvatar.textContent = "M";
+      popoverAvatar.dataset.mode = "managed";
+    }
+    if (popoverName) popoverName.textContent = t(lang, "profile_managed_title");
+    if (popoverSubtitle) popoverSubtitle.textContent = t(lang, "profile_managed_subtitle");
+    if (popoverMode) {
+      popoverMode.textContent = t(lang, "profile_mode_managed");
+      popoverMode.dataset.mode = "managed";
+    }
+    avatarBtn?.classList.remove("profile-avatar-btn--linked");
+    avatarBtn?.classList.remove("profile-avatar-btn--local");
+    avatarBtn?.classList.add("profile-avatar-btn--managed");
+  } else {
+    if (avatarInitials) avatarInitials.replaceChildren(createProfileSilhouetteSvg());
+    if (popoverAvatar) {
+      popoverAvatar.textContent = "L";
+      popoverAvatar.dataset.mode = "local";
+    }
+    if (popoverName) popoverName.textContent = t(lang, "profile_local_title");
+    if (popoverSubtitle) popoverSubtitle.textContent = t(lang, "profile_local_subtitle");
+    if (popoverMode) {
+      popoverMode.textContent = t(lang, "profile_mode_local");
+      popoverMode.dataset.mode = "local";
+    }
+    avatarBtn?.classList.remove("profile-avatar-btn--linked");
+    avatarBtn?.classList.remove("profile-avatar-btn--managed");
+    avatarBtn?.classList.add("profile-avatar-btn--local");
+  }
+}
+
+function renderState(state: PopupState): void {
   const status = document.getElementById("status") as HTMLParagraphElement | null;
   const scanBtn = document.getElementById("scan-btn") as HTMLButtonElement | null;
   const resultsSection = document.getElementById("results-section") as HTMLElement | null;
@@ -756,25 +870,8 @@ function renderState(state: PopupState): void {
   const summary = document.getElementById("scan-summary") as HTMLElement | null;
   const summaryChars = document.getElementById("summary-chars") as HTMLElement | null;
 
-  if (badge) {
-    if (state.operatingMode === "MANAGE") {
-      badge.textContent = "MANAGE";
-      badge.classList.add("badge--managed");
-      badge.classList.remove("badge--cloud");
-    } else {
-      badge.textContent = "LOCAL";
-      badge.classList.remove("badge--managed", "badge--cloud");
-    }
-  }
-  const avatarBtn = document.getElementById("profile-avatar-btn");
-  const popoverMode = document.getElementById("profile-popover-mode");
-  if (avatarBtn) {
-    avatarBtn.classList.toggle("profile-avatar-btn--managed", state.operatingMode === "MANAGE");
-    avatarBtn.classList.toggle("profile-avatar-btn--local", state.operatingMode !== "MANAGE" && !avatarBtn.classList.contains("profile-avatar-btn--linked"));
-  }
-  if (popoverMode) {
-    popoverMode.textContent = state.operatingMode === "MANAGE" ? "MANAGE · Enterprise Enforced" : "LOCAL · Standalone";
-  }
+  lastOperatingMode = state.operatingMode === "MANAGE" ? "MANAGE" : "LOCAL";
+  syncProfilePopoverSummary();
 
   const liveScanVal = document.getElementById("live-scan-value");
   if (liveScanVal) {
@@ -782,14 +879,14 @@ function renderState(state: PopupState): void {
       liveScanVal.textContent = t(currentLang, "status_val_scanning");
       liveScanVal.setAttribute("data-tone", "warn");
     } else if (state.error) {
-      liveScanVal.textContent = "Check page";
+      liveScanVal.textContent = t(currentLang, "status_val_check_page");
       liveScanVal.setAttribute("data-tone", "warn");
     } else if (state.scanned) {
       if (state.findings.length > 0) {
-        liveScanVal.textContent = `${state.findings.length} found`;
+        liveScanVal.textContent = t(currentLang, "status_val_found", { count: state.findings.length });
         liveScanVal.setAttribute("data-tone", "warn");
       } else {
-        liveScanVal.textContent = "Clean";
+        liveScanVal.textContent = t(currentLang, "status_val_clean");
         liveScanVal.removeAttribute("data-tone");
       }
     } else {
@@ -844,8 +941,9 @@ function renderState(state: PopupState): void {
   }
 
   if (resultsSection) {
-    resultsSection.hidden = !state.scanned;
-    if (state.scanned) {
+    const showResults = state.scanned && state.findings.length > 0;
+    resultsSection.hidden = !showResults;
+    if (showResults) {
       renderFindings(state.findings);
       updateComplianceScorecard(
         document.getElementById("scan-compliance-card"),
@@ -859,8 +957,11 @@ function renderState(state: PopupState): void {
         "view"
       );
     } else {
+      renderFindings([]);
       const card = document.getElementById("scan-compliance-card");
       if (card) card.hidden = true;
+      const exportMenu = document.getElementById("export-format-menu") as HTMLElement | null;
+      if (exportMenu) exportMenu.hidden = true;
     }
   }
 
@@ -941,22 +1042,22 @@ async function refreshReviewTelemetry(currentState?: PopupState | null): Promise
     activityList.replaceChildren();
     const recent = [...events].reverse().slice(0, 12);
     activityEmpty.hidden = recent.length > 0;
-    const actionLabels: Record<string, string> = {
-      page_scan_completed: "Page scan completed",
-      masks_applied: "Page masks applied",
-      masks_removed: "Page masks removed",
-      selection_redacted: "Selection redacted",
-      selection_masked: "Selection masked",
-      doc_previewed: "Document scanned",
-      doc_redacted: "Document redacted",
-      doc_cleared: "Document cleared",
-      session_cleared: "Session cleared",
-      preset_applied: "Compliance preset applied",
-      preset_overridden: "Categories customized",
-      account_linked: "Workspace linked",
-      policy_created: "Site policy saved",
-      policy_deleted: "Site policy deleted",
-      policy_enforced: "Site policy enforced",
+    const actionKeys: Record<string, string> = {
+      page_scan_completed: "activity_action_page_scan_completed",
+      masks_applied: "activity_action_masks_applied",
+      masks_removed: "activity_action_masks_removed",
+      selection_redacted: "activity_action_selection_redacted",
+      selection_masked: "activity_action_selection_masked",
+      doc_previewed: "activity_action_doc_previewed",
+      doc_redacted: "activity_action_doc_redacted",
+      doc_cleared: "activity_action_doc_cleared",
+      session_cleared: "activity_action_session_cleared",
+      preset_applied: "activity_action_preset_applied",
+      preset_overridden: "activity_action_preset_overridden",
+      account_linked: "activity_action_account_linked",
+      policy_created: "activity_action_policy_created",
+      policy_deleted: "activity_action_policy_deleted",
+      policy_enforced: "activity_action_policy_enforced",
     };
 
     for (const ev of recent) {
@@ -968,7 +1069,8 @@ async function refreshReviewTelemetry(currentState?: PopupState | null): Promise
 
       const title = document.createElement("span");
       title.className = "activity-item__title";
-      title.textContent = actionLabels[ev.action] ?? ev.action;
+      const key = actionKeys[ev.action];
+      title.textContent = key ? t(currentLang, key) : ev.action;
 
       const meta = document.createElement("span");
       meta.className = "activity-item__meta";
@@ -2165,6 +2267,8 @@ export async function refreshProtectionStatus(): Promise<ProtectionStatusSnapsho
     lockedCategories: effective.lockedCategories,
     language: lang,
   });
+  lastOperatingMode = policy.managed ? "MANAGE" : (lastState?.operatingMode === "MANAGE" ? "MANAGE" : "LOCAL");
+  syncProfilePopoverSummary();
   return snapshot;
 }
 
@@ -2361,7 +2465,7 @@ export async function initPopup(): Promise<void> {
   document.getElementById("open-side-panel-btn")?.addEventListener("click", async () => {
     try {
       if (typeof chrome !== "undefined" && chrome.sidePanel && typeof chrome.sidePanel.open === "function") {
-        const windowId = (await chrome.windows.getCurrent()).id;
+        const windowId = currentWindowId ?? (await chrome.windows.getCurrent()).id;
         if (windowId != null) {
           await chrome.sidePanel.open({ windowId });
           return;
@@ -2714,6 +2818,14 @@ export async function initPopup(): Promise<void> {
     openWindowDialog(total, (doc.pageOffset ?? 0) + doc.pages.length + 1);
   });
 
+  const persistHandoff = async (items: Record<string, unknown>): Promise<void> => {
+    try {
+      await chrome.storage?.local?.set(items);
+    } catch {
+      // Ignore storage persistence errors during handoff
+    }
+  };
+
   const openDocBtn = document.getElementById("open-doc-btn") as HTMLButtonElement | null;
   const triggerDocumentSelection = async (): Promise<void> => {
     if (!isDocumentPipelineSupported()) {
@@ -2726,13 +2838,22 @@ export async function initPopup(): Promise<void> {
       chrome.sidePanel?.open &&
       currentWindowId !== undefined
     ) {
+      const handoffWrite = persistHandoff({ docHandoffPending: { timestamp: Date.now() } });
       try {
-        await chrome.storage.local.set({ docHandoffPending: { timestamp: Date.now() } });
         await chrome.sidePanel.open({ windowId: currentWindowId });
+        await handoffWrite;
         window.close();
         return;
       } catch (err) {
         console.warn("[GovernWorld] SidePanel doc handoff fallback:", sanitizeErrorForLog(err));
+        try {
+          await chrome.storage?.local?.remove("docHandoffPending");
+        } catch {
+          // Ignore cleanup error
+        }
+        docFile?.click();
+        setDocStatus(t(currentLang, "doc_picker_fallback_hint"), false);
+        return;
       }
     }
     docFile?.click();
@@ -2902,7 +3023,14 @@ export async function initPopup(): Promise<void> {
       const updated = { ...current, language: newLang };
       await saveSettings(updated);
       applyUiLanguage(newLang);
-      await renderCategories({ enabledCategories: updated.enabledCategories, language: newLang });
+      await refreshProtectionStatus();
+      if (lastState) {
+        renderState(lastState);
+      } else {
+        await refreshReviewTelemetry();
+      }
+      await checkOfficeManagerPairingStatus();
+      syncProfilePopoverSummary();
       speakAnnouncement(t(newLang, "speech_settings_saved"), updated);
     });
   }
@@ -3330,30 +3458,8 @@ export async function initPopup(): Promise<void> {
     if (orgSettingsWall) orgSettingsWall.hidden = !connected || canManage;
     if (accountManagedNote) accountManagedNote.hidden = !canManage;
 
-    const avatarBtn = document.getElementById("profile-avatar-btn");
-    const avatarInitials = document.getElementById("profile-avatar-initials");
-    const popoverAvatar = document.getElementById("profile-popover-avatar");
-    const popoverName = document.getElementById("profile-popover-name");
-    const popoverSubtitle = document.getElementById("profile-popover-subtitle");
-    const lang = accountLanguage();
-
-    if (connected && view?.userEmail) {
-      const initials = view.userEmail.slice(0, 2).toUpperCase();
-      if (avatarInitials) avatarInitials.textContent = initials;
-      if (popoverAvatar) popoverAvatar.textContent = initials;
-      if (popoverName) popoverName.textContent = view.userEmail;
-      if (popoverSubtitle) popoverSubtitle.textContent = view.tenantName ?? view.tenantId ?? "Linked workspace";
-      avatarBtn?.classList.add("profile-avatar-btn--linked");
-      avatarBtn?.classList.remove("profile-avatar-btn--local");
-    } else {
-      if (popoverAvatar) popoverAvatar.textContent = "L";
-      if (popoverName) popoverName.textContent = t(lang, "profile_local_title");
-      if (popoverSubtitle) popoverSubtitle.textContent = t(lang, "profile_local_subtitle");
-      avatarBtn?.classList.remove("profile-avatar-btn--linked");
-      if (!avatarBtn?.classList.contains("profile-avatar-btn--managed")) {
-        avatarBtn?.classList.add("profile-avatar-btn--local");
-      }
-    }
+    lastAccountView = connected && view ? view : null;
+    syncProfilePopoverSummary();
   }
   renderAccountView(null);
 
@@ -3424,7 +3530,7 @@ export async function initPopup(): Promise<void> {
           "Organization";
         const ver = managedPolicy?.policy_version || coordPolicy?.policyVersion || 1;
         if (officeManagerStatus) {
-          officeManagerStatus.textContent = `Operating Mode: MANAGE — Enforced by ${orgName} (v${ver})`;
+          officeManagerStatus.textContent = t(currentLang, "office_status_managed", { org: orgName, ver });
           officeManagerStatus.style.color = "var(--gw-emerald, #10b981)";
         }
         if (officePairingInput) officePairingInput.style.display = "none";
@@ -3434,7 +3540,7 @@ export async function initPopup(): Promise<void> {
       }
     }
     if (officeManagerStatus) {
-      officeManagerStatus.textContent = "Operating Mode: LOCAL (Standalone unmanaged protection)";
+      officeManagerStatus.textContent = t(currentLang, "office_status_local");
       officeManagerStatus.style.color = "inherit";
     }
     if (officePairingInput) officePairingInput.style.display = "block";
@@ -3448,14 +3554,14 @@ export async function initPopup(): Promise<void> {
     const code = officePairingInput?.value.trim().toUpperCase();
     if (!code || code.length !== 6) {
       if (officeManagerStatus) {
-        officeManagerStatus.textContent = "Error: Please enter a valid 6-character pairing code.";
+        officeManagerStatus.textContent = t(currentLang, "office_err_invalid_code");
         officeManagerStatus.style.color = "var(--gw-crimson, #ef4444)";
       }
       return;
     }
 
     if (officeManagerStatus) {
-      officeManagerStatus.textContent = "Connecting to Office Coordinator (127.0.0.1:4820)...";
+      officeManagerStatus.textContent = t(currentLang, "office_connecting");
       officeManagerStatus.style.color = "var(--gw-cobalt, #2563eb)";
     }
 
@@ -3484,7 +3590,7 @@ export async function initPopup(): Promise<void> {
     } catch (err: unknown) {
       if (officeManagerStatus) {
         const detail = err instanceof Error ? err.message : "Connection refused";
-        officeManagerStatus.textContent = `Unable to reach Office Coordinator at 127.0.0.1:4820 (${detail}). Ensure the service is running.`;
+        officeManagerStatus.textContent = t(currentLang, "office_err_unreachable", { detail });
         officeManagerStatus.style.color = "var(--gw-crimson, #ef4444)";
       }
     }
@@ -3662,7 +3768,7 @@ export async function initPopup(): Promise<void> {
       const draftNegative = wizardNegInput?.value || "";
       const ruleNameInput = wizardRuleName?.value || "";
 
-      await chrome.storage.local.set({
+      const handoffWrite = persistHandoff({
         wizardHandoffPending: {
           step: 1,
           draftPositiveExamples: draftExamples,
@@ -3674,10 +3780,20 @@ export async function initPopup(): Promise<void> {
 
       try {
         await chrome.sidePanel.open({ windowId: currentWindowId });
+        await handoffWrite;
         window.close(); // Cleanly close ephemeral toolbar popup once Side Panel opens
       } catch (err) {
         console.warn("[GovernWorld] SidePanel open fallback to native picker:", sanitizeErrorForLog(err));
+        try {
+          await chrome.storage?.local?.remove("wizardHandoffPending");
+        } catch {
+          // Ignore cleanup error
+        }
         wizardFileInput?.click();
+        if (wizardImportStatus) {
+          wizardImportStatus.textContent = t(currentLang, "wizard_picker_fallback_hint");
+          wizardImportStatus.hidden = false;
+        }
       }
 
       return;
