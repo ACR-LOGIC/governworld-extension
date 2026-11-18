@@ -17,10 +17,8 @@ const legal = readFileSync(join(extRoot, "src/popup/legal.html"), "utf8");
 // inside a sentence is a formatting choice, and a test that breaks when someone
 // bolds half a word is a test that gets deleted instead of fixed.
 const legalText = legal
-  .replace(/<!--[\s\S]*?-->/g, " ")
-  .replace(/<[^>]+>/g, " ")
-  .replace(/&amp;/g, "&")
-  .replace(/&nbsp;/g, " ")
+  .replace(/<!--[\s\S]*?-->|<[^>]+>/g, " ")
+  .replace(/&(amp|nbsp);/g, (_, entity: string) => (entity === "amp" ? "&" : " "))
   .replace(/\s+/g, " ");
 const popupHtml = readFileSync(join(extRoot, "src/popup/index.html"), "utf8");
 const popupTs = readFileSync(join(extRoot, "src/popup/popup.ts"), "utf8");

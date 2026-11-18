@@ -1658,8 +1658,13 @@ chrome.runtime.onInstalled?.addListener(() => {
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === "loading") clearBadgeForTab(tabId);
   if (!tab.url) return;
-  if (!tab.url.includes(".chromiumapp.org/")) return;
-  const url = new URL(tab.url);
+  let url: URL;
+  try {
+    url = new URL(tab.url);
+  } catch {
+    return;
+  }
+  if (url.protocol !== "https:" || !url.hostname.endsWith(".chromiumapp.org")) return;
   const code = url.searchParams.get("code");
   const state = url.searchParams.get("state");
   if (code && state) {

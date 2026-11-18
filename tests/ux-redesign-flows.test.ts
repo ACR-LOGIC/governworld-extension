@@ -65,10 +65,9 @@ async function setupPopupHarness(options: HarnessOptions = {}) {
   const sessionStore: Record<string, unknown> = { ...(options.session ?? {}) };
   const listeners: Array<(msg: unknown) => unknown> = [];
 
-  const sanitizedHtml = popupHtml
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
-    .replace(/<link\b[^>]*>/gi, "");
-  document.documentElement.innerHTML = sanitizedHtml;
+  const parsedDoc = new DOMParser().parseFromString(popupHtml, "text/html");
+  parsedDoc.querySelectorAll("script, link").forEach((el) => el.remove());
+  document.documentElement.innerHTML = parsedDoc.documentElement.innerHTML;
   delete document.documentElement.dataset.gwReady;
   delete document.documentElement.dataset.surface;
   Object.defineProperty(window, "innerHeight", { value: 600, configurable: true, writable: true });

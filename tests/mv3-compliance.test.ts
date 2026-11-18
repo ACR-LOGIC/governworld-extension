@@ -63,9 +63,19 @@ function stripComments(source: string): string {
 describe("extension page content security policy", () => {
   it.each(EXTENSION_PAGES)("%s declares no inline script", (relativePath) => {
     const html = readFileSync(join(extRoot, relativePath), "utf8");
-    const inlineScripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)]
-      .filter(([, attrs, body]) => !/\bsrc\s*=/i.test(attrs) && body.trim().length > 0)
-      .map(([, attrs]) => attrs.trim());
+    const inlineScripts = html
+      .split(/<script\b/i)
+      .slice(1)
+      .map((chunk) => {
+        const closeTagIdx = chunk.indexOf(">");
+        const attrs = closeTagIdx >= 0 ? chunk.slice(0, closeTagIdx) : "";
+        const rest = closeTagIdx >= 0 ? chunk.slice(closeTagIdx + 1) : "";
+        const endScriptIdx = rest.toLowerCase().indexOf("</script");
+        const body = endScriptIdx >= 0 ? rest.slice(0, endScriptIdx) : rest;
+        return { attrs: attrs.trim(), body: body.trim() };
+      })
+      .filter(({ attrs, body }) => !/\bsrc\s*=/i.test(attrs) && body.length > 0)
+      .map(({ attrs }) => attrs);
     expect(
       inlineScripts,
       `${relativePath} has an inline <script>. MV3 'script-src \'self\'' blocks it at runtime; move the code to an external file.`

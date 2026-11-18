@@ -19,7 +19,7 @@
 
 import { chromium } from "@playwright/test";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer } from "node:http";
 
@@ -38,10 +38,16 @@ console.log(`Extension: ${manifest.name} v${manifest.version}`);
 console.log(`Dist path: ${distPath}\n`);
 
 // Start fixture server
-const fixturesDir = join(extRoot, "tests", "fixtures");
+const fixturesDir = resolve(extRoot, "tests", "fixtures");
 const fixtureServer = createServer((req, res) => {
-  const url = req.url || "/";
-  const filePath = join(fixturesDir, url);
+  const urlObj = new URL(req.url || "/", "http://127.0.0.1");
+  const reqPath = decodeURIComponent(urlObj.pathname).replace(/^\/+/, "");
+  const filePath = resolve(fixturesDir, reqPath);
+  if (!filePath.startsWith(fixturesDir + sep)) {
+    res.writeHead(403);
+    res.end("Forbidden");
+    return;
+  }
   try {
     const data = readFileSync(filePath);
     const ext = filePath.split(".").pop() || "";

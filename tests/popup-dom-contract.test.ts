@@ -82,7 +82,7 @@ describe("popup / sidepanel DOM contract", () => {
     // Classes popup.ts creates at runtime are styled but never appear in the markup.
     for (const c of runtimeClasses()) used.add(c);
     const unstyled = [...used]
-      .filter((c) => !new RegExp(`[.#]${c.replace(/[-]/g, "\\-")}(?![A-Za-z0-9_-])`).test(CSS))
+      .filter((c) => !new RegExp(`[.#]${c.replace(/[.*+?^${}()|[\]\\-]/g, "\\$&")}(?![A-Za-z0-9_-])`).test(CSS))
       .sort();
     expect(unstyled, "these classes are used but have no CSS rule").toEqual([]);
   });

@@ -172,7 +172,7 @@ export function buildTraceableSelector(el: Element): string {
       try {
         part += `#${CSS.escape(current.id)}`;
       } catch {
-        part += `[id="${current.id.replace(/"/g, '\\"')}"]`;
+        part += `[id="${current.id.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"]`;
       }
       parts.unshift(part);
       break;

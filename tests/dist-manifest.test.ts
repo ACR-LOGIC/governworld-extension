@@ -64,9 +64,19 @@ describe.skipIf(!existsSync(manifestPath))("built extension package", () => {
     const landing = readFileSync(join(dist, "landing.html"), "utf8");
     expect(landing).toContain('src="landing.js"');
     expect(existsSync(join(dist, "landing.js")), "landing.js referenced but not emitted").toBe(true);
-    const inline = [...landing.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)].filter(
-      ([, attrs, body]) => !/\bsrc\s*=/i.test(attrs) && body.trim().length > 0
-    );
+    const inline = landing
+      .split(/<script\b/i)
+      .slice(1)
+      .map((chunk) => {
+        const closeTagIdx = chunk.indexOf(">");
+        const attrs = closeTagIdx >= 0 ? chunk.slice(0, closeTagIdx) : "";
+        const rest = closeTagIdx >= 0 ? chunk.slice(closeTagIdx + 1) : "";
+        const endScriptIdx = rest.toLowerCase().indexOf("</script");
+        const body = endScriptIdx >= 0 ? rest.slice(0, endScriptIdx) : rest;
+        return { attrs: attrs.trim(), body: body.trim() };
+      })
+      .filter(({ attrs, body }) => !/\bsrc\s*=/i.test(attrs) && body.length > 0)
+      .map(({ attrs }) => attrs);
     expect(inline, "landing.html has an inline script, blocked by script-src 'self'").toEqual([]);
   });
 

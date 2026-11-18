@@ -398,7 +398,14 @@ export function extractVideoCaptions(
       for (let j = 0; j < cues.length; j++) {
         const cue = cues[j] as VTTCue;
         if (!cue || typeof cue.text !== "string") continue;
-        const text = cue.text.replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+        let stripped = "";
+        let inTag = false;
+        for (const ch of cue.text) {
+          if (ch === "<") inTag = true;
+          else if (ch === ">") inTag = false;
+          else if (!inTag) stripped += ch;
+        }
+        const text = stripped.replace(/\s+/g, " ").trim();
         if (text) {
           results.push({ text, cssSelector: selector, startTime: cue.startTime, visibility });
         }

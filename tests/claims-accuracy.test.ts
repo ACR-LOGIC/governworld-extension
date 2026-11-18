@@ -63,11 +63,12 @@ describe("no claim outruns the implementation", () => {
       // The gap that let the badge through: the phrase was URL-encoded inside a
       // shields.io badge, so stripping URLs removed the claim before the check.
       const raw = proseKeepingUrls(read(file));
-      const decoded = raw
-        .replace(/%20/g, " ")
-        .replace(/%25/g, "%")
-        .replace(/%7C/g, "|")
-        .replace(/&/g, " ");
+      const decoded = raw.replace(/%(20|25|7C)|&/gi, (match) => {
+        const upper = match.toUpperCase();
+        if (upper === "%25") return "%";
+        if (upper === "%7C") return "|";
+        return " ";
+      });
       expect(decoded, `${file} claims 100% local in a badge or URL`).not.toMatch(
         /100%\s*(local|on-device)/i,
       );

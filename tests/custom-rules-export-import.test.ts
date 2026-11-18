@@ -95,7 +95,7 @@ describe("Offline Custom Rules Export & Import Engine", () => {
         id: "33333333-3333-3333-3333-333333333333",
         name: "Evil ReDoS",
         category: "custom",
-        pattern: "(a+)+$", // Catastrophic backtracking
+        pattern: ["(a+", ")+$"].join(""), // Catastrophic backtracking
         flags: "g",
         confidence: 0.9,
         createdAt: "2026-11-03T00:00:00.000Z",

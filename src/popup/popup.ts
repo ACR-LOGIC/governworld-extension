@@ -5317,7 +5317,8 @@ export async function initPopup(): Promise<void> {
 
   const initialTab = await getActiveWebTab().catch(() => undefined);
   void sendMessage({ type: "POPUP_GET_STATE", requestId: requestId(), ...(initialTab?.id ? { tabId: initialTab.id } : {}) });
-  void loadCustomPatterns().then(renderCustomPatterns).catch(() => {});
+  const initialPatterns = await loadCustomPatterns().catch(() => null);
+  if (initialPatterns) renderCustomPatterns(initialPatterns);
   void chrome.runtime.sendMessage({ type: "POPUP_CUSTOM_PATTERNS_GET", requestId: requestId() }).catch(() => {});
   void chrome.runtime.sendMessage({ type: "POPUP_COMMUNITY_ACCOUNT_GET", requestId: requestId() }).catch(() => {});
   void chrome.runtime.sendMessage({ type: "POPUP_MANAGEMENT_GET_STATUS", requestId: requestId() }).catch(() => {});

@@ -13,7 +13,7 @@ import { createServer } from "node:http";
 import { copyFileSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createHash, generateKeyPairSync } from "node:crypto";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "@playwright/test";
 import { browserChannelArgs, browserProfileDir } from "./browser-launch.mjs";
@@ -70,8 +70,16 @@ writeFileSync(join(shotBuild, "manifest.json"), JSON.stringify(shotManifest, nul
 
 // --- Static fixture server ---
 const server = createServer((req, res) => {
-  const name = req.url === "/" ? "screenshot-page.html" : req.url.slice(1);
-  const file = join(fixtureDir, name);
+  const urlObj = new URL(req.url ?? "/", `http://127.0.0.1:${PORT}`);
+  const reqPath = decodeURIComponent(urlObj.pathname);
+  const name = reqPath === "/" ? "screenshot-page.html" : reqPath.replace(/^\/+/, "");
+  const rootFixtureDir = resolve(fixtureDir);
+  const file = resolve(rootFixtureDir, name);
+  if (!file.startsWith(rootFixtureDir + sep)) {
+    res.writeHead(403);
+    res.end("forbidden");
+    return;
+  }
   try {
     const data = readFileSync(file);
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });

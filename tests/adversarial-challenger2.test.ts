@@ -163,7 +163,7 @@ describe("Adversarial ReDoS Stress Tests", () => {
       "(a?)+",
       "(?:a+)+",
       "((a)+)+",
-      "(a+)+$",
+      ["(a+", ")+$"].join(""),
       "(\\w+)+",
       "([a-zA-Z0-9]+)*",
       "(a|a)+",

@@ -172,7 +172,7 @@ describe("the documented thresholds and the enforced thresholds agree", () => {
     expect(doc).toMatch(new RegExp(`< ${THRESHOLDS.redosBudgetMs} ms`));
     for (const { name } of THRESHOLDS.prohibitedConstructs) {
       expect(doc.toLowerCase(), `${name} is enforced but undocumented`).toContain(
-        name.replace("nested quantifier", "nested quantifier"),
+        name.toLowerCase(),
       );
     }
   });
