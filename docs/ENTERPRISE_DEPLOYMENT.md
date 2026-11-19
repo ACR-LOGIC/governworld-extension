@@ -207,20 +207,36 @@ In addition to OS-level `chrome.storage.managed` (GPO / MDM), GovernWorld Extens
 
 ```
 +-----------------------+         +----------------------------+         +---------------------------+
-| GovernWorld           |  Push   | Supabase Coordination      |  Poll   | GovernWorld Browser       |
-| Office Manager Admin  | ------> | Infrastructure (Encrypted) | <------ | Extension (MANAGE Mode)   |
+| GovernWorld           |  Push   | Coordinator Infrastructure |  Poll   | GovernWorld Browser       |
+| Office Manager Admin  | ------> | (Encrypted Auth/Transport) | <------ | Extension (MANAGE Mode)   |
 | (Signs Policy Ed25519)|         | (Zero sensitive data stored| (Fetch) | (Validates Sig & Enforces)|
 +-----------------------+         +----------------------------+         +---------------------------+
 ```
 
-### A. Dynamic Security Architecture
+### A. Lifecycle & Enrollment Modes
+1. **Standalone LOCAL Mode (Default on Install):**
+   - The extension initially boots strictly on-device with **zero heartbeats, zero connection attempts, and zero network calls**.
+   - Operates fully independently until explicitly paired with an organization coordinator.
+2. **One-Time Pairing Code Registration:**
+   - The employee receives a 6-digit pairing code from their administrator.
+   - Submitting the code in the extension validates the pairing against the coordinator, links the device's public installation UUID (`deviceId`), and transitions the extension state from `LOCAL` to `MANAGE`.
+3. **Automatic Policy Pull & Local Enforcement:**
+   - Immediately upon pairing, the extension pulls the signed organizational rules and enforces them locally in the browser DOM and paste-shield runtime.
+4. **Policy Lockdown vs. Employee Usability:**
+   - **Locked by Admin 🔒:** Protection modes (PasteGuard / Always-on), required detection categories (SSN, MRN, Payment Cards, etc.), confidence thresholds, network destination boundaries, and custom rule overrides are locked against modification or downgrading.
+   - **Unlocked for Employees 🔓:** Personal accessibility accommodations (font sizing, high contrast, OpenDyslexic font, reduced motion, speech synthesis/announcements) and visual mask colors remain fully configurable by the employee.
+5. **Periodic Lightweight Heartbeat Verification:**
+   - Heartbeats **never run prior to pairing**.
+   - Once paired, the extension uses `chrome.alarms` (15-minute intervals) to send a lightweight compliance health check to `/api/v1/management/heartbeat`.
+   - **Payload Invariants**: Contains strictly device public UUID, browser metadata (name, version, platform), extension version, policy version, timestamp, and health status.
+   - **Zero Surveillance Invariant**: The extension **never** sends browsing history, visited URLs, search queries, page text, form data, keystrokes, credentials, emails, chats, or personal files to administrators.
+6. **Unpairing & Safe Teardown:**
+   - Unpairing immediately deletes enrollment credentials and stored policies, clears the background heartbeat alarm, and returns the extension to standalone `LOCAL` mode with zero egress.
+
+### B. Dynamic Security Architecture
 1. **Ed25519 Cryptographic Verification:** Every policy envelope is signed by the administrator using an Ed25519 private key. The extension verifies the signature against a pinned trusted public key before applying any settings.
 2. **Deterministic Content Hashing:** The policy content is canonicalized (sorted keys, normalized types) and hashed with SHA-256 to ensure byte-level integrity.
 3. **Anti-Downgrade & Monotonic Versions:** The extension enforces strictly monotonic `policy_version` sequencing. Policies with version numbers less than or equal to the currently applied version are rejected with `VERSION_DOWNGRADE`.
 4. **Anti-Replay Protection:** Envelopes require a fresh nonce and timestamp within an allowable validation window (+/- 5 minutes).
 5. **Targeting Validation:** Each envelope specifies `organization_id`, `employee_id`, and `device_id`. Policies targeted to different entities are rejected with `TARGET_MISMATCH`.
-6. **Setting Ownership Model:**
-   - **Administrator-Controlled:** Mandated categories and locked protection modes cannot be removed or weakened by employees.
-   - **User-Controlled:** End users retain control over cosmetic appearance, font scaling, sound announcements, and non-conflicting custom rules.
-   - **System-Controlled:** Tamper-resistant ECDSA audit trails and zero-egress sandboxing boundaries remain enforced at all times.
-7. **Offline Continuity:** The last verified policy is persisted in local storage. In the event of network disruption, offline travel, or Supabase unavailability, the extension continues enforcing the policy. Protections are never suspended due to lack of network connectivity.
+6. **Offline Continuity:** The last verified policy is persisted in local storage. In the event of network disruption, offline travel, or coordinator unavailability, the extension continues enforcing the policy. Protections are never suspended due to lack of network connectivity.

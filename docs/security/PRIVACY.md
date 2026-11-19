@@ -204,23 +204,27 @@ This statement does not prohibit collection that is independently initiated by y
 
 GovernWorld may offer paid services, organizational deployments, enterprise capabilities, APIs, runtime governance, policy enforcement, monitoring, audit, integrations, or other connected services.
 
-### Enterprise Management Coordination (MANAGE Mode)
+### Enterprise Management Coordination (MANAGE Mode vs. Standalone LOCAL Mode)
 
-When the Extension operates in **MANAGE mode** (enrolled with an organization's GovernWorld Office Manager infrastructure):
-
-- **Purpose of Management Communication:** The Extension periodically checks for and retrieves administrator-approved security policies (mandated detection categories, locked protection modes, and restricted domain lists).
+- **Standalone LOCAL Mode (Initial State):** Upon installation, the Extension operates in standalone mode. It makes **zero network connections, sends zero heartbeats, and operates 100% on-device**.
+- **Pairing and Enrollment:** Heartbeats and policy synchronization activate **only** after an employee explicitly pairs the Extension using a valid pairing code from their organization.
+- **Purpose of Management Communication:** After pairing, the Extension retrieves administrator-approved security policies (mandated detection categories, locked protection modes, and restricted domain lists).
 - **Cryptographic Validation:** All received policies are signed with an Ed25519 private key by the organization administrator and validated locally against a pinned public key before application.
-- **What is Sent to Management Infrastructure:**
-  - Organization ID, employee ID, and device ID (for targeting validation).
-  - Minimal policy application acknowledgments: policy ID, applied policy version number, Unix timestamp, and application status (APPLIED, REJECTED, ERROR).
-- **What is NEVER Sent to Management Infrastructure or Supabase:**
-  - Web browsing history, URLs visited (except for local matching against administrator blocklists), or tab titles.
+- **Periodic Lightweight Status Checks (Heartbeats):** Once paired in MANAGE mode, the Extension sends lightweight status information via periodic alarms (every 15 minutes) to verify installation, active health, and policy compliance:
+  - Device installation public UUID
+  - Browser metadata (name, version, platform)
+  - Extension version
+  - Policy version
+  - Timestamp & status
+- **What is NEVER Sent to Management Infrastructure or Administrators:**
+  - Web browsing history, URLs visited, search queries, or tab titles.
   - Page text, DOM structures, or web form inputs.
+  - Keystrokes, chat messages, prompts, or emails.
   - Clipboard contents (incoming or outgoing).
   - Uploaded documents (PDF, DOCX, images) or generated redaction files.
-  - Extracted OCR text or bounding box coordinates.
-  - Detected PII, PHI, financial records, credentials, or custom pattern matches.
-  - Prompts, messages, or conversations with external AI services.
+  - Personal files, credentials, passwords, or tokens.
+  - Extracted OCR text or detected sensitive values.
+  - Remote control commands or screen surveillance.
 - **Offline Enforcement:** If communication with the management infrastructure is interrupted, the Extension continues to enforce the last valid administrator policy locally without interruption or fail-open vulnerability.
 
 GovernWorld may offer paid services, organizational deployments, enterprise capabilities, APIs, runtime governance, policy enforcement, monitoring, audit, integrations, or other connected services.
@@ -278,7 +282,9 @@ The Extension asks for the minimum permissions needed for its function:
 - `storage` — remember your settings, local rules, and masked session state.
 - `downloads` — save the flattened redacted document you create.
 - `offscreen` — run document OCR and rendering in a dedicated offscreen document.
-- `sidePanel` - show the side panel (`Alt+Shift+P`) for scanning, document redaction, notifications, and settings/account surfaces.
+- `sidePanel` — show the side panel (`Alt+Shift+P`) for scanning, document redaction, notifications, and settings/account surfaces.
+- `contextMenus` — provide right-click context menu shortcuts for on-demand scanning and text masking.
+- `alarms` — schedule periodic lightweight compliance status checks and policy synchronization strictly when paired in MANAGE mode; completely inactive with zero network calls in standalone LOCAL mode.
 - `http://*/*`, `https://*/*` (optional host access, requested at runtime) - only for the Always-on paste-protection mode when you explicitly grant it. The default install declares no install-time host permissions. Optional account-linking and community features, when explicitly used, contact only their configured/approved GovernWorld service origins and never transmit scan content, document bytes, or masked values.
 - `notifications` (optional, requested at runtime) - raise a notification when a scan finds sensitive data, only after you enable the toggle.
 

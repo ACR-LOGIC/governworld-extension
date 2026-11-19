@@ -280,7 +280,7 @@ not be presented as an independent third-party assessment.
 | Lockfile SHA-256 (as committed in git, LF) | `CB1A4C62F72D1DFF1E004743BD0747F19596A295000C9C8BFBD6781E286D664E` | **Careful:** a Windows checkout with `core.autocrlf=true` materialises CRLF line endings, so hashing the *working-tree* file yields `830BC33A7045CE4D1802E2B44FA09C0D9B2BF9824E51A144C8ADF3E7714B50F2` instead. Both are correct for what they measure. Verify against the committed content with `git show HEAD:package-lock.json` rather than hashing the working tree. |
 | Zip root | `manifest.json` at archive root, no wrapping folder |
 | Manifest | v0.1.0, name 21 chars (limit 45), description 117 chars (limit 132) — superseded by v0.1.1 |
-| Permissions | `activeTab`, `scripting`, `storage`, `downloads`, `offscreen`, `sidePanel`, `contextMenus` + optional `notifications` — no host permissions (re-confirmed in the built `dist/manifest.json`) |
+| Permissions | `activeTab`, `scripting`, `storage`, `downloads`, `offscreen`, `sidePanel`, `contextMenus`, `alarms` + optional `notifications` — no host permissions (re-confirmed in the built `dist/manifest.json`) |
 | `npm audit` | 0 vulnerabilities |
 | Runtime dependencies | pdfjs-dist 6.3.289, tesseract.js 7.0.0, pdf-lib 1.17.1, mammoth 1.13.0 |
 | Build runtime | Node 24 in CI (Node 20 reached EOL 2026-04-30; pdfjs-dist 6 needs >=22.13) |

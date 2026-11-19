@@ -44,6 +44,12 @@ import {
   ManagementEnrollment,
 } from "../shared/managedPolicy.js";
 import { syncManagedPolicy } from "./policySyncService.js";
+import {
+  scheduleHeartbeatAlarm,
+  clearHeartbeatAlarm,
+  sendHeartbeatStatusCheck,
+  ALARM_NAME_HEARTBEAT,
+} from "./heartbeatService.js";
 import { getInstallationId } from "../api/config.js";
 
 /**
@@ -1645,12 +1651,14 @@ chrome.runtime.onStartup?.addListener(() => {
   purgeStagedFilesOnLifecycle("browser startup");
   void syncManagedPolicy(false);
   void refreshOperatingMode();
+  void scheduleHeartbeatAlarm();
 });
 
 chrome.runtime.onInstalled?.addListener(() => {
   purgeStagedFilesOnLifecycle("extension install/update");
   void syncManagedPolicy(false);
   void refreshOperatingMode();
+  void scheduleHeartbeatAlarm();
 });
 
 // OAuth callback capture: when the provider redirects to chromiumapp.org,
@@ -1766,6 +1774,16 @@ void syncSiteProtection();
 void reconcileTabStatuses();
 void syncManagedPolicy(false);
 void refreshOperatingMode();
+void scheduleHeartbeatAlarm();
+
+if (typeof chrome !== "undefined" && chrome.alarms?.onAlarm) {
+  chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === ALARM_NAME_HEARTBEAT) {
+      void sendHeartbeatStatusCheck();
+      void syncManagedPolicy(false);
+    }
+  });
+}
 
 if (chrome.contextMenus?.onClicked) {
   chrome.contextMenus.onClicked.addListener((info, tab) => {
@@ -2097,11 +2115,14 @@ async function handleManagementEnroll(
   };
   await saveManagementEnrollment(enrollment);
   await syncManagedPolicy(true);
+  await scheduleHeartbeatAlarm();
+  void sendHeartbeatStatusCheck();
   await handleManagementGetStatus(requestId);
 }
 
 async function handleManagementUnenroll(requestId: string): Promise<void> {
   await clearManagementEnrollment();
+  await clearHeartbeatAlarm();
   void syncSiteProtection();
   await handleManagementGetStatus(requestId);
 }

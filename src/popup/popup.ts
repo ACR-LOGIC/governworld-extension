@@ -26,6 +26,12 @@ import {
   type EffectiveProtection,
 } from "../shared/enterprisePolicy.js";
 import {
+  saveManagementEnrollment,
+  clearManagementEnrollment,
+  type ManagementEnrollment,
+} from "../shared/managedPolicy.js";
+import { getInstallationId } from "../api/config.js";
+import {
   ALWAYS_ON_ORIGINS,
   describeProtectionState,
   queryAlwaysOnCapability,
@@ -2334,6 +2340,41 @@ export async function refreshProtectionStatus(): Promise<ProtectionStatusSnapsho
     grantBtn.hidden = effective.mode !== "always-on" || capability.siteAccessGranted;
   }
 
+  const isLocked = effective.locked;
+
+  // Lock admin-mandated sections when under managed policy
+  const presetSelect = document.getElementById("preset-select") as HTMLSelectElement | null;
+  if (presetSelect) {
+    presetSelect.disabled = isLocked;
+    if (isLocked) presetSelect.title = t(lang, "managed_lock_notice");
+    else presetSelect.removeAttribute("title");
+  }
+
+  for (const btnId of ["cat-filter-all", "cat-filter-health", "cat-filter-intl", "cat-filter-finance", "cat-filter-none"]) {
+    const btn = document.getElementById(btnId) as HTMLButtonElement | null;
+    if (btn) {
+      btn.disabled = isLocked;
+      if (isLocked) btn.title = t(lang, "managed_lock_notice");
+      else btn.removeAttribute("title");
+    }
+  }
+
+  for (const elId of ["threshold-category-select", "threshold-value-select", "threshold-apply-all-btn"]) {
+    const el = document.getElementById(elId) as HTMLSelectElement | HTMLButtonElement | null;
+    if (el) {
+      el.disabled = isLocked;
+      if (isLocked) el.title = t(lang, "managed_lock_notice");
+      else el.removeAttribute("title");
+    }
+  }
+
+  const openWiz = document.getElementById("open-wizard-btn") as HTMLButtonElement | null;
+  if (openWiz) {
+    openWiz.disabled = isLocked;
+    if (isLocked) openWiz.title = t(lang, "managed_lock_notice");
+    else openWiz.removeAttribute("title");
+  }
+
   await renderCategories({
     enabledCategories: effective.enabledCategories,
     lockedCategories: effective.lockedCategories,
@@ -3868,6 +3909,34 @@ export async function initPopup(): Promise<void> {
           gw_coordinator_policy: data.policy,
           gw_coordinator_url: coordinatorUrl,
         });
+        const deviceId = await getInstallationId();
+        const orgId = data.organizationId || data.policy.organizationId || data.policy.organization_id || "org_office_manager";
+        const orgName = data.organizationName || data.policy.organizationName || data.policy.organization_name || "Office Manager";
+        const employeeId = data.employeeId || "employee";
+        const enrollment: ManagementEnrollment = {
+          organization_id: orgId,
+          organization_name: orgName,
+          employee_id: employeeId,
+          device_id: deviceId,
+          coordinator_url: coordinatorUrl,
+          enrolled_at: new Date().toISOString(),
+          management_mode: "MANAGE",
+        };
+        await saveManagementEnrollment(enrollment);
+        try {
+          if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
+            await chrome.runtime.sendMessage({
+              type: "POPUP_MANAGEMENT_ENROLL",
+              organizationId: orgId,
+              organizationName: orgName,
+              employeeId,
+              coordinatorUrl,
+              requestId: requestId(),
+            });
+          }
+        } catch {
+          // Ignore messaging error if service worker is inactive
+        }
         await checkOfficeManagerPairingStatus();
         await refreshProtectionStatus();
       }
@@ -3888,6 +3957,17 @@ export async function initPopup(): Promise<void> {
         "gw_applied_managed_policy",
         "gw_management_enrollment",
       ]);
+      await clearManagementEnrollment();
+      try {
+        if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
+          await chrome.runtime.sendMessage({
+            type: "POPUP_MANAGEMENT_UNENROLL",
+            requestId: requestId(),
+          });
+        }
+      } catch {
+        // Ignore messaging error
+      }
       await checkOfficeManagerPairingStatus();
       await refreshProtectionStatus();
     }

@@ -26,7 +26,8 @@
     "downloads",
     "offscreen",
     "sidePanel",
-    "contextMenus"
+    "contextMenus",
+    "alarms"
   ],
   "optional_permissions": [
     "notifications"

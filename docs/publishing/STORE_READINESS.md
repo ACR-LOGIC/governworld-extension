@@ -74,7 +74,7 @@ text, at least 640x400, PNG or JPEG.
 
 - [x] Manifest is MV3 with least-privilege permissions (`activeTab`,
       `scripting`, `storage`, `downloads`, `offscreen`, `sidePanel`,
-      `contextMenus`; no `<all_urls>`, no `tabs`). Every declared permission
+      `contextMenus`, `alarms`; no `<all_urls>`, no `tabs`). Every declared permission
       is justified in `PERMISSIONS.md` and named in `STORE_DESCRIPTION.md`.
 - [x] Single-purpose description aligned with actual behavior.
 - [x] Privacy policy drafted (`PRIVACY.md`), versioned v1.0.0 with support

@@ -34,6 +34,11 @@ test-results/
 *.local
 *.secret
 
+# Ephemeral notes & draft docs
+*.scratch.md
+tmp_docs/
+drafts/
+
 # IDE and OS files
 .vscode/
 .idea/

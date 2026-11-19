@@ -7,7 +7,7 @@ This document outlines the engineering setup for the GovernWorld Chrome Extensio
 ### Primary Directories
 
 #### src/
-- `src/service-worker/`: Core service worker orchestration and message handling
+- `src/service-worker/`: Core service worker orchestration, message handling, and lightweight heartbeat service (`heartbeatService.ts`)
 - `src/content/`: Content script for live DOM scanning and masking
 - `src/offscreen/`: Offscreen document for OCR processing and heavy computations
 - `src/shared/`: Common utilities, types, and helper functions shared across contexts
@@ -155,16 +155,19 @@ The extension includes 24 detection categories:
 ### Operating Modes
 
 #### LOCAL Mode (Standalone)
-- On-device processing
-- No mandatory account or subscription
-- Zero remote coordination
-- User-configured detection rules
+- Initial state upon installation: autonomous, 100% on-device processing
+- Zero network egress, zero connection attempts, zero background heartbeats
+- User controls all detection rules, presets, thresholds, and cosmetic preferences
+- No mandatory account, registration, or subscription
 
-#### MANAGE Mode (Enterprise)
-- Administrator-mandated policies
-- Cryptographic Ed25519 verification
-- Anti-rollback and anti-replay protection
-- Offline continuity enforcement
+#### MANAGE Mode (Enterprise Managed)
+- Activated via one-time 6-digit organization pairing code or OS-level `chrome.storage.managed`
+- Automatically synchronizes administrator-mandated policies locally into the browser
+- **Policy Lockdown**: Mandated categories, protection modes, thresholds, and custom pattern overrides are locked to prevent circumvention
+- **Employee Accommodations**: Accessibility settings (font sizing, high contrast, dyslexia mode, reduced motion, speech announcements) and cosmetic styling remain unlocked
+- **Periodic Lightweight Heartbeat**: Uses `chrome.alarms` (15-min cadence) to send device installation UUID, browser metadata, extension/policy versions, and health status
+- **Zero Surveillance Guarantee**: Absolutely NO browsing history, visited URLs, search queries, page text, form data, keystrokes, credentials, chats, or personal files are ever transmitted
+- Cryptographic Ed25519 verification, anti-rollback, anti-replay, and offline continuity enforcement
 
 ### Architecture Invariants
 
@@ -239,7 +242,7 @@ npm run build:safari
 ### Manifest Requirements
 - **Manifest Version**: V3 (Chrome, Firefox)
 - **Background Service Worker**: ES-module orchestrator
-- **Permissions**: Minimal, context-gesture-based access
+- **Permissions**: Minimal, context-gesture-based access (`activeTab`, `scripting`, `storage`, `downloads`, `offscreen`, `sidePanel`, `contextMenus`, `alarms`)
 - **Host Access**: Optional runtime-granted (never `<all_urls>`)
 
 ### Security Controls

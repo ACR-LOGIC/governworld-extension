@@ -75,7 +75,7 @@ The **GovernWorld Extension** is a fully functional, local-first browser protect
 5. **Custom Logic, Policy Studio & Governance:**
    - Redaction/Logic Wizard for creating/testing custom detection rules locally; offline custom-rules JSON export/import with schema validation, ReDoS-safe checks, and duplicate-safe merge.
    - Policy Studio for site-specific DLP rules (URL scopes, templates, category scopes, block/auto-redact/warn, full-site access blocking barrier) with audited enforcement.
-   - Enterprise MANAGE mode supports managed policy delivery/verification, enforced categories/modes, and ownership boundaries (see Operating Modes and `docs/ENTERPRISE_DEPLOYMENT.md`).
+   - Enterprise MANAGE mode supports one-time pairing via organization pairing codes, dynamic signed policy distribution, administrative policy lockdown (locking required categories and modes while keeping accessibility tools unlocked), and periodic lightweight health checks (see `docs/ENTERPRISE_DEPLOYMENT.md`).
 
 6. **Auditability, Exports & Reports:**
    - ECDSA P-256 signed, metadata-only local audit trail for scans, masking, document operations, policy/preset changes, and audited actions.
@@ -556,6 +556,7 @@ The extension is **fully functional in standalone local mode**.
 | `offscreen` | Hosts PDF rendering and WebAssembly OCR execution without stalling the browser UI. |
 | `sidePanel` | Provides a persistent side panel (`Alt+Shift+P`) for protection, document review, logic, and settings. |
 | `contextMenus` | Adds right-click actions: **Scan page for sensitive data** and, when text is selected, **Redact selection to clipboard** and **Mask selected text**. |
+| `alarms` | Schedules periodic lightweight status checks and policy synchronization strictly when paired in MANAGE mode. Completely inactive with zero network calls in standalone LOCAL mode. |
 | `notifications` *(optional, runtime)* | Requested only if you enable scan/findings notifications. |
 | `http://*/*`, `https://*/*` *(optional host access, runtime)* | Requested only for **Always on** paste protection so pages can be guarded on visited sites. Default install declares no host permissions; revoking the grant stops always-on coverage. |
 

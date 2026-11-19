@@ -28,7 +28,8 @@
     "scripting",
     "storage",
     "downloads",
-    "contextMenus"
+    "contextMenus",
+    "alarms"
   ],
   "optional_permissions": [
     "notifications"

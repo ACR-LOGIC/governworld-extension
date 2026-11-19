@@ -64,7 +64,7 @@ you cover them up:
 
 - No install-time host permissions. No background scanning, keystroke capture, or
   network monitoring. The extension asks only for `activeTab`, `scripting`,
-  `storage`, `downloads`, `offscreen`, `sidePanel`, and `contextMenus` (plus
+  `storage`, `downloads`, `offscreen`, `sidePanel`, `contextMenus`, and `alarms` (plus
   optional, runtime-requested `notifications` and http(s) site access for the
   always-on paste mode) — each mapped to a specific, user-triggered feature.
   Always-on page access is granted only if you switch the mode on and approve
@@ -101,6 +101,9 @@ scan. The extension does not change behavior based on which website is open.
   clipboard", and "Mask selected text" to the right-click menu, so
   the same on-demand actions can be started from there. Each entry runs only
   when you click it, and the entries can be switched off in settings.
+- `alarms` — schedule periodic lightweight compliance status checks and policy
+  synchronization strictly when paired in MANAGE mode. Completely inactive with
+  zero network calls in standalone LOCAL mode.
 - `notifications` (optional, requested at runtime) — scan-findings notice only
   after you enable it.
 - `http://*/*`, `https://*/*` (optional host access, requested at runtime) —

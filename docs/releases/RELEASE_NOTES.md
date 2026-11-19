@@ -34,6 +34,12 @@ GovernWorld Extension v0.3.0 introduces enterprise policy governance through the
    - Scanned page text, clipboard contents, uploaded documents (PDF, DOCX, images), OCR text, PHI/PII, and AI conversation contents are processed directly on-device.
    - Zero sensitive content is ever sent to Supabase or the Office Manager.
 
+6. **Employee Pairing Code & Lightweight Status Checks (Heartbeat):**
+   - **Standalone LOCAL Default:** Fresh installs make zero network requests and send no background heartbeats.
+   - **One-Time Pairing Code:** Employees enter a 6-character code to link their installation UUID with organization governance.
+   - **Policy Feature Lockdown:** Administrative security mandates (PasteGuard, required categories, confidence thresholds, and network policies) are locked, while employee accessibility features (font sizes, high contrast, dyslexia mode, speech announcements, and mask styling) remain completely unlocked.
+   - **Periodic Lightweight Status Checks:** When paired, sends lightweight status checks via `chrome.alarms` every 15 minutes (`device_id`, browser info, extension version, policy version, timestamp, status). Zero browsing history, URLs, queries, page text, form data, or personal files are ever transmitted.
+
 ---
 
 ### Detection Engine & Redaction Audit
