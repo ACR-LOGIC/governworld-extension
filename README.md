@@ -1,16 +1,17 @@
 # GovernWorld Extension
 
 [![CI](https://github.com/ACR-LOGIC/governworld-extension/actions/workflows/ci.yml/badge.svg)](https://github.com/ACR-LOGIC/governworld-extension/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/License-Source--Available-orange.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/Version-0.4.0-blue.svg)](https://github.com/ACR-LOGIC/governworld-extension/releases/tag/v0.4.0)
+[![License](https://img.shields.io/badge/License-BSL--1.1%20Source--Available-orange.svg)](LICENSE)
 [![Manifest V3](https://img.shields.io/badge/Extension-Manifest%20V3-green.svg)](manifest.json)
 [![Local-First](https://img.shields.io/badge/Architecture-Local--First-brightgreen.svg)](#local-first-architecture--privacy-guarantees)
-[![Browser Support](https://img.shields.io/badge/Browser-Chrome%20%7C%20Edge-blue.svg)](#1-shipped-and-verified--chrome-and-edge)
+[![Browser Support](https://img.shields.io/badge/Browser-Chrome%20%7C%20Edge-blue.svg)](#browser-compatibility--cross-platform-installation-guide)
 [![Support on Buy Me A Coffee](https://img.shields.io/badge/Support-Buy%20Me%20A%20Coffee-ff813f?logo=buy-me-a-coffee&logoColor=white)](https://buymeacoffee.com/governworld)
 [![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?logo=github)](https://github.com/sponsors/ACR-LOGIC)
 
-The **GovernWorld Extension** is a fully functional, local-first browser protection tool that brings GovernWorld's high-assurance detection and redaction engine directly into your web browser. It empowers users to detect, mask, and redact sensitive Personally Identifiable Information (PII), Protected Health Information (PHI), financial data, credentials, and custom patterns directly on web pages and in uploaded documents (PDF, DOCX, images). The page text and document content you scan **never leave your device** - the local pipeline has no network path at all. Optional account-linking and community features, described below, do contact GovernWorld servers, and are disabled by default.
+The **GovernWorld Extension** (`v0.4.0`) is a local-first browser protection tool that runs GovernWorld's deterministic detection and redaction engine directly in your web browser. It lets users detect, mask, and redact sensitive Personally Identifiable Information (PII), Protected Health Information (PHI), financial data, credentials, and custom patterns on web pages you choose to scan and in uploaded documents (PDF, DOCX, images). The page text and document content you scan **never leave your device** — the local detection and document pipelines have no network path at all. Optional organizational pairing (`MANAGE` mode) and optional account-linking flows are inactive by default and transmit non-content metadata only when explicitly enabled.
 
-> **Licensing:** GovernWorld Extension is source-available and free for non-commercial community use. You may inspect, modify, fork, and run the extension locally for permitted non-commercial purposes. Commercial use, redistribution, resale, hosting, bundling, or incorporation into a commercial product or service requires a separate commercial license from Andres Chavez Ramirez. See [LICENSE](LICENSE) for details.
+> **Licensing:** GovernWorld Extension is source-available under **Business Source License 1.1 (BSL 1.1)** — free for personal, educational, academic, government, and internal non-commercial use (transitioning to Apache License 2.0 on November 13, 2030). Commercial hosting, resale, or competing products require a separate commercial license from Andres Chavez Ramirez (`andres@acr-logic.com`). This is not an OSI-approved open-source license. See [LICENSE](LICENSE) for details.
 
 ---
 
@@ -24,7 +25,8 @@ The **GovernWorld Extension** is a fully functional, local-first browser protect
   - [Opera & Opera GX](#5-opera--opera-gx)
   - [Vivaldi](#6-vivaldi)
   - [Arc Browser](#7-arc-browser)
-  - [Apple Safari (macOS)](#8-apple-safari-macos)
+  - [Apple Safari (macOS)](#8-apple-safari-macos--packaging-requires-apple-tooling)
+- [Operating Modes: LOCAL vs. MANAGE](#operating-modes-local-vs-manage)
 - [Local-First Architecture & Privacy Guarantees](#local-first-architecture--privacy-guarantees)
   - [Provable Local Processing: Wire-Level Network Inspection](#provable-local-processing-wire-level-network-inspection)
 - [What Data Remains on Your Device](#what-data-remains-on-your-device)
@@ -32,12 +34,12 @@ The **GovernWorld Extension** is a fully functional, local-first browser protect
 - [Accessibility & Disability Assistive Features](#accessibility--disability-assistive-features)
 - [Multi-Language Internationalization (i18n)](#multi-language-internationalization-i18n)
 - [Interactive Redaction Studio & Custom Styles](#interactive-redaction-studio--custom-styles)
-- ["Paste & Prompt" Shield (on-demand)](#paste--prompt-shield-on-demand-chat--llm-guard)
+- ["Paste, Prompt & Submit" Shield (Chat, prompt & input guard)](#paste-prompt--submit-shield-chat-prompt--input-guard)
 - [Right-Click Context Menus](#right-click-context-menus)
 - [Interactive Redaction Wizard](#interactive-redaction-wizard)
   - [Rule Persistence & Video Walkthrough](#rule-persistence--video-walkthrough)
 - [Document Processing & Redaction Workflow](#document-processing--redaction-workflow)
-- [Cloud & API Status (Locked by Default)](#cloud--api-status-locked-by-default)
+- [Cloud & API Status (Locked/Gated by Default)](#cloud--api-status-lockedgated-by-default)
 - [Browser Permissions & Justifications](#browser-permissions--justifications)
 - [Developer Setup & Build Commands](#developer-setup--build-commands)
 - [Testing & Quality Verification](#testing--quality-verification)
@@ -212,7 +214,7 @@ With Xcode installed, the packaging step is:
 2. Package the built payload (note: the current tool is
    `safari-web-extension-packager`, the renamed `safari-web-extension-converter`):
    ```bash
-   xcrun safari-web-extension-packager /path/to/governworld-chrome-extension/dist-safari --project-location /path/to/output --app-name "GovernWorld"
+   xcrun safari-web-extension-packager /path/to/governworld-extension/dist-safari --project-location /path/to/output --app-name "GovernWorld"
    ```
 3. Open the generated Xcode project and click **Run** to build the macOS container app.
 4. In Safari, go to **Settings** > **Advanced** > check **"Show features for web developers"**.
@@ -226,43 +228,40 @@ iMessage, native apps, or the OS.
 
 ## Operating Modes: LOCAL vs. MANAGE
 
-GovernWorld Extension v0.3.0 supports exactly two user-facing operating modes:
+GovernWorld Extension v0.4.0 supports two user-facing operating modes:
 
-```
+```text
 +-----------------------------------------------------------------------------------+
 |                                  OPERATING MODES                                  |
 +-----------------------------------------------------------------------------------+
-|  1. LOCAL (Standalone)                            2. MANAGE (Enterprise Managed)  |
-|  - On-device, local-first                           - Receives administrator policies|
-|  - No mandatory account or subscription           - Office Manager -> Extension   |
-|  - No mandatory Supabase/cloud connection         - Cryptographic Ed25519 verified |
-|  - Autonomous detection & custom logic            - Anti-rollback & anti-replay   |
-|  - Local ECDSA P-256 signed audit trails          - Offline continuity enforced   |
-|  - Offline OCR & local document flattening        - Zero egress of sensitive data |
+|  1. LOCAL (Default on Install)                    2. MANAGE (Enterprise Paired)   |
+|  - Standalone, on-device processing                 - Paired via 6-digit code/GPO |
+|  - Zero network calls, zero heartbeats              - Signed policy pull & lock   |
+|  - Zero background alarms or coordination           - Accessibility stays unlocked|
+|  - User controls rules, presets, and thresholds     - 15-min lightweight heartbeat|
+|  - Local ECDSA P-256 signed audit trails            - Offline continuity enforced |
+|  - Offline OCR & local document flattening          - Zero browsing surveillance  |
 +-----------------------------------------------------------------------------------+
 ```
 
-### 1. LOCAL Mode (Standalone Operation)
+### 1. LOCAL Mode (Standalone Operation — Default on Install)
 
-In **LOCAL mode**, the extension functions as an autonomous, self-contained privacy guardian:
-- **No Mandatory Account:** Operates without any user registration, sign-in, or profile creation.
-- **No Mandatory Subscription:** Core PII/PHI detection, page masking, and document redaction are freely available.
-- **No Mandatory Remote Coordination:** Zero network contact with Supabase, cloud databases, or management coordinators.
-- **User Autonomy:** The user configures detection categories, custom regex rules, appearance, and protection presets.
-- **Local Enforcement:** Page text scanning, clipboard sanitization, and document processing run directly on-device.
-- **Local Cryptographic Audit:** Every security event generates a detached ECDSA P-256 signature stored locally in `chrome.storage.local`.
+In **LOCAL mode**, the extension starts and runs as an autonomous, self-contained on-device privacy tool:
+- **Zero Connections on Install:** Makes zero network attempts, runs zero background alarms, and emits zero heartbeats.
+- **No Mandatory Account or Subscription:** Core PII/PHI detection, page masking, and document redaction work immediately without registration or sign-in.
+- **User Autonomy:** You control detection categories, presets, confidence thresholds, custom regex rules, and visual/accessibility preferences.
+- **Local Cryptographic Audit:** Security events are stored locally in `chrome.storage.local` with detached ECDSA P-256 signatures and SHA-256 hash chaining.
 
-### 2. MANAGE Mode (Administrator-Managed Operation)
+### 2. MANAGE Mode (Administrator-Managed Operation — Opt-In / Paired)
 
-In **MANAGE mode**, the extension is enrolled with the organization's **GovernWorld Office Manager** coordination infrastructure:
-- **Centralized Security Directives:** Receives cryptographically signed policy envelopes specifying mandated detection categories, locked protection modes, and restricted domain governance.
-- **Enforcement Integrity:** Administrator-controlled settings cannot be disabled, weakened, or bypassed by employees.
-- **3-Tier Setting Ownership Classification:**
-  1. **Administrator-Controlled:** Mandated detection categories (e.g. SSN, credit cards, medical records), minimum protection mode (`always-on` or `this-tab`), restricted URL lists, and fail-closed security policies. Stored under authoritative policy storage and enforced at every configuration resolution, service-worker handler, and message boundary.
-  2. **User-Controlled:** End-user preferences that do not compromise corporate policy, such as custom redaction logic rules (in non-restricted categories), UI color themes, dyslexia font scaling, sound announcements, and optional notifications.
-  3. **System-Controlled:** Tamper-resistant internals, including ECDSA audit signing keys, SHA-256 canonical hashing, offline WebAssembly assets, and zero-egress network isolation boundaries.
-- **Offline Continuity:** Enforces the last known valid policy when disconnected. If network access to Supabase or the management infrastructure is lost, protection remains active and locked. It never fails open.
-- **Zero Sensitive Data Transmission:** The management channel is strictly limited to authentication, signed policy retrieval, and minimal delivery acknowledgments (policy ID, version, timestamp, and status). Browsing history, page text, clipboard contents, uploaded documents, OCR text, and PHI/PII **never leave the extension**.
+**MANAGE mode** activates only when an organization deploys OS-level managed policy (`chrome.storage.managed`) or an employee explicitly pairs the browser using a 6-digit pairing code or Enterprise Device Enrollment under **Settings → Profile & Account**:
+- **Pairing & Policy Synchronization:** Validates the pairing code with the organization's Office Coordinator (`http://127.0.0.1:4820` or HTTPS coordinator URL), records `ManagementEnrollment` with the device's public installation UUID, and downloads signed administrator rules (`Ed25519` signature + anti-rollback version check + anti-replay nonce/timestamp window).
+- **Administrative Feature Lockdown vs. Employee Accommodations:**
+  - **Locked by Administrator:** Protection modes (`always-on` / `this-tab`), mandated detection categories, preset selection, category filter buttons, confidence threshold overrides, network destination rules, and the custom pattern wizard button are locked so compliance baselines cannot be switched off.
+  - **Unlocked for Employees:** Accessibility and personal usability settings (font scaling, high contrast, dyslexia mode, reduced motion, speech announcements, verbose ARIA, mask highlight colors, UI language, and local notification preferences) remain fully adjustable.
+- **Periodic Lightweight Heartbeat Status Checks:** Strictly post-pairing (never in standalone `LOCAL` mode), `chrome.alarms` schedules a 15-minute check transmitting only non-sensitive health metadata (`device_id`, `organization_id`, `employee_id`, `browser_info`, `extension_version`, `policy_version`, `policy_status`, `timestamp`, `status`).
+- **Zero Surveillance Boundary:** Browsing history, visited URLs, search queries, page text, form inputs, keystrokes, credentials, emails, chats, uploaded documents, OCR text, and detected findings **never leave the device**.
+- **Offline Continuity:** If the coordinator is unreachable, the extension continues enforcing the last valid policy locally and never fails open.
 
 ---
 
@@ -272,10 +271,10 @@ It is critical to distinguish between dynamic policy synchronization and browser
 
 | Attribute | Extension Policy Updates | Extension Software Updates |
 | :--- | :--- | :--- |
-| **Source** | GovernWorld Office Manager via signed envelopes | Browser Web Stores (Chrome Web Store, Firefox AMO, Edge Add-ons) |
-| **Delivery Mechanism** | Extension-initiated retrieval over HTTPS / Supabase | Browser native auto-update mechanism (`update_url`) |
+| **Source** | GovernWorld Office Manager / policy coordinator via signed envelopes | Browser Web Stores (Chrome Web Store, Firefox AMO, Edge Add-ons) |
+| **Delivery Mechanism** | Extension-initiated retrieval (HTTPS / localhost coordinator; MANAGE mode only) | Browser native auto-update mechanism (`update_url`) |
 | **Payload** | JSON policy payload with Ed25519 signature & targeting | Bundled extension ZIP/CRX/XPI binary (JS, HTML, CSS, WASM) |
-| **Frequency** | Dynamic, on-demand (startup, settings, 15-min intervals) | Version releases (e.g. v0.2.0 -> v0.3.0) |
+| **Frequency** | Dynamic, post-pairing (startup, enrollment, 15-min alarm intervals) | Version releases (e.g. v0.3.0 -> v0.4.0) |
 | **User Disruption** | Zero: hot-applied in memory and session state | Extension restarts / reload upon browser update |
 | **Integrity Check** | Ed25519 signature verified against pinned public key | Cryptographic store signing and browser manifest verification |
 | **Rollback Defense** | Monotonic `policy_version` check (rejects older versions) | Browser store rollback policies |
@@ -304,11 +303,10 @@ GovernWorld Extension is engineered for high-assurance data privacy, but users m
 
 ## Troubleshooting & Diagnostics
 
-- **Operating Mode Badge Displays "LOCAL":** The extension is in standalone mode. To enroll in enterprise management, enter your organization's enrollment token in Settings -> Advanced -> Management.
-- **Operating Mode Badge Displays "MANAGE":** The extension is actively enrolled. Administrator-mandated categories display a lock icon and cannot be toggled off.
-- **Policy Synchronization Status:** Check Settings -> Advanced -> Management Status. If offline, the extension displays "Offline (Enforcing Last Valid Policy)".
+- **Operating Mode Badge Displays "LOCAL":** The extension is in standalone mode with zero coordinator connections. To enroll in enterprise management, enter your organization's 6-digit pairing code or enrollment credentials in **Settings → Profile & Account**.
+- **Operating Mode Badge Displays "MANAGE":** The extension is actively paired or OS-managed. Administrator-mandated modes, categories, thresholds, and rule wizards are locked while accessibility settings stay editable.
 - **Document Studio Reports "No Text Layer Found":** Scanned PDFs or photos without embedded text automatically invoke the bundled offline Tesseract OCR engine. Ensure the document is right-side up and legible.
-- **Diagnostic Export:** Download the cryptographically signed audit ledger via Settings -> Privacy & Security -> Export Audit Log.
+- **Diagnostic Export:** Download the signed audit ledger via the **Review** tab (**Export signed audit log**) or **Settings → Privacy → Export signed audit log**.
 
 ---
 
@@ -616,10 +614,10 @@ The codebase includes an extensive automated test suite covering all detection a
 
 ## 💛 Community Support & Sponsorship
 
-GovernWorld is **free for non-commercial use, source-available, and local-only** to ensure your privacy is never compromised:
-- **Zero Cloud Transmission:** All PII/PHI scanning, OCR text extraction, and document flattening happen directly on your local device.
+GovernWorld is **free for non-commercial use and source-available** with local-first processing by default:
+- **On-Device Content Protection:** Page scanning, OCR text extraction, and document flattening run on your local device; scanned page text and uploaded documents stay on your machine.
 - **Zero Data Monetization:** We never sell, log, monetize, or transmit your sensitive documents, scanned values, or browsing activity.
-- **Free for Community Use:** Every core capability is freely accessible for personal, educational, research, and other non-commercial purposes.
+- **Free for Community Use:** Every core protection capability is freely accessible for personal, educational, academic, government, and internal non-commercial use.
 
 If GovernWorld saves you time or protects your sensitive workflows, you can support ongoing development, maintenance of offline models, and validator improvements:
 
@@ -637,4 +635,4 @@ You can also contribute by submitting new regex/checksum patterns, opening issue
 
 Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 
-GovernWorld Extension is **source-available** under the [GovernWorld Source-Available Community License](LICENSE): free for non-commercial community use. You may inspect, modify, fork, and run the extension locally for permitted non-commercial purposes. Commercial use, redistribution, resale, hosting, bundling, or incorporation into a commercial product or service requires a separate commercial license from Andres Chavez Ramirez. This is not an open-source (OSI-approved) license.
+GovernWorld Extension is **source-available** under **Business Source License 1.1 (BSL 1.1)** ([LICENSE](LICENSE)): free for personal, educational, academic, government, and internal non-commercial company use, transitioning to Apache License 2.0 after November 13, 2030. Commercial use, redistribution, resale, hosting, SaaS offerings, or competing products require a separate commercial license from Andres Chavez Ramirez (`andres@acr-logic.com`). This is not an open-source (OSI-approved) license.

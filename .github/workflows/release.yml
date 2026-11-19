@@ -55,6 +55,9 @@ jobs:
       - name: Verify Sidepanel Is In Sync
         run: npm run sync:sidepanel:check
 
+      - name: Verify Release Digests
+        run: npm run verify:digests
+
       - name: Run Test Suite
         run: npm test
 
@@ -78,34 +81,39 @@ jobs:
         id: package
         run: |
           mkdir -p artifacts
-          
+
           # Package Chrome build from dist/
-          cd dist
-          zip "../artifacts/governworld-chrome-${{ github.ref_name }}.zip" .
-          cd ..
-          
-          # Package Firefox build
-          cp manifest.firefox.json dist/manifest.json
-          cd dist
-          zip "../artifacts/governworld-firefox-${{ github.ref_name }}.zip" .
-          cd ..
-          
-          CHROMIUM_ZIP="$(ls artifacts/governworld-chrome-${{ github.ref_name }}.zip)"
-          FIREFOX_ZIP="$(ls artifacts/governworld-firefox-${{ github.ref_name }}.zip)"
+          (cd dist && zip -r -q "../artifacts/governworld-chrome-${{ github.ref_name }}.zip" .)
+
+          # Package Firefox build from dist-firefox/
+          (cd dist-firefox && zip -r -q "../artifacts/governworld-firefox-${{ github.ref_name }}.zip" .)
+
+          CHROMIUM_ZIP="artifacts/governworld-chrome-${{ github.ref_name }}.zip"
+          FIREFOX_ZIP="artifacts/governworld-firefox-${{ github.ref_name }}.zip"
           echo "chromium_zip=$CHROMIUM_ZIP" >> "$GITHUB_OUTPUT"
           echo "firefox_zip=$FIREFOX_ZIP" >> "$GITHUB_OUTPUT"
-          
+
           # Generate checksums
-          sha256sum artifacts/governworld-chrome-${{ github.ref_name }}.zip > artifacts/SHA256SUMS.txt
-          sha256sum artifacts/governworld-firefox-${{ github.ref_name }}.zip >> artifacts/SHA256SUMS.txt
+          sha256sum "$CHROMIUM_ZIP" "$FIREFOX_ZIP" > artifacts/SHA256SUMS.txt
 
       - name: Verify Packaged Zip Structure
         run: |
           node scripts/verify-release-zip.mjs "${{ steps.package.outputs.chromium_zip }}" --check-only
 
+      - name: Check Configured Store Credentials
+        id: store_creds
+        env:
+          CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
+          FIREFOX_JWT_ISSUER: ${{ secrets.FIREFOX_JWT_ISSUER }}
+          EDGE_PRODUCT_ID: ${{ secrets.EDGE_PRODUCT_ID }}
+        run: |
+          if [ -n "$CHROME_CLIENT_ID" ]; then echo "has_chrome=true" >> "$GITHUB_OUTPUT"; else echo "has_chrome=false" >> "$GITHUB_OUTPUT"; fi
+          if [ -n "$FIREFOX_JWT_ISSUER" ]; then echo "has_firefox=true" >> "$GITHUB_OUTPUT"; else echo "has_firefox=false" >> "$GITHUB_OUTPUT"; fi
+          if [ -n "$EDGE_PRODUCT_ID" ]; then echo "has_edge=true" >> "$GITHUB_OUTPUT"; else echo "has_edge=false" >> "$GITHUB_OUTPUT"; fi
+
       # --- Store Publishing: Chrome Web Store ---
       - name: Upload & Publish to Chrome Web Store
-        if: (github.event_name == 'push' || inputs.publish_chrome) && env.CHROME_CLIENT_ID != ''
+        if: (github.event_name == 'push' || inputs.publish_chrome) && steps.store_creds.outputs.has_chrome == 'true'
         uses: mobilefirstllc/cws-publish@v1.0.4
         with:
           action: 'publish'
@@ -114,12 +122,10 @@ jobs:
           refresh_token: ${{ secrets.CHROME_REFRESH_TOKEN }}
           extension_id: ${{ secrets.CHROME_EXTENSION_ID }}
           zip_file: ${{ steps.package.outputs.chromium_zip }}
-        env:
-          CHROME_CLIENT_ID: ${{ secrets.CHROME_CLIENT_ID }}
 
       # --- Store Publishing: Firefox AMO ---
       - name: Sign & Publish to Firefox AMO
-        if: (github.event_name == 'push' || inputs.publish_firefox) && env.FIREFOX_JWT_ISSUER != ''
+        if: (github.event_name == 'push' || inputs.publish_firefox) && steps.store_creds.outputs.has_firefox == 'true'
         uses: wdzeng/firefox-addon-action@v1
         with:
           addon_id: ${{ secrets.FIREFOX_ADDON_ID }}
@@ -127,12 +133,10 @@ jobs:
           jwt_secret: ${{ secrets.FIREFOX_JWT_SECRET }}
           xpi_path: ${{ steps.package.outputs.firefox_zip }}
           self_hosted: false
-        env:
-          FIREFOX_JWT_ISSUER: ${{ secrets.FIREFOX_JWT_ISSUER }}
 
       # --- Store Publishing: Microsoft Edge ---
       - name: Upload to Microsoft Edge Partner Center
-        if: (github.event_name == 'push' || inputs.publish_edge) && env.EDGE_PRODUCT_ID != ''
+        if: (github.event_name == 'push' || inputs.publish_edge) && steps.store_creds.outputs.has_edge == 'true'
         uses: plasmo-corp/edge-addons-action@v1
         with:
           product_id: ${{ secrets.EDGE_PRODUCT_ID }}
@@ -140,8 +144,6 @@ jobs:
           client_secret: ${{ secrets.EDGE_CLIENT_SECRET }}
           access_token_url: ${{ secrets.EDGE_ACCESS_TOKEN_URL }}
           zip_path: ${{ steps.package.outputs.chromium_zip }}
-        env:
-          EDGE_PRODUCT_ID: ${{ secrets.EDGE_PRODUCT_ID }}
 
       # --- GitHub Release Creation ---
       - name: Create GitHub Release

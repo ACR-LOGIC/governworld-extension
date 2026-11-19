@@ -203,7 +203,7 @@ GovernWorld allows enterprises to restrict page-derived network fetches (for ima
 
 ## 5. GovernWorld Office Manager Dynamic Policy Synchronization (MANAGE Mode)
 
-In addition to OS-level `chrome.storage.managed` (GPO / MDM), GovernWorld Extension v0.3.0 supports dynamic policy orchestration via the **GovernWorld Office Manager**:
+In addition to OS-level `chrome.storage.managed` (GPO / MDM), GovernWorld Extension v0.4.0 supports dynamic policy orchestration via the **GovernWorld Office Manager**:
 
 ```
 +-----------------------+         +----------------------------+         +---------------------------+

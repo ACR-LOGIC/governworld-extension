@@ -208,6 +208,7 @@ describe("the print view stays inside the shipped permission set", () => {
       "offscreen",
       "sidePanel",
       "contextMenus",
+      "alarms",
     ]);
   });
 });

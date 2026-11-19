@@ -1,8 +1,8 @@
 # Chrome Web Store Listing — GovernWorld Redaction
 
-> **Last Updated:** 2026-11-08  
+> **Last Updated:** 2026-11-19  
 > **Extension Name:** GovernWorld Redaction  
-> **Extension Version:** 0.2.0  
+> **Extension Version:** 0.4.0  
 > **Target Manifest Version:** Manifest V3  
 > **Status:** Ready for Submission
 
@@ -44,6 +44,7 @@ Every permission declared in `manifest.json` is strictly required for core local
 | `offscreen` | Required to execute CPU-intensive local OCR extraction (Tesseract.js) and PDF canvas rendering in an isolated offscreen context without stalling UI responsiveness. |
 | `sidePanel` | Required to provide a persistent side panel interface (`Alt+Shift+P`) for document scanning, live wizard rule creation, and in-depth instruction viewing. |
 | `contextMenus` | Required to add three on-demand entries to the browser context menu — "Scan page for sensitive data", "Redact selection to clipboard", and "Mask selected text" — so the same user-initiated actions can be started from a right-click. The entries are created only while the setting is enabled and are removed when it is disabled, and each still runs the existing click-to-scan path. |
+| `alarms` | Required to schedule periodic lightweight compliance status checks and policy synchronization strictly when an employee explicitly pairs the extension in organizational `MANAGE` mode. Completely inactive with zero network calls in default standalone `LOCAL` mode. |
 | `notifications` *(optional)* | Requested only if the user explicitly opts into a desktop notification when a scan finds sensitive data. |
 | `http://*/*`, `https://*/*` *(optional host access)* | Requested only if the user switches the always-on paste mode on, so it can guard pages on every visited site. The default this-tab mode needs no site access. Revoking the grant stops always-on coverage. |
 
@@ -56,13 +57,14 @@ Every permission declared in `manifest.json` is strictly required for core local
 
 - **Single Purpose:** Provide local-first detection and redaction of sensitive data in web pages and local files.
 - **Remote Code:** The extension does NOT execute remote code or download scripts dynamically. All scripts and WebAssembly modules are bundled locally within the extension.
-- **Data Collection:** The extension collects **NO user data, NO page content, and NO document bytes**. Everything remains strictly on the local machine.
+- **Data Collection:** In standalone `LOCAL` mode (default on install), the extension makes zero network requests and collects **NO user data, NO page content, and NO document bytes**. Your page text and documents never leave your device.
 
 In accordance with Chrome Web Store Developer Program Policies (Limited Use and Data Minimization requirements):
 
 1. **Manifest Alignment:** The extension declares zero install-time `host_permissions`. The `activeTab` permission grants ephemeral access solely upon explicit user interaction (clicking "Scan this page"). All code and WebAssembly binaries (pdf.js, Tesseract.js) are strictly bundled locally within the extension.
 2. **Developer Dashboard Privacy Practices:** 
    - **Local Page & Document Processing:** Not collected, not transmitted. Executed locally on the user's CPU/GPU without cloud transmission.
+   - **Optional Organizational Pairing (`MANAGE` Mode):** Disabled by default. Only after explicit pairing with an organization pairing code or OS-managed policy does the extension synchronize signed policy JSON envelopes and emit lightweight status checks (device UUID, browser metadata, extension/policy versions, timestamp, health status). Browsing history, visited URLs, search queries, page text, credentials, chats, and personal files are never transmitted.
    - **Optional Account / Cloud Integration:** Disabled by default. If explicitly configured by the user, only billing tier metadata and authentication tokens are transmitted over TLS to the user-specified gateway origin. No scanned text or document bytes are ever included.
    - **Community Packs:** Disabled by default. No outgoing tracking.
    - **Audit Logs:** Stored locally in browser storage with ECDSA digital signature and SHA-256 hash chaining; exported only when the user explicitly clicks "Export Audit Log".
@@ -72,6 +74,13 @@ In accordance with Chrome Web Store Developer Program Policies (Limited Use and 
 
 ## 4. Version History
 
+- **0.4.0 (2026-11-19):** Post-pairing governance, UI/UX redesign, and structured name enrichment release.
+  - Added pairing-gated lightweight heartbeat service (`src/service-worker/heartbeatService.ts`) using `chrome.alarms`, strictly inactive in standalone `LOCAL` mode.
+  - Wired 6-digit Office Manager pairing code flow directly to persistent `ManagementEnrollment` and locked admin-mandated policy controls while preserving employee accessibility accommodations.
+  - Shipped popup and sidepanel UI/UX redesign with circular Profile Avatar Popover, honest live protection status strips, first-run onboarding card, and full 7-language parity.
+  - Added census-backed structured name parsing and enrichment (`Finding.parsedName`) across detection and exports.
+  - Resolved CodeQL alerts and updated dependencies cleanly.
+- **0.3.0 (2026-11-09):** Enterprise managed policy, operating modes (`LOCAL` vs. `MANAGE`), Ed25519 signature verification, anti-rollback protection, and 3-tier setting ownership enforcement.
 - **0.2.0 (2026-11-08):** Explainable compliance scoring, AI leakage prevention, and clinical SOAP intelligence release.
   - Implemented the GovernWorld Explainable Compliance Scorecard (0–100 Risk Formula v1) with deterministic factors: Base Sensitivity, Destination Risk, Action Risk, Volume Risk, and Confidence Modifier.
   - Added HIPAA Combination Rules (e.g. `Patient Name + DOB`, `Patient Name + MRN`, `MRN + DOB + Diagnosis`, and `Complete Patient Profile`).

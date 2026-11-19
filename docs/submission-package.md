@@ -5,27 +5,21 @@ below is verified against the built artifact; nothing here needs to be
 re-derived at upload time.
 
 - **Target:** Chrome Web Store, single purpose, listing type "Extension"
-- **Artifact:** `release/governworld-redaction-2597aec.zip`
-- **Artifact SHA-256:** `9CB7F4CF22FA8F1E5F11EE4EC9CB4D59D526C9D223A215A958F8C7BAA602989B`
-- **Version:** 0.2.0
-- **Published:** https://github.com/ACR-LOGIC/governworld-extension/releases/tag/v0.2.0
-
-> The SHA previously recorded here (`67B9D565…`) never matched the artifact it
-> named — it drifted while the package was repointed across releases. It is now
-> the digest of the file actually being uploaded, and `npm run verify:digests`
-> checks the store assets. Verify the zip itself with:
-> `certutil -hashfile release\governworld-redaction-2597aec.zip SHA256`
-- **Digests for every uploaded file:** `npm run verify:digests`
+- **Artifact:** `governworld-chrome-v0.4.0.zip` (attached to the GitHub Release; or produced locally via `npm run release:zip <sha>`)
+- **Version:** 0.4.0
+- **Published:** https://github.com/ACR-LOGIC/governworld-extension/releases/tag/v0.4.0
+- **Checksums:** `SHA256SUMS.txt` on the GitHub Release and `docs/releases/RELEASE_EVIDENCE.md`
+- **Digests for committed store assets:** `npm run verify:digests`
 
 ---
 
 ## 1. Package
 
-Upload `release/governworld-redaction-2597aec.zip`. That is the file the
+Upload `governworld-chrome-v0.4.0.zip` (from the `v0.4.0` GitHub Release) or the locally built `release/governworld-redaction-<sha>.zip`. That is the file the
 dashboard wants — not the tarball, and not `dist/`.
 
-Verified in the zip itself: `manifest_version: 3`, 28 files, `manifest.json` at
-the archive root with no wrapping folder.
+Verified via `node scripts/verify-release-zip.mjs <zip> --check-only`: `manifest_version: 3`, `manifest.json` at
+the archive root with no wrapping folder, all manifest references, offline WASM/tessdata assets, and legal pages present.
 
 > If you rebuild before submitting, the filename and both digests change.
 > Re-run `npm run release:zip <sha>` and `npm run verify:digests` first.
@@ -89,7 +83,7 @@ Worth writing out, because a reviewer decides the listing on this.
 ## 6. Permission justifications
 
 Copy from `PERMISSIONS.md`. The manifest requests `activeTab`, `scripting`,
-`storage`, `downloads`, `offscreen`, `sidePanel`, `contextMenus`, plus optional
+`storage`, `downloads`, `offscreen`, `sidePanel`, `contextMenus`, `alarms`, plus optional
 `notifications` and optional http(s) host access for the always-on paste mode —
 and **no install-time host permissions at all**, which is the strongest
 privacy statement the listing can make.
@@ -106,8 +100,8 @@ privacy statement the listing can make.
 ## 8. Before you press submit
 
 - [ ] `npm run typecheck` clean
-- [ ] `npm test` — 58 files / 1,078 tests
-- [ ] `npm run build`
+- [ ] `npm test` passing cleanly
+- [ ] `npm run build` clean
 - [ ] `npm run release:zip <sha>` and `npm run verify:zip <zip>`
 - [ ] `npm run verify:digests` — every recorded digest matches
 - [ ] Zip SHA-256 above matches the file you are about to upload

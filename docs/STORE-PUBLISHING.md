@@ -21,7 +21,7 @@ The workflow at `.github/workflows/release.yml` triggers automatically whenever 
    - `npm run build:firefox` (Firefox MV3 with locked gecko id)
    - `npm run build:safari` (Safari handoff payload)
 5. **Contract Tests**: Verifies `manifest.json`, offline WASM/tessdata assets, and Firefox package
-6. **Package Generation**: Runs `npm run release:browsers <sha>` to produce signed zip and tar archives alongside `release/BROWSER_SHA256SUMS`
+6. **Package Generation**: Packages `dist/` into `artifacts/governworld-chrome-<tag>.zip`, `dist-firefox/` into `artifacts/governworld-firefox-<tag>.zip`, and writes `artifacts/SHA256SUMS.txt` (or run `npm run release:browsers <sha>` locally)
 7. **Offline Zip Verification**: `node scripts/verify-release-zip.mjs <zip> --check-only`
 8. **Store Publishing** (Executed if secrets are configured):
    - Chrome Web Store upload & publish
@@ -90,14 +90,11 @@ In your GitHub repository, navigate to **Settings > Secrets and variables > Acti
    npm test
    npm run build:all
    ```
-2. Update version in `package.json` (and `RELEASE_EVIDENCE.md`):
+2. Update the version across `package.json`, `package-lock.json`, `manifest.json`, `manifest.firefox.json`, `src/api/config.ts`, `src/landing/index.html`, and release documentation (`RELEASE_NOTES.md`, `RELEASE_EVIDENCE.md`).
+3. Commit (signed) and create a signed release tag:
    ```bash
-   npm version patch  # or minor / major
-   ```
-3. Commit and tag the release:
-   ```bash
-   git commit -am "chore(release): vX.Y.Z"
-   git tag vX.Y.Z
+   git commit -S -am "chore(release): vX.Y.Z"
+   git tag -s vX.Y.Z -m "GovernWorld Extension vX.Y.Z"
    git push origin main --tags
    ```
 4. GitHub Actions will execute `.github/workflows/release.yml`, packaging all artifacts, uploading to configured stores, and publishing the GitHub Release with SHA-256 sums.

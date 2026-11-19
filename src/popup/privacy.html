@@ -883,7 +883,9 @@
              <div class="permission"><span class="permission__name">downloads</span><span>Save the flattened redacted document you create.</span></div>
              <div class="permission"><span class="permission__name">offscreen</span><span>Run document OCR and rendering in a dedicated offscreen document.</span></div>
              <div class="permission"><span class="permission__name">sidePanel</span><span>Show the side panel for scanning, document redaction, notifications, and account management.</span></div>
-             <div class="permission"><span class="permission__name">host permissions</span><span>Contact only approved GovernWorld API, community, and production frontend origins when you explicitly use an optional linked service.</span></div>
+             <div class="permission"><span class="permission__name">contextMenus</span><span>Provide right-click context menu shortcuts for on-demand scanning and text masking.</span></div>
+             <div class="permission"><span class="permission__name">alarms</span><span>Schedule periodic lightweight compliance status checks and policy synchronization only when paired in MANAGE mode; completely inactive with zero network calls in standalone LOCAL mode.</span></div>
+             <div class="permission"><span class="permission__name">host permissions <em style="font-size:11px;color:var(--text-faint)">(optional, runtime)</em></span><span>Zero install-time host permissions. Runtime-granted http(s) access applies only if you enable Always-on paste protection; optional linked services contact only their configured origins.</span></div>
              <div class="permission"><span class="permission__name">notifications <em style="font-size:11px;color:var(--text-faint)">(optional)</em></span><span>Raise a notification when a scan finds sensitive data — requested at runtime, only after you enable the toggle.</span></div>
           </div>
           <p>No <code>*://*</code> host permissions are requested. See PERMISSIONS.md for the full justification.</p>

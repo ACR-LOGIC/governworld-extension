@@ -20,6 +20,7 @@ import {
   ManagementEnrollment,
 } from "../src/shared/managedPolicy.js";
 import { loadEnterprisePolicy } from "../src/shared/enterprisePolicy.js";
+import { CURRENT_EXTENSION_VERSION } from "../src/api/config.js";
 
 describe("Standalone LOCAL mode vs Managed Pairing & Heartbeat", () => {
   let localStorageMock: Record<string, unknown> = {};
@@ -68,7 +69,7 @@ describe("Standalone LOCAL mode vs Managed Pairing & Heartbeat", () => {
         }),
       },
       runtime: {
-        getManifest: () => ({ version: "0.3.0" }),
+        getManifest: () => ({ version: CURRENT_EXTENSION_VERSION }),
       },
     };
 
@@ -146,7 +147,7 @@ describe("Standalone LOCAL mode vs Managed Pairing & Heartbeat", () => {
     expect(payload.organization_id).toBe("org_governworld_corp");
     expect(payload.employee_id).toBe("emp_101");
     expect(payload.browser_info).toBeDefined();
-    expect(payload.extension_version).toBe("0.3.0");
+    expect(payload.extension_version).toBe(CURRENT_EXTENSION_VERSION);
     expect(payload.policy_version).toBeGreaterThanOrEqual(1);
     expect(payload.status).toBe("healthy");
 
@@ -193,5 +194,49 @@ describe("Standalone LOCAL mode vs Managed Pairing & Heartbeat", () => {
     expect(typeof info.name).toBe("string");
     expect(typeof info.version).toBe("string");
     expect(typeof info.platform).toBe("string");
+  });
+
+  it("rejects insecure non-localhost HTTP coordinator URLs without calling fetch and permits localhost HTTP", async () => {
+    // 1. Insecure remote HTTP URL must fail closed before fetch
+    await saveManagementEnrollment({
+      organization_id: "org_governworld_corp",
+      organization_name: "GovernWorld Corp",
+      employee_id: "emp_101",
+      device_id: "dev_uuid_12345",
+      coordinator_url: "http://coordinator.example.com",
+      enrolled_at: new Date().toISOString(),
+      management_mode: "MANAGE",
+    });
+
+    const insecureResult = await sendHeartbeatStatusCheck();
+    expect(insecureResult.mode).toBe("MANAGE");
+    expect(insecureResult.sent).toBe(false);
+    expect(insecureResult.status).toBe("error");
+    expect(insecureResult.error).toMatch(/HTTPS|Insecure/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    // 2. Localhost HTTP coordinator URL (http://127.0.0.1:4820) must be permitted
+    await saveManagementEnrollment({
+      organization_id: "org_governworld_corp",
+      organization_name: "GovernWorld Corp",
+      employee_id: "emp_101",
+      device_id: "dev_uuid_12345",
+      coordinator_url: "http://127.0.0.1:4820/",
+      enrolled_at: new Date().toISOString(),
+      management_mode: "MANAGE",
+    });
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ status: "acknowledged" }),
+    });
+
+    const localResult = await sendHeartbeatStatusCheck();
+    expect(localResult.mode).toBe("MANAGE");
+    expect(localResult.sent).toBe(true);
+    expect(localResult.status).toBe("sent");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe("http://127.0.0.1:4820/api/v1/management/heartbeat");
   });
 });

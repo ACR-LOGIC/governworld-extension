@@ -1,8 +1,9 @@
 # GovernWorld Chrome Extension — Privacy Policy
 
 - **Version:** 2.0.0
+- **Applies to Extension Version:** 0.4.0
 - **Effective date:** September 24, 2026
-- **Last updated:** September 24, 2026
+- **Last updated:** November 19, 2026
 - **Product:** GovernWorld Chrome Extension
 - **Developer:** ACR LOGIC
 - **Website:** governworld.acrlogic.com

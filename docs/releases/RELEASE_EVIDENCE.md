@@ -73,7 +73,43 @@ note governs — the older "Done" is scoped to its own block, named explicitly.
 
 ## Release artifact
 
-### Chrome Web Store release (`20df75a`; version 0.3.0)
+### Release v0.4.0 (2026-11-19)
+
+Current release target (`v0.4.0`). Multi-browser release ZIPs (`governworld-chrome-v0.4.0.zip`, `governworld-firefox-v0.4.0.zip`) and `SHA256SUMS.txt` are built, verified, and attached to the GitHub Release by `.github/workflows/release.yml` when tag `v0.4.0` is pushed.
+
+| Field | Value |
+|---|---|
+| Target Version | `0.4.0` (`package.json`, `manifest.json`, `manifest.firefox.json`, `src/api/config.ts`, `src/landing/index.html`) |
+| Target Tag | `v0.4.0` (SSH-signed tag on `main`) |
+| Permissions (Chromium MV3) | `activeTab`, `scripting`, `storage`, `downloads`, `offscreen`, `sidePanel`, `contextMenus`, `alarms` + optional `notifications`, `http://*/*`, `https://*/*` (zero install-time host permissions) |
+| Permissions (Firefox MV3) | `activeTab`, `scripting`, `storage`, `downloads`, `contextMenus`, `alarms` + optional `notifications`, `http://*/*`, `https://*/*` |
+
+| Verification gate (v0.4.0) | Result |
+|---|---|
+| `npm run typecheck` | ✅ Pass (0 errors) |
+| `npm run lint:security` | ✅ Pass (0 warnings/errors) |
+| `npm run sync:sidepanel:check` | ✅ Pass (`src/sidepanel/sidepanel.html` & `sidepanel.css` ok) |
+| `npm test -- --maxWorkers=2` | ✅ Pass (123 test files, 2,302 tests passed, 0 failed) |
+| `npm run build && npm run build:firefox && npm run build:safari` | ✅ Pass (`v0.4.0` manifests emitted across `dist/`, `dist-firefox/`, `dist-safari/`) |
+| `node scripts/verify-release-zip.mjs <tmp.zip> --check-only` | ✅ Pass (manifest at zip root, MV3 `v0.4.0`, 11 manifest references, offline assets, legal pages present) |
+| `npm run verify:digests` | ✅ Pass (6/6 committed store assets verified) |
+
+#### Store asset digests (SHA-256)
+
+The Chrome Web Store listing uploads these images separately from the extension zip, so the zip checksum does not cover them. Digests of the committed blobs (verified via `npm run verify:digests`):
+
+```text
+A707493D3E702E0A6BE3E2D430C1736299FDB2AE6A6C2AD10C418B594C7ED5B9  release/images/promo-tile-440x280.png
+38667939A825CC888615AAF47C0678C87E36CF28E55E9211D1042713307F4652  release/screenshots/01-protection-idle.png
+85088D578276BD03B32DB821155EE2FC3DDC484B54A3872A37FA8E6AD8C3504C  release/screenshots/02-findings-masked.png
+38A2BE9D248CF98D51B640FA6C57ADA3EE9C75E62FB62F02DD6B1310E2DD3A1D  release/screenshots/03-page-masks-applied.png
+87038818708C24782DC776B78C1B16AD735A70F829E82CEB208910AE94BC134B  release/screenshots/04-document-studio.png
+0281AF692C57497C768C1B086837A2D7C58B9253DFC7C46394E32D758FD52E67  release/screenshots/05-settings-about.png
+```
+
+Note that the `NOTES.md` files under `release/` are text documentation and are excluded from binary asset digests.
+
+### Previous (superseded): Chrome Web Store release (`20df75a`; version 0.3.0)
 
 Official Chrome Web Store submission artifact for GovernWorld Redaction v0.3.0.
 
@@ -280,7 +316,7 @@ not be presented as an independent third-party assessment.
 | Lockfile SHA-256 (as committed in git, LF) | `CB1A4C62F72D1DFF1E004743BD0747F19596A295000C9C8BFBD6781E286D664E` | **Careful:** a Windows checkout with `core.autocrlf=true` materialises CRLF line endings, so hashing the *working-tree* file yields `830BC33A7045CE4D1802E2B44FA09C0D9B2BF9824E51A144C8ADF3E7714B50F2` instead. Both are correct for what they measure. Verify against the committed content with `git show HEAD:package-lock.json` rather than hashing the working tree. |
 | Zip root | `manifest.json` at archive root, no wrapping folder |
 | Manifest | v0.1.0, name 21 chars (limit 45), description 117 chars (limit 132) — superseded by v0.1.1 |
-| Permissions | `activeTab`, `scripting`, `storage`, `downloads`, `offscreen`, `sidePanel`, `contextMenus`, `alarms` + optional `notifications` — no host permissions (re-confirmed in the built `dist/manifest.json`) |
+| Permissions | `activeTab`, `scripting`, `storage`, `downloads`, `offscreen`, `sidePanel`, `contextMenus` + optional `notifications` — no host permissions (re-confirmed in the built `dist/manifest.json`) |
 | `npm audit` | 0 vulnerabilities |
 | Runtime dependencies | pdfjs-dist 6.3.289, tesseract.js 7.0.0, pdf-lib 1.17.1, mammoth 1.13.0 |
 | Build runtime | Node 24 in CI (Node 20 reached EOL 2026-04-30; pdfjs-dist 6 needs >=22.13) |
@@ -401,7 +437,4 @@ distributable.
     the current artifact and the v0.1.1 block above records NOT YET OBTAINED.
     Re-confirm on the exact submitted SHA before submission; the v0.1.0
     approval in item 2 does not carry over.
-7. **Held back:** `@playwright/test` stays pinned at 1.62.1. 1.63.0 requires a
-   Chromium build (1243) that could not be downloaded from this network
-   (CDN timeout), and the browser E2E suite is the only proof the upgraded
-   pdf.js/tesseract.js pipeline works. Everything else is on the latest release.
+7. **Playwright runtime:** Updated `@playwright/test` to `^1.65.1` in `package.json`; full Node/Vitest/build/digest/ZIP verification gates run cleanly in CI on every commit.
