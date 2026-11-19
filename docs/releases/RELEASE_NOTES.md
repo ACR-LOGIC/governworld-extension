@@ -1,12 +1,33 @@
 # GovernWorld Extension — Release Notes
 
-## Version 0.3.0 (Release Target: 2026-11-09)
+## Version 0.4.0 (2026-11-19)
+
+GovernWorld Extension v0.4.0 delivers post-pairing governance with zero-egress standalone defaults, the redesigned popup and sidepanel experience, census-backed structured name intelligence, and release automation fixes.
+
+### What's New in v0.4.0
+
+1. **Pairing-Gated Heartbeat & Zero-Egress Standalone Default:**
+   - Fresh installations boot strictly in standalone `LOCAL` mode with zero network connections, zero background alarms, and zero heartbeats.
+   - Added [`src/service-worker/heartbeatService.ts`](../../src/service-worker/heartbeatService.ts) using `chrome.alarms` (15-minute cadence), strictly gated to `MANAGE` mode and validated via `validateApiUrl()` (HTTPS required for remote hosts; localhost HTTP permitted for the local Office Coordinator).
+   - Transmits only minimal compliance metadata (`device_id`, `organization_id`, `employee_id`, sanitized `browser_info`, `extension_version`, `policy_version`, `policy_status`, `timestamp`, `status`) — never browsing history, visited URLs, search queries, page content, credentials, chats, or personal files.
+2. **Office Manager Pairing & Administrative UI Lockdown:**
+   - Submitting a 6-digit pairing code in **Settings → Profile & Account** persists `ManagementEnrollment` (`management_mode: "MANAGE"`), notifies the service worker, pulls organization policies, and arms the heartbeat alarm; unpairing tears down enrollment and clears the alarm immediately.
+   - When under locked administrative policy, compliance controls (`paste-guard-toggle`, `always-on-toggle`, `preset-select`, category filter buttons, confidence threshold controls, and the custom pattern wizard button) are locked, while employee accessibility and cosmetic controls (font scaling, high contrast, dyslexia mode, reduced motion, speech announcements, mask styling, and UI language) remain unlocked.
+3. **Popup & Sidepanel UI/UX Redesign + 7-Language Parity:**
+   - Shipped circular top-right Profile Avatar Popover, compact live protection status strips, first-run onboarding card, fluid responsive sidepanel layout, and full 7-language i18n parity (`en`, `es`, `fr`, `de`, `ja`, `pt`, `zh`).
+4. **Structured Name Enrichment & Security Hardening:**
+   - Added census-backed structured name parsing (`Finding.parsedName`) across detection and CSV/JSON exports.
+   - Resolved CodeQL alerts, updated dependencies, removed abandoned `redesign/` prototype and stale review/scratch clutter, and fixed `.github/workflows/release.yml` recursive multi-browser ZIP packaging.
+
+---
+
+## Version 0.3.0 (2026-11-09)
 
 GovernWorld Extension v0.3.0 introduces enterprise policy governance through the **GovernWorld Office Manager** coordination framework, formalized two-tier operating modes (**LOCAL** and **MANAGE**), a 3-tier setting ownership hierarchy, Ed25519 cryptographic policy verification, and offline continuity guarantees, while maintaining directly on-device zero-egress data privacy.
 
 ---
 
-### Highlights & Key Capabilities
+### Highlights & Key Capabilities (v0.3.0)
 
 1. **Two Distinct Operating Modes:**
    - **LOCAL Mode (Standalone):** Autonomous, on-device operation requiring no account, no subscription, and no network coordination. Users maintain full control over detection categories, custom rules, and UI preferences.
@@ -18,7 +39,8 @@ GovernWorld Extension v0.3.0 introduces enterprise policy governance through the
    - **System-Controlled:** Tamper-resistant cryptographic audit signing (ECDSA P-256), offline WebAssembly OCR models, and strict zero-egress network sandboxing.
 
 3. **Managed Policy Receiving & Cryptographic Security:**
-   - **Cryptographic Ed25519 Signature Verification:** Policies received from the Office Manager via Supabase coordination infrastructure must be signed with the administrator's private key and verified against a pinned public key (`TRUSTED_POLICY_PUBLIC_KEY_JWK`). Unsigned or invalidly signed policies are rejected with `SIGNATURE_INVALID`.
+   - **Managed Policy Receiving & Cryptographic Security:**
+   - **Cryptographic Ed25519 Signature Verification:** Policies received from the Office Manager or policy coordinator must be signed with the administrator's private key and verified against a pinned public key (`TRUSTED_POLICY_PUBLIC_KEY_JWK`). Unsigned or invalidly signed policies are rejected with `SIGNATURE_INVALID`.
    - **Deterministic Content Canonicalization:** Policy objects are canonically formatted and SHA-256 hashed prior to signature verification, preventing formatting attacks.
    - **Anti-Rollback / Anti-Downgrade Defense:** Strictly monotonic `policy_version` numbering. Policies with version numbers equal to or lower than the currently applied version are rejected with `VERSION_DOWNGRADE`.
    - **Anti-Replay Defense:** Enforces fresh nonces and timestamp verification within an allowable validation window (+/- 5 minutes).
@@ -32,7 +54,7 @@ GovernWorld Extension v0.3.0 introduces enterprise policy governance through the
 
 5. **Local-First Zero-Egress Privacy:**
    - Scanned page text, clipboard contents, uploaded documents (PDF, DOCX, images), OCR text, PHI/PII, and AI conversation contents are processed directly on-device.
-   - Zero sensitive content is ever sent to Supabase or the Office Manager.
+   - Zero sensitive content is ever sent to the Office Manager or external servers.
 
 6. **Employee Pairing Code & Lightweight Status Checks (Heartbeat):**
    - **Standalone LOCAL Default:** Fresh installs make zero network requests and send no background heartbeats.
@@ -74,5 +96,5 @@ GovernWorld Extension v0.3.0 introduces enterprise policy governance through the
 
 ### Upgrade & Migration Guide
 
-- **Existing v0.2.0 Users:** Automatically retain all existing settings, custom rules, and audit records in `chrome.storage.local`. The extension defaults to **LOCAL** mode with full standalone functionality.
-- **Enrolling in MANAGE Mode:** Navigate to Settings -> Advanced -> Management and enter the organization enrollment credentials provided by your GovernWorld administrator.
+- **Existing Users:** Automatically retain all existing settings, custom rules, and audit records in `chrome.storage.local`. The extension defaults to **LOCAL** mode with full standalone functionality.
+- **Enrolling in MANAGE Mode:** Navigate to **Settings → Profile & Account** to enter a 6-digit Office Manager pairing code or configure Enterprise Device Enrollment credentials provided by your GovernWorld administrator.

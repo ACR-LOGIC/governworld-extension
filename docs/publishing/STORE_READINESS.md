@@ -77,8 +77,8 @@ text, at least 640x400, PNG or JPEG.
       `contextMenus`, `alarms`; no `<all_urls>`, no `tabs`). Every declared permission
       is justified in `PERMISSIONS.md` and named in `STORE_DESCRIPTION.md`.
 - [x] Single-purpose description aligned with actual behavior.
-- [x] Privacy policy drafted (`PRIVACY.md`), versioned v1.0.0 with support
-      contact; pending publication at the canonical URL after push.
+- [x] Privacy policy updated (`PRIVACY.md`, versioned v2.0.0) with support
+      contact and published at the canonical URL.
 - [x] Permission justification drafted (`PERMISSIONS.md`).
 - [x] Listing description finalized in `STORE_DESCRIPTION.md` to match the
       enforced local-only behavior and current permissions.
@@ -149,7 +149,7 @@ text, at least 640x400, PNG or JPEG.
 - [x] Optional redaction labels (`maskPlaceholders`): when enabled, applied
       mask blocks show a short white label (e.g. `[SSN]`, `[DOB]`,
       `[API KEY]`) identifying what was covered. Off by default.
-- [x] **Release ZIP generated & verified** from reviewed commit `2597aec` (`release/governworld-redaction-2597aec.zip`, SHA-256 `9CB7F4CF22FA8F1E5F11EE4EC9CB4D59D526C9D223A215A958F8C7BAA602989B`). Verified via `node scripts/verify-release-zip.mjs release/governworld-redaction-2597aec.zip --check-only` (manifest at zip root, all 11 manifest references, offline WASM/tessdata assets, and legal pages present).
+- [x] **Release v0.4.0 packaging & CI pipeline:** Automated via `.github/workflows/release.yml` on tag `v0.4.0` (verified locally via `npm run build:all` and `node scripts/verify-release-zip.mjs <zip> --check-only`; historical `2597aec` v0.2.0 submission record preserved in `RELEASE_EVIDENCE.md`).
 
 ## Deployment note (gateway adapter, spec step 8)
 

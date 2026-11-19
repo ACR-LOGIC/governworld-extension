@@ -13,10 +13,9 @@
 import {
   loadManagementEnrollment,
   loadLastAppliedManagedPolicy,
-  ManagementEnrollment,
 } from "../shared/managedPolicy.js";
 import { loadEnterprisePolicy } from "../shared/enterprisePolicy.js";
-import { getInstallationId, CURRENT_EXTENSION_VERSION } from "../api/config.js";
+import { getInstallationId, CURRENT_EXTENSION_VERSION, validateApiUrl } from "../api/config.js";
 
 export const ALARM_NAME_HEARTBEAT = "gw_management_heartbeat";
 export const HEARTBEAT_INTERVAL_MINUTES = 15;
@@ -109,12 +108,22 @@ export async function sendHeartbeatStatusCheck(): Promise<HeartbeatResult> {
   };
 
   const coordinatorUrl = enrollment.coordinator_url || "http://127.0.0.1:4820";
-  const endpoint = `${coordinatorUrl.replace(/\/+$/, "")}/api/v1/management/heartbeat`;
+  const urlCheck = validateApiUrl(coordinatorUrl);
+  if (!urlCheck.valid || !urlCheck.normalizedUrl) {
+    return {
+      mode: "MANAGE",
+      sent: false,
+      status: "error",
+      error: urlCheck.error ?? "Invalid coordinator URL",
+      payload,
+    };
+  }
+  const endpoint = `${urlCheck.normalizedUrl}/api/v1/management/heartbeat`;
+
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), 8000) : null;
 
   try {
-    const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
-    const timeoutId = controller ? setTimeout(() => controller.abort(), 8000) : null;
-
     const res = await fetch(endpoint, {
       method: "POST",
       headers: {
@@ -124,8 +133,6 @@ export async function sendHeartbeatStatusCheck(): Promise<HeartbeatResult> {
       body: JSON.stringify(payload),
       ...(controller ? { signal: controller.signal } : {}),
     });
-
-    if (timeoutId) clearTimeout(timeoutId);
 
     if (!res.ok) {
       return {
@@ -152,6 +159,8 @@ export async function sendHeartbeatStatusCheck(): Promise<HeartbeatResult> {
       error: message,
       payload,
     };
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
   }
 }
 

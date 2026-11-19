@@ -45,7 +45,7 @@ If GovernWorld helps protect your privacy or workflow, you can support ongoing m
 1. Clone this repository:
    ```bash
    git clone https://github.com/ACR-LOGIC/governworld-extension.git
-   cd governworld-chrome-extension
+   cd governworld-extension
    ```
 2. Install dependencies:
    ```bash

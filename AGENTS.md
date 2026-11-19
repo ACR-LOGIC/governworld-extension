@@ -13,8 +13,9 @@ This document outlines the engineering setup for the GovernWorld Chrome Extensio
 - `src/shared/`: Common utilities, types, and helper functions shared across contexts
 
 #### scripts/
+- `build.mjs`: Main Chromium build configuration (at repo root)
 - `scripts/build-firefox.mjs`: Firefox-specific build configuration
-- `scripts/build.mjs`: Main Chromium build configuration
+- `scripts/build-safari.mjs`: Safari handoff payload build configuration
 - `scripts/verify-release-zip.mjs`: Release verification and validation script
 - Additional automation and build scripts
 
@@ -45,7 +46,6 @@ This document outlines the engineering setup for the GovernWorld Chrome Extensio
 #### docs/releases/
 - `RELEASE_EVIDENCE.md`: Release verification evidence and checksums
 - `RELEASE_NOTES.md`: Release notes and version information
-- `TEST_READY.md`: Test readiness and validation checklist
 
 ### Publishing Documentation
 
@@ -179,9 +179,9 @@ The extension includes 24 detection categories:
 ## Development Environment
 
 ### Prerequisites
-- Node.js 20+ LTS
+- Node.js 22.13+ (CI runs Node 24 Active LTS)
 - Chrome 116+ or Firefox 109+
-- npm or pnpm
+- npm 10+
 
 ### Build Commands
 ```bash
@@ -253,7 +253,7 @@ npm run build:safari
 
 ## Project Status
 
-The repository is actively maintained with continuous improvements in:
+Current release version: `0.4.0`. The repository is actively maintained with continuous improvements in:
 - Detection algorithm accuracy
 - Security hardening
 - Accessibility compliance
