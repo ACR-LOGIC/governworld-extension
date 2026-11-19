@@ -23,20 +23,17 @@ The workflow at `.github/workflows/release.yml` triggers automatically whenever 
 5. **Contract Tests**: Verifies `manifest.json`, offline WASM/tessdata assets, and Firefox package
 6. **Package Generation**: Packages `dist/` into `artifacts/governworld-chrome-<tag>.zip`, `dist-firefox/` into `artifacts/governworld-firefox-<tag>.zip`, and writes `artifacts/SHA256SUMS.txt` (or run `npm run release:browsers <sha>` locally)
 7. **Offline Zip Verification**: `node scripts/verify-release-zip.mjs <zip> --check-only`
-8. **Store Publishing** (Executed if secrets are configured):
-   - Chrome Web Store upload & publish
-   - Firefox AMO signing & submission
-   - Microsoft Edge Add-ons submission
-9. **GitHub Release**: Creates an official release with downloadable browser bundles and SHA-256 sums.
+8. **GitHub Release Creation**: Uses only SHA-pinned GitHub-owned actions (`actions/checkout`, `actions/setup-node`) and the built-in `gh release create` CLI (complying with the repository's `selected-actions` security policy) to publish the official GitHub Release with `governworld-chrome-<tag>.zip`, `governworld-firefox-<tag>.zip`, and `SHA256SUMS.txt`.
+9. **Store Submissions**: Chrome Web Store, Firefox AMO, and Microsoft Edge Partner Center uploads are performed from those verified GitHub Release ZIPs (or via API upload steps once store secrets are configured and approved under the Actions policy).
 
 ---
 
 ## 2. Store Secrets Configuration
 
-In your GitHub repository, navigate to **Settings > Secrets and variables > Actions** and configure the secrets below.
+To automate store uploads from CI or local release scripts, configure the credentials below in **Settings > Secrets and variables > Actions** (and add approved upload steps when ready).
 
 > [!NOTE]
-> If secrets for a particular store are not yet configured, the workflow gracefully skips that store's upload step while still generating all verified bundles and the GitHub Release.
+> The repository's Actions policy currently permits GitHub-owned and verified actions only (`selected-actions`), so `.github/workflows/release.yml` intentionally excludes unverified third-party store-upload actions and publishes verified browser bundles directly to GitHub Releases.
 
 ### A. Chrome Web Store
 | Secret Name | Description |
