@@ -294,4 +294,66 @@ describe("Content Script Live Incremental Rescan (P1 / P2 / P3)", () => {
     expect(afterEditLabels.some((l) => l.startsWith("email:"))).toBe(false);
     expect(afterEditLabels.some((l) => l.startsWith("ssn:"))).toBe(true);
   });
+
+  it("emits updated SCAN_RESULT messages on added-node and characterData mutations (P3)", async () => {
+    document.body.innerHTML = '<div id="p3-host"><p id="p3-char">clean initial text</p></div>';
+    env = setupContentEnvironment();
+    await import("../src/content/content.js");
+
+    await env.dispatchMessage({
+      type: "SCAN_PAGE",
+      requestId: "req-p3-init",
+      sessionId: "sess-p3-1",
+      mode: "local",
+      settings: defaultSettings(),
+    });
+
+    const initialResults = env.sentMessages.filter((m) => m.type === "SCAN_RESULT");
+    expect(initialResults).toHaveLength(1);
+    expect(initialResults[0]).toMatchObject({
+      type: "SCAN_RESULT",
+      requestId: "req-p3-init",
+      sessionId: "sess-p3-1",
+    });
+    expect((initialResults[0] as { findings: unknown[] }).findings).toHaveLength(0);
+
+    // 1. Added-node mutation containing SSN -> emits SCAN_RESULT with count 1
+    env.sentMessages.length = 0;
+    const host = document.getElementById("p3-host")!;
+    const added = document.createElement("p");
+    added.textContent = "Patient SSN: 219-09-9999";
+    host.appendChild(added);
+
+    await new Promise((r) => setTimeout(r, 850));
+
+    const afterAddResults = env.sentMessages.filter((m) => m.type === "SCAN_RESULT") as Array<{
+      requestId: string;
+      sessionId: string;
+      findings: Array<{ category: string }>;
+    }>;
+    expect(afterAddResults.length).toBeGreaterThanOrEqual(1);
+    const latestAfterAdd = afterAddResults[afterAddResults.length - 1]!;
+    expect(latestAfterAdd.sessionId).toBe("sess-p3-1");
+    expect(latestAfterAdd.requestId.startsWith("rescan_")).toBe(true);
+    expect(latestAfterAdd.findings.length).toBe(1);
+    expect(latestAfterAdd.findings[0]?.category).toBe("ssn");
+
+    // 2. characterData mutation on existing text node -> emits SCAN_RESULT with count 2
+    env.sentMessages.length = 0;
+    const charNode = document.getElementById("p3-char")!.firstChild as Text;
+    charNode.data = "Updated contact: p3.char@example.test";
+
+    await new Promise((r) => setTimeout(r, 850));
+
+    const afterCharResults = env.sentMessages.filter((m) => m.type === "SCAN_RESULT") as Array<{
+      requestId: string;
+      sessionId: string;
+      findings: Array<{ category: string }>;
+    }>;
+    expect(afterCharResults.length).toBeGreaterThanOrEqual(1);
+    const latestAfterChar = afterCharResults[afterCharResults.length - 1]!;
+    expect(latestAfterChar.sessionId).toBe("sess-p3-1");
+    expect(latestAfterChar.requestId.startsWith("rescan_")).toBe(true);
+    expect(latestAfterChar.findings.map((f) => f.category).sort()).toEqual(["email", "ssn"]);
+  });
 });

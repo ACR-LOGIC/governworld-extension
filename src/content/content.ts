@@ -75,6 +75,10 @@ if (g.__gwRedactionContentLoaded !== true) {
   let mutationDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   let nextRescanSegId = 0;
   let nextRescanFindingSeq = 0;
+  let lastAttrChars = 0;
+  let lastTruncated = false;
+  let lastCoverageStatus: import("../shared/types.js").ScanCoverageStatus | undefined;
+  let lastDeferredMediaCount = 0;
 
   function clearSession() {
     sessionId = null;
@@ -90,6 +94,10 @@ if (g.__gwRedactionContentLoaded !== true) {
     pendingMutationBatch = null;
     nextRescanSegId = 0;
     nextRescanFindingSeq = 0;
+    lastAttrChars = 0;
+    lastTruncated = false;
+    lastCoverageStatus = undefined;
+    lastDeferredMediaCount = 0;
     if (mutationDebounceTimer !== null) {
       clearTimeout(mutationDebounceTimer);
       mutationDebounceTimer = null;
@@ -604,37 +612,45 @@ if (g.__gwRedactionContentLoaded !== true) {
       }
     }
 
+    lastAttrChars = attrChars;
+    lastTruncated = canonical.truncated || customPatternsPartiallyScanned;
+    lastCoverageStatus = coverageStatus;
+    lastDeferredMediaCount = deferredMediaCount;
+
+    const imageCandidates = (combined.length === 0 || (combined.length < 300 && findings.length === 0)) ? collectImageCandidates() : undefined;
+
+    emitScanResult(requestId, {
+      ...(imageCandidates ? { imageCandidates } : {}),
+      ...(visualQueue ? { visualQueue } : {}),
+      ...(pdfQueue ? { pdfQueue } : {}),
+    });
+  }
+
+  function emitScanResult(
+    requestId: string,
+    extraStats: Record<string, unknown> = {}
+  ): void {
+    if (!sessionId) return;
     const result: Finding[] = findings.map((f) => ({
       ...f,
       rects: f.rects.map((r) => ({ ...r })),
     }));
-
-    // Bound the result to the runtime message limit; the true count travels
-    // alongside so the UI can report partial results honestly.
     const capped = capFindingsForTransport(result);
-
-    // Collect image candidates for the popup's "Scan images" offer.
-    // Previously only fired on zero-text pages; now fires always so the popup
-    // always knows what images are present regardless of DOM text content.
-    const imageCandidates = (combined.length === 0 || (combined.length < 300 && findings.length === 0)) ? collectImageCandidates() : undefined;
-
     respond(
       {
         type: "SCAN_RESULT",
         requestId,
-        sessionId: sessionId as string,
+        sessionId,
         findings: capped.findings,
         stats: {
           visibleChars: combined.length,
-          attrChars,
-          truncated: canonical.truncated || customPatternsPartiallyScanned,
+          attrChars: lastAttrChars,
+          truncated: lastTruncated,
           findingsTruncated: capped.findingsTruncated,
           totalFindings: capped.totalFindings,
-          ...(imageCandidates ? { imageCandidates } : {}),
-          ...(visualQueue ? { visualQueue } : {}),
-          ...(pdfQueue ? { pdfQueue } : {}),
-          ...(deferredMediaCount > 0 ? { deferredMediaCount } : {}),
-          ...(coverageStatus !== undefined ? { coverageStatus } : {}),
+          ...(lastDeferredMediaCount > 0 ? { deferredMediaCount: lastDeferredMediaCount } : {}),
+          ...(lastCoverageStatus !== undefined ? { coverageStatus: lastCoverageStatus } : {}),
+          ...extraStats,
         },
       },
       requestId
@@ -1170,6 +1186,10 @@ if (g.__gwRedactionContentLoaded !== true) {
     } else {
       overlay?.clear();
     }
+
+    // Notify service worker and popup after every incremental rescan so badge
+    // and findings count stay synchronized with on-page overlay masks (Task P3).
+    emitScanResult(`rescan_${Date.now()}`);
   }
 
   function mergeMutationBatch(existing: MutationBatch | null, incoming: MutationBatch): MutationBatch {

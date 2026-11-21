@@ -496,7 +496,7 @@ try {
         p.textContent = `Incremental SSN 219-09-999${idx % 10}`;
         document.getElementById("batch-container").appendChild(p);
       }, t);
-      await page.waitForTimeout(900);
+      await page.waitForTimeout(1000);
       const sessionFindings = await sw.evaluate(async (tabId) => {
         const raw = await chrome.storage.session.get(`scan:${tabId}`);
         return raw[`scan:${tabId}`]?.findings?.length ?? 0;
@@ -520,6 +520,10 @@ try {
       console.log(
         `  P3 sync trial ${t + 1}: session=${sessionFindings} badge="${badgeText}" popup=${popupCount}`
       );
+      if (TAKE_SCREENSHOTS && modeArg === "p3" && t === 4) {
+        mkdirSync(SCREENSHOT_DIR, { recursive: true });
+        await popup.screenshot({ path: join(SCREENSHOT_DIR, "P3-popup-badge-synced.png"), fullPage: false });
+      }
     }
 
     out.scan = {

@@ -1,0 +1,144 @@
+{
+  "generatedAt": "2026-11-21T22:11:18.740Z",
+  "mode": "p3",
+  "stage": "scan",
+  "executablePath": "C:\\Users\\omg\\AppData\\Local\\ms-playwright\\chromium-1255\\chrome-win64\\chrome.exe",
+  "browserVersion": "Chrome/159.0.8154.6",
+  "nodeVersion": "v22.22.2",
+  "scan": {
+    "charData": {
+      "trials": 5,
+      "detectedCount": 5,
+      "latencies": {
+        "n": 5,
+        "p50": 672.2,
+        "p95": 691.8,
+        "min": 655.9,
+        "max": 691.8,
+        "samples": [
+          676.4,
+          655.9,
+          672.2,
+          691.8,
+          660
+        ]
+      },
+      "details": [
+        {
+          "trial": 1,
+          "detected": true,
+          "latencyMs": 676.4
+        },
+        {
+          "trial": 2,
+          "detected": true,
+          "latencyMs": 655.9
+        },
+        {
+          "trial": 3,
+          "detected": true,
+          "latencyMs": 672.2
+        },
+        {
+          "trial": 4,
+          "detected": true,
+          "latencyMs": 691.8
+        },
+        {
+          "trial": 5,
+          "detected": true,
+          "latencyMs": 660
+        }
+      ]
+    },
+    "addedNodeControl": {
+      "trials": 3,
+      "detectedCount": 3,
+      "latencies": {
+        "n": 3,
+        "p50": 672.2,
+        "p95": 693.7,
+        "min": 657.4,
+        "max": 693.7,
+        "samples": [
+          672.2,
+          657.4,
+          693.7
+        ]
+      }
+    },
+    "batchRemoval": {
+      "trials": 3,
+      "ghostCount": 0,
+      "details": [
+        {
+          "trial": 1,
+          "beforeCount": 3,
+          "afterCount": 2,
+          "ghostNpiRemains": false,
+          "survivorsIntact": true
+        },
+        {
+          "trial": 2,
+          "beforeCount": 3,
+          "afterCount": 2,
+          "ghostNpiRemains": false,
+          "survivorsIntact": true
+        },
+        {
+          "trial": 3,
+          "beforeCount": 3,
+          "afterCount": 2,
+          "ghostNpiRemains": false,
+          "survivorsIntact": true
+        }
+      ]
+    },
+    "popupBadgeSync": {
+      "trials": 5,
+      "syncedCount": 5,
+      "details": [
+        {
+          "trial": 1,
+          "sessionFindings": 1,
+          "badgeText": "1",
+          "popupCount": 1,
+          "synced": true
+        },
+        {
+          "trial": 2,
+          "sessionFindings": 1,
+          "badgeText": "1",
+          "popupCount": 1,
+          "synced": true
+        },
+        {
+          "trial": 3,
+          "sessionFindings": 1,
+          "badgeText": "1",
+          "popupCount": 1,
+          "synced": true
+        },
+        {
+          "trial": 4,
+          "sessionFindings": 1,
+          "badgeText": "1",
+          "popupCount": 1,
+          "synced": true
+        },
+        {
+          "trial": 5,
+          "sessionFindings": 1,
+          "badgeText": "1",
+          "popupCount": 1,
+          "synced": true
+        }
+      ]
+    }
+  },
+  "paste": {},
+  "docs": {},
+  "ocrNode": {},
+  "network": {},
+  "gateFailures": []
+}

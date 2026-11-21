@@ -1191,6 +1191,26 @@ function tabHost(tab: chrome.tabs.Tab | undefined): string | undefined {
 async function handleContentScanResult(message: Extract<WorkerMessage, { type: "SCAN_RESULT" }>, tabId: number): Promise<void> {
   const pending = pendingScans.get(tabId);
   if (!pending) {
+    const existing = await readSession(tabId);
+    if (!existing || existing.sessionId !== message.sessionId) {
+      return;
+    }
+    const settings = await loadSettings();
+    const findings = message.findings.filter((f) => meetsThreshold(settings, f.category, f.confidence));
+    await writeSession(tabId, {
+      sessionId: message.sessionId,
+      mode: settings.mode,
+      findings,
+      stats: {
+        ...message.stats,
+        ...(existing.stats.imageCandidates ? { imageCandidates: existing.stats.imageCandidates } : {}),
+      },
+      scannedAt: Date.now(),
+      scanning: false,
+    });
+    const session = await readSession(tabId);
+    notifyPopup({ type: "POPUP_STATE", requestId: message.requestId, state: buildPopupState(settings, session) });
+    updateBadgeForTab(tabId, findings.length);
     return;
   }
   if (message.sessionId !== pending.sessionId) {

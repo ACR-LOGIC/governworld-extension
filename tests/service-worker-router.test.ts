@@ -21,6 +21,7 @@ type MessageListener = (
 const messageListeners: MessageListener[] = [];
 const sessionStore = new Map<string, unknown>();
 const runtimeSent: unknown[] = [];
+const badgeTextCalls: Array<{ tabId?: number; text: string }> = [];
 
 const chromeMock = {
   runtime: {
@@ -71,6 +72,12 @@ const chromeMock = {
     createDocument: async () => undefined,
   },
   downloads: { download: async () => undefined },
+  action: {
+    setBadgeText: async (details: { tabId?: number; text: string }) => {
+      badgeTextCalls.push(details);
+    },
+    setBadgeBackgroundColor: async () => undefined,
+  },
 };
 
 async function invoke(raw: unknown, sender: Record<string, unknown>): Promise<unknown> {
@@ -90,6 +97,7 @@ describe("service-worker message routing (content-originated types require sende
 
   beforeEach(() => {
     sessionStore.clear();
+    badgeTextCalls.length = 0;
     runtimeSent.length = 0;
   });
 
@@ -173,6 +181,92 @@ describe("service-worker message routing (content-originated types require sende
     expect(stored?.sessionId).toBeTruthy();
     expect(stored?.sessionId).not.toBe("sess-stale");
     expect(runtimeSent).toEqual([]);
+  });
+
+  it("updates session, popup state, and badge on incremental SCAN_RESULT when no pending scan exists (P3)", async () => {
+    (chromeMock.tabs.query as unknown) = async () => [{ id: 42, url: "https://example.com" }];
+    await invoke(
+      { type: "POPUP_SCAN", requestId: "req-p3-init", mode: "local" },
+      { id: "test", url: "chrome-extension://test/popup.html" }
+    );
+    const scanSession = sessionStore.get("scan:42") as { sessionId: string };
+    expect(scanSession?.sessionId).toBeTruthy();
+
+    await invoke(
+      {
+        type: "SCAN_RESULT",
+        requestId: "req-p3-init",
+        sessionId: scanSession.sessionId,
+        findings: [],
+        stats: { visibleChars: 24, truncated: false },
+      },
+      { id: "test", url: "https://example.com/page", tab: { id: 42, url: "https://example.com" } }
+    );
+
+    runtimeSent.length = 0;
+    badgeTextCalls.length = 0;
+
+    // Wrong sessionId incremental message must be ignored when no pending scan exists
+    const staleRes = await invoke(
+      {
+        type: "SCAN_RESULT",
+        requestId: "rescan_stale",
+        sessionId: "sess-wrong",
+        findings: [
+          {
+            id: "rescan_ssn_0",
+            category: "ssn",
+            confidence: 0.96,
+            source: "local-rules",
+            preview: "***-**-9999",
+            nodeId: "rescan_seg_0",
+            startOffset: 0,
+            endOffset: 11,
+            rects: [{ x: 10, y: 10, width: 100, height: 16 }],
+            selected: true,
+          },
+        ],
+        stats: { visibleChars: 36, truncated: false },
+      },
+      { id: "test", url: "https://example.com/page", tab: { id: 42, url: "https://example.com" } }
+    );
+    expect(staleRes).toEqual({ ok: true });
+    expect((sessionStore.get("scan:42") as { findings: unknown[] }).findings).toHaveLength(0);
+    expect(runtimeSent).toHaveLength(0);
+
+    // Matching sessionId incremental SCAN_RESULT (no POPUP_SCAN pending) updates session, POPUP_STATE, and badge
+    const incRes = await invoke(
+      {
+        type: "SCAN_RESULT",
+        requestId: "rescan_1001",
+        sessionId: scanSession.sessionId,
+        findings: [
+          {
+            id: "rescan_ssn_1",
+            category: "ssn",
+            confidence: 0.96,
+            source: "local-rules",
+            preview: "***-**-9999",
+            nodeId: "rescan_seg_1",
+            startOffset: 5,
+            endOffset: 16,
+            rects: [{ x: 12, y: 24, width: 120, height: 18 }],
+            selected: true,
+          },
+        ],
+        stats: { visibleChars: 42, truncated: false },
+      },
+      { id: "test", url: "https://example.com/page", tab: { id: 42, url: "https://example.com" } }
+    );
+    expect(incRes).toEqual({ ok: true });
+    await new Promise((r) => setTimeout(r, 30));
+
+    const updated = sessionStore.get("scan:42") as { findings: unknown[]; stats: { visibleChars: number } };
+    expect(updated.findings).toHaveLength(1);
+    expect(updated.stats.visibleChars).toBe(42);
+    expect(runtimeSent).toHaveLength(1);
+    expect(runtimeSent[0]).toMatchObject({ type: "POPUP_STATE" });
+    expect(badgeTextCalls).toContainEqual({ tabId: 42, text: "1" });
   });
 
   it("accepts a SCAN_RESULT whose sessionId matches the pending scan", async () => {
