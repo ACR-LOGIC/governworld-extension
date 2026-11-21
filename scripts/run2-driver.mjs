@@ -282,7 +282,8 @@ const out = {
 const recordedRequests = [];
 
 const runAllStages = stageArg === "all";
-const shouldRun = (name) => runAllStages || stageArg === name;
+const stageSet = new Set(stageArg.split(",").map((s) => s.trim()).filter(Boolean));
+const shouldRun = (name) => runAllStages || stageSet.has(name);
 
 const context = await chromium.launchPersistentContext(join(work, "profile"), {
   headless: false,

@@ -31,7 +31,7 @@ Tick a box only when the task's Definition of Done (S9) is fully met and its S6 
 - [ ] **P14 / M3** DOCX timing measured Ref: `docs/releases/directive-reports/M3.md`
 - [ ] **P14 / M4** SPA / iframe scanning measured Ref: `docs/releases/directive-reports/M4.md`
 - [ ] **P14 / M5** Peak RSS measured, reported separately from heap Ref: `docs/releases/directive-reports/M5.md`
-- [ ] **C1 / G1–G9** All gates hard failures in CI (D5) Ref: `docs/releases/directive-reports/C1.md`
+- [x] **C1 / G1–G9** All gates hard failures in CI (D5) Ref: `docs/releases/directive-reports/C1.md` (branch `task/C1-ci-hard-gates`)
 - [ ] **C2** Startup purge + staged-data display and purge button Ref: `docs/releases/directive-reports/C2.md`
 - [ ] **C3** Coverage warnings in popup Ref: `docs/releases/directive-reports/C3.md`
 - [ ] **C4** Label-free name recall measured Ref: `docs/releases/directive-reports/C4.md`

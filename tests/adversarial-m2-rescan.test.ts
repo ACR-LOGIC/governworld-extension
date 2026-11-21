@@ -170,9 +170,12 @@ describe("Adversarial M2 Rescan & DOM Traversal Stress Suite", () => {
           sessionId: "sess-adv-c1",
           findingIds: latest.findings.map((f) => f.id),
         });
-        const host = document.querySelector("[data-gw-scan-overlay]")!;
-        const shadow = env.capturedShadows.get(host)!;
-        expect(shadow.querySelectorAll('[data-kind="mask"]')).toHaveLength(3);
+        await vi.waitFor(() => {
+          const host = document.querySelector("[data-gw-scan-overlay]");
+          expect(host).not.toBeNull();
+          const shadow = env.capturedShadows.get(host!)!;
+          expect(shadow.querySelectorAll('[data-kind="mask"]')).toHaveLength(3);
+        });
       } finally {
         env.restore();
       }
@@ -239,13 +242,16 @@ describe("Adversarial M2 Rescan & DOM Traversal Stress Suite", () => {
         expect(emailAfter.endOffset).toBe(42);
 
         // Surviving masks remain rendered in the live overlay without losing email or ssn
-        const host = document.querySelector("[data-gw-scan-overlay]")!;
-        const shadow = env.capturedShadows.get(host)!;
-        const labels = Array.from(shadow.querySelectorAll('[data-kind="mask"]')).map((el) =>
-          el.getAttribute("data-label") || ""
-        );
-        expect(labels.some((l) => l.startsWith("ssn:"))).toBe(true);
-        expect(labels.some((l) => l.startsWith("email:"))).toBe(true);
+        await vi.waitFor(() => {
+          const host = document.querySelector("[data-gw-scan-overlay]");
+          expect(host).not.toBeNull();
+          const shadow = env.capturedShadows.get(host!)!;
+          const labels = Array.from(shadow.querySelectorAll('[data-kind="mask"]')).map((el) =>
+            el.getAttribute("data-label") || ""
+          );
+          expect(labels.some((l) => l.startsWith("ssn:"))).toBe(true);
+          expect(labels.some((l) => l.startsWith("email:"))).toBe(true);
+        });
       } finally {
         env.restore();
       }

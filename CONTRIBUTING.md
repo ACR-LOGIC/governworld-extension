@@ -112,3 +112,21 @@ Every automated test in `tests/` SHALL exercise real module code and fail when t
 2. **No Inline Bug Simulations:** Tests must import and execute the real production modules (`src/content/content.ts`, `src/content/normalization/mutation.ts`, `src/content/pasteGuard.ts`, etc.) rather than duplicating stale logic inline.
 3. **Exact-Span Recall:** Detection benchmarks (`tests/benchmark-measured.test.ts`, `tests/detection-benchmark.test.ts`) SHALL assert exact character offsets (`m.start === expectedStart && m.end === expectedEnd`), never substring `.includes()` overlap checks.
 4. **Fail-on-Revert Proof:** Every bug-fix test must be verified to **fail** (`exit 1`) when its corresponding production fix is reverted, and **pass** when restored.
+
+---
+
+## Section 4 Measured CI Hard Gates (`C1 / G1–G9`)
+
+All pull requests and release builds execute `npm run gates:ci` (`scripts/run-ci-gates.mjs`, wired as a blocking step in `.github/workflows/ci.yml` and `.github/workflows/release.yml`). No gate is advisory or skippable:
+
+| Gate | Requirement | Enforcement Surface |
+| :--- | :--- | :--- |
+| **G1** | Exact-span recall = `100%` on strict corpus (`22/22` + `4/4` multi-entity; overlap does not count) | `tests/benchmark-measured.test.ts` (`GW_BENCH_STRICT=1`) + `tests/detection-benchmark.test.ts` |
+| **G2** | Zero escapes (`0`) in input guard | Run 1 (`5/5` cases) + live Chrome Run 2 (`15/15` trials) + `tests/paste-*.test.ts` |
+| **G3** | No missed changed text (`characterData` mutation masked live in `<= 2000 ms`, `5/5` trials) | Live Chrome Run 2 (`--stage=scan`) + `tests/content-rescan.test.ts` + `tests/e2e-audit-tier2-boundaries.test.ts` |
+| **G4** | Redaction results identical | `tests/redaction-golden-gate.test.ts` + `tests/redaction-output.test.ts` |
+| **G5** | No recoverable test secrets in finished export | `tests/export-secret-recovery-gate.test.ts` (`pdf-lib` + `pdfjs-dist` text extraction + XObject RGB pixel check) |
+| **G6** | Detection of `1 MB` text `< 200 ms` at `p50` | `tests/benchmark-measured.test.ts` (`detectThroughput["1MB"].p50`) |
+| **G7** | `1,000`-node page scan `< 75 ms` at `p50` (`300/300` at `10,000` nodes) | `tests/benchmark-measured.test.ts` (`pageScan["1000"].p50`) |
+| **G8** | Live paste dialog `< 100 ms` at `p50` across all sizes | Live Chrome Run 2 (`--stage=paste`, `short` / `10KB` / `68KB`) |
+| **G9** | Performance regression `> 20%` against `docs/benchmarks/ci-baselines.json` fails CI | `scripts/run-ci-gates.mjs` (`125.6 ms` -> `<= 150.72 ms`; `42.0 ms` -> `<= 50.4 ms`; `50.0 ms` -> `<= 60.0 ms`) |

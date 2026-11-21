@@ -18,7 +18,9 @@ import type { OcrPageResult } from "../src/document-pipeline/ocr.js";
 import type { FindingCategory } from "../src/shared/types.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const RESULTS_PATH = join(ROOT, "docs", "benchmarks", "results-run1.json");
+const RESULTS_PATH = process.env.GW_BENCH_OUT
+  ? resolve(ROOT, process.env.GW_BENCH_OUT)
+  : join(ROOT, "docs", "benchmarks", "results-run1.json");
 const STRICT_MODE = process.env.GW_BENCH_STRICT === "1";
 const STRICT_COVERAGE = process.env.GW_BENCH_STRICT_COVERAGE === "1";
 
