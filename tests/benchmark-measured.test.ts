@@ -502,7 +502,8 @@ describe("Run 1 Measured Benchmark (GW-BENCH-2026-001)", () => {
     };
     writeReport();
 
-    expect(fetchCalls).toEqual(["src/document-pipeline/ocr.ts:76"]);
+    expect(fetchCalls).toHaveLength(1);
+    expect(fetchCalls[0]).toMatch(/^src\/document-pipeline\/ocr\.ts:\d+$/);
     expect(forbiddenCalls).toHaveLength(0);
     expect(manifest.host_permissions).toBeUndefined();
   });

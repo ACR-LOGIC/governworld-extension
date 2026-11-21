@@ -627,8 +627,20 @@ export function validateMessage(raw: unknown): ValidationResult {
       return { ok: true, message: { type, requestId, delivered: raw.delivered } };
     }
     case "POPUP_DOC_CANCEL": {
-      if (typeof raw.docId !== "string" || !raw.docId) return { ok: false, error: "Invalid docId" };
-      return { ok: true, message: { type, requestId, docId: raw.docId } };
+      const hasDocId = raw.docId !== undefined;
+      const hasFileKey = raw.fileKey !== undefined;
+      if (hasDocId && (typeof raw.docId !== "string" || !raw.docId)) return { ok: false, error: "Invalid docId" };
+      if (hasFileKey && !isFileKey(raw.fileKey)) return { ok: false, error: "Invalid fileKey" };
+      if (!hasDocId && !hasFileKey) return { ok: false, error: "Missing docId or fileKey" };
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          ...(typeof raw.docId === "string" && raw.docId ? { docId: raw.docId } : {}),
+          ...(isFileKey(raw.fileKey) ? { fileKey: raw.fileKey } : {}),
+        },
+      };
     }
     case "SCAN_PAGE": {
       if (!isMode(raw.mode)) return { ok: false, error: "Invalid mode" };
@@ -727,8 +739,20 @@ export function validateMessage(raw: unknown): ValidationResult {
       return { ok: true, message: { type, requestId, totalPages: raw.totalPages } };
     }
     case "POPUP_DOC_CLEAR": {
-      if (typeof raw.docId !== "string" || !raw.docId) return { ok: false, error: "Invalid docId" };
-      return { ok: true, message: { type, requestId, docId: raw.docId } };
+      const hasDocId = raw.docId !== undefined;
+      const hasFileKey = raw.fileKey !== undefined;
+      if (hasDocId && (typeof raw.docId !== "string" || !raw.docId)) return { ok: false, error: "Invalid docId" };
+      if (hasFileKey && !isFileKey(raw.fileKey)) return { ok: false, error: "Invalid fileKey" };
+      if (!hasDocId && !hasFileKey) return { ok: false, error: "Missing docId or fileKey" };
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          ...(typeof raw.docId === "string" && raw.docId ? { docId: raw.docId } : {}),
+          ...(isFileKey(raw.fileKey) ? { fileKey: raw.fileKey } : {}),
+        },
+      };
     }
     case "POPUP_DOC_CAPTURE_IMAGE": {
       if (typeof raw.src !== "string" || !raw.src) return { ok: false, error: "Invalid src" };

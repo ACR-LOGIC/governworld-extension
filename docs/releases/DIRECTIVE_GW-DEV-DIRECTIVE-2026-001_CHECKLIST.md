@@ -18,7 +18,7 @@ Tick a box only when the task's Definition of Done (S9) is fully met and its S6 
 - [x] **P1** `characterData` blind spot fixed Ref: `docs/releases/directive-reports/P1.md` (branch `task/P1-characterdata-blind-spot`)
 - [x] **P2** Unique segment IDs, no ghost masks Ref: `docs/releases/directive-reports/P2.md` (branch `task/P2-unique-segment-ids`)
 - [ ] **P3** Popup / badge counts current Ref: `docs/releases/directive-reports/P3.md`
-- [ ] **P4** Staged bytes cleared; Cancel stops OCR Ref: `docs/releases/directive-reports/P4.md`
+- [x] **P4** Staged bytes cleared; Cancel stops OCR Ref: `docs/releases/directive-reports/P4.md` (branch `task/P4-cancel-and-staged-bytes`)
 - [ ] **P5** Unicode email, exact-span 100% Ref: `docs/releases/directive-reports/P5.md`
 - [ ] **P6** Chunked scanning, complete coverage (D4) Ref: `docs/releases/directive-reports/P6.md`
 - [ ] **P7** Adaptive debounce, under 250 ms Ref: `docs/releases/directive-reports/P7.md`

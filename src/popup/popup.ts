@@ -2,7 +2,7 @@ import { sanitizeErrorForLog } from "../shared/errorSanitizer.js";
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 import { validateMessage } from "../shared/messages.js";
 import { previewObjectUrl } from "../shared/docStore.js";
-import { docStoreFile, docDeleteFile, markDocumentStaged } from "../shared/docDb.js";
+import { docStoreFile, docDeleteByPrefix, markDocumentStaged, clearStagedMarker } from "../shared/docDb.js";
 import {
   ALL_CATEGORIES,
   loadSettings,
@@ -248,12 +248,12 @@ function requestId(): string {
  * sees a staged document and skips, whichever of the two runs first.
  */
 async function storeFile(fileKey: string, bytes: ArrayBuffer): Promise<void> {
-  await markDocumentStaged();
+  await markDocumentStaged(fileKey);
   await docStoreFile(fileKey, bytes);
 }
 
-async function deleteFile(fileKey: string): Promise<void> {
-  await docDeleteFile(fileKey);
+async function deleteFile(fileKey: string, options?: { keepRedacted?: boolean }): Promise<void> {
+  await docDeleteByPrefix(fileKey, options);
 }
 
 /** Web Speech API Speech Synthesis and Screen Reader Live Region for audio announcements */
@@ -1564,12 +1564,20 @@ let windowTotalPages = 1;
  * renders nothing - and it is also a fail-fast, so a corrupt or encrypted file
  * is rejected in about a second instead of after a minute of work.
  */
+let activeDocFileKey: string | null = null;
+let activeDocRequestId: string | null = null;
+const cancelledDocTokens = new Set<string>();
+
 function startCount(fileKey: string, name: string, mimeType: string, kind: DocKind, degraded = false): void {
   pendingCountFile = { fileKey, name, mimeType, kind, degraded };
+  activeDocFileKey = fileKey;
+  cancelledDocTokens.delete(fileKey);
   resetDocStages();
   setDocStatus("Scanning document on this device…", false);
   showDocProgress();
-  void sendDocMessage({ type: "POPUP_DOC_COUNT", requestId: requestId(), fileKey, name, mimeType, kind });
+  const reqId = requestId();
+  activeDocRequestId = reqId;
+  void sendDocMessage({ type: "POPUP_DOC_COUNT", requestId: reqId, fileKey, name, mimeType, kind });
 }
 
 /** Scan one window of the staged document. */
@@ -1578,12 +1586,16 @@ function startPreview(pageOffset: number, totalPages?: number): void {
   pendingCountFile = null;
   if (!pending) return;
   const { fileKey, name, mimeType, kind, degraded } = pending;
+  activeDocFileKey = fileKey;
+  cancelledDocTokens.delete(fileKey);
   resetDocStages();
   showDocProgress();
   beginDocSession({ fileKey, name, mimeType, kind, degraded });
+  const reqId = requestId();
+  activeDocRequestId = reqId;
   void sendDocMessage({
     type: "POPUP_DOC_PREVIEW",
-    requestId: requestId(),
+    requestId: reqId,
     fileKey,
     name,
     mimeType,
@@ -2068,12 +2080,18 @@ function buildDocBoxes(): { pageIndex: number; rects: Rect[] }[] {
   return Array.from(byPage.entries()).map(([pageIndex, rects]) => ({ pageIndex, rects }));
 }
 
-function clearDocUi(): void {
+function clearDocUi(options?: { keepRedacted?: boolean }): void {
   const workspace = document.getElementById("doc-workspace") as HTMLElement | null;
   const thumbs = document.getElementById("doc-thumbs") as HTMLElement | null;
   const list = document.getElementById("doc-findings") as HTMLUListElement | null;
   const redactBtn = document.getElementById("doc-redact-btn") as HTMLButtonElement | null;
-  if (lastDoc) void deleteFile(lastDoc.fileKey).catch(() => undefined);
+  const fileKeyToDelete = lastDoc?.fileKey ?? activeDocFileKey;
+  if (fileKeyToDelete) void deleteFile(fileKeyToDelete, options).catch(() => undefined);
+  if (!options?.keepRedacted) {
+    activeDocFileKey = null;
+    activeDocRequestId = null;
+    void clearStagedMarker().catch(() => undefined);
+  }
   lastDoc = null;
   selectedDocFindingIds.clear();
   overlayRedrawers.length = 0;
@@ -2916,8 +2934,16 @@ export async function initPopup(): Promise<void> {
   });
 
   docClearBtn?.addEventListener("click", () => {
-    if (!lastDoc) return;
-    void sendDocMessage({ type: "POPUP_DOC_CLEAR", requestId: requestId(), docId: lastDoc.docId });
+    const targetDocId = lastDoc?.docId || undefined;
+    const targetFileKey = lastDoc?.fileKey ?? activeDocFileKey ?? undefined;
+    if (targetDocId || targetFileKey) {
+      void sendDocMessage({
+        type: "POPUP_DOC_CLEAR",
+        requestId: requestId(),
+        ...(targetDocId ? { docId: targetDocId } : {}),
+        ...(targetFileKey ? { fileKey: targetFileKey } : {}),
+      });
+    }
     clearDocUi();
     setDocStatus("", false);
   });
@@ -2925,18 +2951,21 @@ export async function initPopup(): Promise<void> {
   const docCancelBtn = document.getElementById("doc-cancel-btn") as HTMLButtonElement | null;
 
   docCancelBtn?.addEventListener("click", () => {
-    // Before the count reply arrives there is no session to cancel at the
-    // worker, and POPUP_DOC_CANCEL needs a real docId - a placeholder "" is
-    // refused by validation, which would surface as a confusing error. Stopping
-    // the wait locally is the whole of the action in that state.
-    if (!lastDoc || !lastDoc.docId) {
-      pendingCountFile = null;
-      hideDocProgress();
-      clearDocUi();
-      setDocStatus("Document processing cancelled.", false);
-      return;
+    const targetFileKey = lastDoc?.fileKey || pendingCountFile?.fileKey || activeDocFileKey || undefined;
+    const targetDocId = lastDoc?.docId || undefined;
+    const targetRequestId = activeDocRequestId || undefined;
+    if (targetFileKey) cancelledDocTokens.add(targetFileKey);
+    if (targetDocId) cancelledDocTokens.add(targetDocId);
+    if (targetRequestId) cancelledDocTokens.add(targetRequestId);
+    pendingCountFile = null;
+    if (targetDocId || targetFileKey) {
+      void sendDocMessage({
+        type: "POPUP_DOC_CANCEL",
+        requestId: requestId(),
+        ...(targetDocId ? { docId: targetDocId } : {}),
+        ...(targetFileKey ? { fileKey: targetFileKey } : {}),
+      });
     }
-    void sendDocMessage({ type: "POPUP_DOC_CANCEL", requestId: requestId(), docId: lastDoc.docId });
     hideDocProgress();
     clearDocUi();
     setDocStatus("Document processing cancelled.", false);
@@ -4996,6 +5025,7 @@ export async function initPopup(): Promise<void> {
       return;
     }
     if (message.type === "POPUP_DOC_COUNT_RESULT") {
+      if (cancelledDocTokens.has(message.requestId)) return;
       // The document's real length, known before anything slow ran. One pass
       // covers it: scan from the top. Longer: let the user choose which window,
       // rather than silently dropping everything past the cap.
@@ -5026,6 +5056,13 @@ export async function initPopup(): Promise<void> {
       return;
     }
     if (message.type === "POPUP_DOC_STATE") {
+      if (
+        cancelledDocTokens.has(message.requestId) ||
+        cancelledDocTokens.has(message.fileKey) ||
+        cancelledDocTokens.has(message.docId)
+      ) {
+        return;
+      }
       hideDocProgress();
       // Match on fileKey so the first reply can land on the placeholder session
       // created by beginDocSession(), which has no docId yet. Fall back to docId
@@ -5167,14 +5204,16 @@ export async function initPopup(): Promise<void> {
           lastPrintFileKey = null;
         }
       }
-      clearDocUi();
+      clearDocUi({ keepRedacted: Boolean(message.printFileKey) });
       return;
     }
     if (message.type === "POPUP_DOC_STATUS") {
+      if (cancelledDocTokens.has(message.requestId)) return;
       renderDocStage(message);
       return;
     }
     if (message.type === "POPUP_DOC_ERROR") {
+      if (cancelledDocTokens.has(message.requestId)) return;
       // The run is over, so the spinner has to stop; leaving it up would show
       // "Processing document..." next to an error.
       hideDocProgress();

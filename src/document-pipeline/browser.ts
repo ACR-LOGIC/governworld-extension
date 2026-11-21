@@ -3,6 +3,7 @@ import type { CountInput, DocumentPipeline, DocumentInput, DocumentPage, Preview
 import type { Rect, RedactionOptions } from "../shared/types.js";
 import {
   OFFSCREEN_CHANNEL,
+  DocumentCancelledError,
   isOffscreenResponse,
   bytesToBase64,
   base64ToBytes,
@@ -20,6 +21,7 @@ const JOB_TIMEOUT_MS = 180_000;
 const CONNECT_TIMEOUT_MS = 10_000;
 
 interface PendingJob {
+  fileKey?: string;
   resolve: (response: OffscreenResponse) => void;
   reject: (error: Error) => void;
   timer: ReturnType<typeof setTimeout>;
@@ -121,13 +123,13 @@ async function closeOffscreenDocument(): Promise<void> {
   await chrome.offscreen.closeDocument().catch(() => undefined);
 }
 
-function postOnce(request: OffscreenRequest): Promise<OffscreenResponse> {
+function postOnce(request: OffscreenRequest, fileKey?: string): Promise<OffscreenResponse> {
   return new Promise<OffscreenResponse>((resolve, reject) => {
     const timer = setTimeout(() => {
       pending.delete(request.jobId);
       reject(new Error("Document processing timed out."));
     }, JOB_TIMEOUT_MS);
-    pending.set(request.jobId, { resolve, reject, timer });
+    pending.set(request.jobId, { fileKey, resolve, reject, timer });
     void (async () => {
       try {
         const port = await waitForPort();
@@ -147,55 +149,85 @@ function postOnce(request: OffscreenRequest): Promise<OffscreenResponse> {
  * reclaimed underneath us. Without the retry, a browser-initiated teardown
  * turned into a three-minute stall with no message shown to the user.
  */
-async function callOffscreen(request: OffscreenRequest, attempt = 0): Promise<OffscreenResponse> {
+async function callOffscreen(request: OffscreenRequest, fileKey?: string, attempt = 0): Promise<OffscreenResponse> {
   try {
-    return await postOnce(request);
+    return await postOnce(request, fileKey);
   } catch (error) {
+    if (error instanceof DocumentCancelledError) throw error;
     if (error instanceof OffscreenGoneError && attempt === 0) {
       await closeOffscreenDocument().catch(() => undefined);
-      return callOffscreen(request, attempt + 1);
+      return callOffscreen(request, fileKey, attempt + 1);
     }
     throw error;
   }
 }
 
-function assertOk(response: OffscreenResponse, _operation: "preview" | "redact" | "count"): asserts response is Extract<OffscreenResponse, { ok: true }> {
+function assertOk(response: OffscreenResponse, _operation: "preview" | "redact" | "count" | "cancel"): asserts response is Extract<OffscreenResponse, { ok: true }> {
   if (response.ok) return;
+  if (response.code === "DOC_CANCELLED") throw new DocumentCancelledError(response.userMessage);
   throw new Error(response.userMessage);
 }
 
 export class BrowserDocumentPipeline implements DocumentPipeline {
-  async count(input: CountInput): Promise<number> {
-    const response = await callOffscreen({
-      channel: OFFSCREEN_CHANNEL,
-      op: "count",
-      jobId: crypto.randomUUID(),
-      kind: input.kind,
-      bytes: bytesToBase64(input.bytes),
-      name: input.name,
-      mimeType: input.mimeType,
-    });
+  async cancel(fileKey?: string): Promise<void> {
+    for (const [jobId, job] of [...pending]) {
+      if (!fileKey || !job.fileKey || job.fileKey === fileKey) {
+        clearTimeout(job.timer);
+        pending.delete(jobId);
+        job.reject(new DocumentCancelledError());
+      }
+    }
+    if (offscreenPort) {
+      try {
+        offscreenPort.postMessage({
+          channel: OFFSCREEN_CHANNEL,
+          op: "cancel",
+          jobId: crypto.randomUUID(),
+          ...(fileKey ? { fileKey } : {}),
+        });
+      } catch {
+        // Offscreen port already closing; closeOffscreenDocument will tear down any orphan worker.
+      }
+    }
+  }
+
+  async count(input: CountInput, fileKey?: string): Promise<number> {
+    const response = await callOffscreen(
+      {
+        channel: OFFSCREEN_CHANNEL,
+        op: "count",
+        jobId: crypto.randomUUID(),
+        kind: input.kind,
+        bytes: bytesToBase64(input.bytes),
+        name: input.name,
+        mimeType: input.mimeType,
+      },
+      fileKey
+    );
     assertOk(response, "count");
     if (response.op !== "count") throw new Error("Unexpected offscreen response.");
     return response.totalPages;
   }
 
   async preview(input: DocumentInput): Promise<PreviewResult> {
-    const response = await callOffscreen({
-      channel: OFFSCREEN_CHANNEL,
-      op: "preview",
-      jobId: crypto.randomUUID(),
-      kind: input.kind,
-      bytes: bytesToBase64(input.bytes),
-      name: input.name,
-      mimeType: input.mimeType,
-      enabledCategories: input.enabledCategories,
-    maxPages: input.maxPages,
-    pageOffset: input.pageOffset,
-    ocrLanguage: input.ocrLanguage,
-    customPatterns: input.customPatterns,
-    previewKeyPrefix: input.previewKeyPrefix,
-    });
+    const response = await callOffscreen(
+      {
+        channel: OFFSCREEN_CHANNEL,
+        op: "preview",
+        jobId: crypto.randomUUID(),
+        kind: input.kind,
+        bytes: bytesToBase64(input.bytes),
+        name: input.name,
+        mimeType: input.mimeType,
+        enabledCategories: input.enabledCategories,
+        maxPages: input.maxPages,
+        pageOffset: input.pageOffset,
+        ocrLanguage: input.ocrLanguage,
+        customPatterns: input.customPatterns,
+        previewKeyPrefix: input.previewKeyPrefix,
+      },
+      input.previewKeyPrefix
+    );
     assertOk(response, "preview");
     if (response.op !== "preview") throw new Error("Unexpected offscreen response.");
     return { pages: response.pages, truncated: response.truncated === true };
@@ -207,20 +239,23 @@ export class BrowserDocumentPipeline implements DocumentPipeline {
     options?: RedactionOptions
   ): Promise<RedactedDocumentResult> {
     const effectiveOptions = options ?? input.options;
-    const response = await callOffscreen({
-      channel: OFFSCREEN_CHANNEL,
-      op: "redact",
-      jobId: crypto.randomUUID(),
-      kind: input.kind,
-      bytes: bytesToBase64(input.bytes),
-      name: input.name,
-      mimeType: input.mimeType,
-      boxes,
-      padding: effectiveOptions?.padding ?? input.padding,
-      options: effectiveOptions,
-      pageOffset: input.pageOffset,
-      fileKey: input.previewKeyPrefix,
-    });
+    const response = await callOffscreen(
+      {
+        channel: OFFSCREEN_CHANNEL,
+        op: "redact",
+        jobId: crypto.randomUUID(),
+        kind: input.kind,
+        bytes: bytesToBase64(input.bytes),
+        name: input.name,
+        mimeType: input.mimeType,
+        boxes,
+        padding: effectiveOptions?.padding ?? input.padding,
+        options: effectiveOptions,
+        pageOffset: input.pageOffset,
+        fileKey: input.previewKeyPrefix,
+      },
+      input.previewKeyPrefix
+    );
     assertOk(response, "redact");
     if (response.op !== "redact") throw new Error("Unexpected offscreen response.");
     return {

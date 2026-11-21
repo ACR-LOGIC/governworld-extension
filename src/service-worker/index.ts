@@ -4,7 +4,20 @@ import { loadSettings, saveSettings, isCloudAllowed, isAllowedGatewayOrigin, mee
 import { recordAudit, exportSignedAuditLog, handlePopupRecordAudit } from "./auditService.js";
 import type { Settings } from "../shared/settings.js";
 import type { DocKind, PopupState, ScanMode, WorkerMessage, ExtensionMessage, Finding, FindingCategory, PopupFromWorker, Rect, RedactionOptions, ScanSettingsMessage, ScanCoverageStatus } from "../shared/types.js";
-import { previewDocument, redactDocument, countDocument, restoreLastSession, clearSession as clearDocSession, clearAllFiles, storeFile, deleteFile, hasStagedDocument } from "./documents.js";
+import {
+  previewDocument,
+  redactDocument,
+  countDocument,
+  restoreLastSession,
+  clearSession as clearDocSession,
+  cancelDocument as cancelDocSession,
+  purgeOrphanedStagedKeys,
+  clearAllFiles,
+  storeFile,
+  deleteFile,
+  hasStagedDocument,
+} from "./documents.js";
+import { DocumentCancelledError } from "../document-pipeline/contract.js";
 import { analyzeExamples, testPattern } from "../shared/wizardAnalyzer.js";
 import { captureImage, stageCapturedImage, ImageCaptureError } from "./captureImage.js";
 import {
@@ -904,6 +917,10 @@ async function handlePopupDocPreview(
       outcome: "ok",
     });
   } catch (error) {
+    if (error instanceof DocumentCancelledError || (error instanceof Error && error.name === "DocumentCancelledError")) {
+      void recordAudit({ ts: new Date().toISOString(), action: "doc_cleared", outcome: "ok" });
+      return;
+    }
     const userMessage = error instanceof Error ? error.message : "The document could not be processed.";
     notifyPopup({ type: "POPUP_DOC_ERROR", requestId, code: "DOC_ERROR", userMessage });
     void recordAudit({ ts: new Date().toISOString(), action: "doc_previewed", outcome: "error" });
@@ -1635,7 +1652,9 @@ function purgeStagedFilesOnLifecycle(reason: string): void {
   startupPurge = (async () => {
     try {
       if (await hasStagedDocument()) {
-        console.warn(`[governworld] staged-file purge skipped on ${reason}: a document is staged.`);
+        await purgeOrphanedStagedKeys();
+        console.warn(`[governworld] active staged document preserved on ${reason}; orphaned keys purged.`);
+        startupCleanupError = undefined;
         return;
       }
       await clearAllFiles();
@@ -1775,6 +1794,7 @@ void reconcileTabStatuses();
 void syncManagedPolicy(false);
 void refreshOperatingMode();
 void scheduleHeartbeatAlarm();
+void purgeOrphanedStagedKeys();
 
 if (typeof chrome !== "undefined" && chrome.alarms?.onAlarm) {
   chrome.alarms.onAlarm.addListener((alarm) => {
@@ -2310,7 +2330,7 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
         await handlePopupDocRedact(msg.docId, msg.fileKey, msg.name, msg.mimeType, msg.kind, msg.boxes, msg.findingIds, msg.requestId, msg.options);
         break;
       case "POPUP_DOC_CLEAR":
-        await clearDocSession(msg.docId);
+        await clearDocSession(msg.docId, msg.fileKey);
         void recordAudit({ ts: new Date().toISOString(), action: "doc_cleared", outcome: "ok" });
         break;
       case "POPUP_DOC_CAPTURE_IMAGE":
@@ -2473,7 +2493,8 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
         await handleApiDisconnect(msg.requestId);
         break;
       case "POPUP_DOC_CANCEL":
-        await clearDocSession(msg.docId);
+        await cancelDocSession(msg.docId, msg.fileKey);
+        void recordAudit({ ts: new Date().toISOString(), action: "doc_cleared", outcome: "ok" });
         break;
       case "POPUP_API_GET_STATUS":
         await handleApiGetStatus(msg.requestId);

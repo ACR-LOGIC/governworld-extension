@@ -640,6 +640,7 @@ try {
         { b64: d.bytes.toString("base64"), fileName: d.name, type: d.mime }
       );
 
+      await popup.evaluate(() => document.querySelector('[data-tab="documents"]')?.click());
       await popup.waitForFunction(
         () => {
           const w = document.getElementById("doc-workspace");
@@ -656,8 +657,12 @@ try {
 
       const keysBeforeClear = await readIndexedDbKeys(popup);
       await popup.click("#doc-clear-btn").catch(() => {});
-      await popup.waitForTimeout(300);
+      await popup.waitForTimeout(450);
       const keysAfterClear = await readIndexedDbKeys(popup);
+      if (TAKE_SCREENSHOTS && modeArg === "p4" && d.label === "native-5p") {
+        mkdirSync(SCREENSHOT_DIR, { recursive: true });
+        await popup.screenshot({ path: join(SCREENSHOT_DIR, "P4-start-over-clean.png"), fullPage: false });
+      }
 
       docTimings.push({
         label: d.label,
@@ -673,71 +678,82 @@ try {
       );
     }
 
-    // Mid-job Cancel test on 20-page scanned PDF
-    await clearIndexedDb(popup);
-    await popup.reload({ waitUntil: "load" });
-    await waitForPopupReady(popup);
-    const scanned20 = docsMatrix.find((x) => x.label === "scanned-20p");
-    await popup.evaluate(
-      ({ b64, fileName, type }) => {
-        const input = document.getElementById("doc-file-input");
-        const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-        const dt = new DataTransfer();
-        dt.items.add(new File([bin], fileName, { type }));
-        input.files = dt.files;
-        input.dispatchEvent(new Event("change", { bubbles: true }));
-      },
-      { b64: scanned20.bytes.toString("base64"), fileName: scanned20.name, type: scanned20.mime }
-    );
-    await popup.waitForFunction(
-      async () => {
-        const p = document.getElementById("doc-progress");
-        if (!p || p.hasAttribute("hidden")) return false;
-        const db = await new Promise((resolve, reject) => {
-          const req = indexedDB.open("governworld-redaction", 1);
-          req.onupgradeneeded = () => {
-            if (!req.result.objectStoreNames.contains("docfiles")) {
-              req.result.createObjectStore("docfiles");
-            }
-          };
-          req.onsuccess = () => resolve(req.result);
-          req.onerror = () => reject(req.error);
+    // Mid-job Cancel verification at 1, 5, and 20 pages
+    const cancelMatrix = [
+      { label: "scanned-1p", pages: 1, bytes: await makeScannedPdf(1, scanPng), minKeysBeforeCancel: 1 },
+      { label: "scanned-5p", pages: 5, bytes: docsMatrix.find((x) => x.label === "scanned-5p").bytes, minKeysBeforeCancel: 4 },
+      { label: "scanned-20p", pages: 20, bytes: docsMatrix.find((x) => x.label === "scanned-20p").bytes, minKeysBeforeCancel: 6 },
+    ];
+    const cancelRuns = [];
+    for (const c of cancelMatrix) {
+      await clearIndexedDb(popup);
+      await popup.reload({ waitUntil: "load" });
+      await waitForPopupReady(popup);
+      await popup.evaluate(() => document.querySelector('[data-tab="documents"]')?.click());
+      await popup.evaluate(
+        ({ b64, fileName, type }) => {
+          const input = document.getElementById("doc-file-input");
+          const bin = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+          const dt = new DataTransfer();
+          dt.items.add(new File([bin], fileName, { type }));
+          input.files = dt.files;
+          input.dispatchEvent(new Event("change", { bubbles: true }));
+        },
+        { b64: c.bytes.toString("base64"), fileName: `${c.label}.pdf`, type: "application/pdf" }
+      );
+      const pollStart = performance.now();
+      let keysBeforeClick = 0;
+      while (performance.now() - pollStart < 45_000) {
+        const curKeys = await readIndexedDbKeys(popup);
+        keysBeforeClick = curKeys.length;
+        const progressVisible = await popup.evaluate(() => {
+          const p = document.getElementById("doc-progress");
+          return Boolean(p && !p.hasAttribute("hidden"));
         });
-        const count = await new Promise((resolve, reject) => {
-          const tx = db.transaction("docfiles", "readonly");
-          const req = tx.objectStore("docfiles").count();
-          req.onsuccess = () => resolve(req.result);
-          req.onerror = () => reject(req.error);
-        });
-        db.close();
-        return count >= 6;
-      },
-      null,
-      { timeout: 30_000 }
-    ).catch(() => {});
-    const keysAtCancel = (await readIndexedDbKeys(popup)).length;
-    await popup.click("#doc-cancel-btn").catch(() => {});
-    await popup.waitForTimeout(1500);
-    const keysAfter1500Ms = (await readIndexedDbKeys(popup)).length;
-    await popup.waitForTimeout(6000);
-    const keysAfterWait = (await readIndexedDbKeys(popup)).length;
-    const cancelUi = await popup.evaluate(() => ({
-      workspaceHidden: document.getElementById("doc-workspace")?.hasAttribute("hidden") ?? true,
-      statusText: (document.getElementById("doc-status-text")?.textContent || "").trim(),
-    }));
-    console.log(
-      `  mid-job Cancel (20p scanned): atCancel=${keysAtCancel} +1.5s=${keysAfter1500Ms} +5.5s=${keysAfterWait} status="${cancelUi.statusText}" workspaceHidden=${cancelUi.workspaceHidden}`
-    );
+        if (progressVisible && keysBeforeClick >= c.minKeysBeforeCancel) {
+          break;
+        }
+        await popup.waitForTimeout(80);
+      }
+      const keysAtCancel = (await readIndexedDbKeys(popup)).length;
+      await popup.click("#doc-cancel-btn").catch(() => {});
+      await popup.waitForTimeout(1000);
+      const keysAfter1000Ms = (await readIndexedDbKeys(popup)).length;
+      await popup.waitForTimeout(3500);
+      const keysAfterWait = (await readIndexedDbKeys(popup)).length;
+      const cancelUi = await popup.evaluate(() => ({
+        workspaceHidden: document.getElementById("doc-workspace")?.hasAttribute("hidden") ?? true,
+        statusText: (document.getElementById("doc-status-text")?.textContent || "").trim(),
+      }));
+      cancelRuns.push({
+        label: c.label,
+        pages: c.pages,
+        keysAtCancel,
+        keysAfter1000Ms,
+        keysAfterWait,
+        ...cancelUi,
+      });
+      console.log(
+        `  mid-job Cancel (${c.label}): atCancel=${keysAtCancel} +1s=${keysAfter1000Ms} +4.5s=${keysAfterWait} status="${cancelUi.statusText}" workspaceHidden=${cancelUi.workspaceHidden}`
+      );
+      if (TAKE_SCREENSHOTS && modeArg === "p4" && c.label === "scanned-20p") {
+        mkdirSync(SCREENSHOT_DIR, { recursive: true });
+        await popup.screenshot({ path: join(SCREENSHOT_DIR, "P4-cancel-truthful.png"), fullPage: false });
+      }
+    }
+    const mid20 = cancelRuns.find((r) => r.label === "scanned-20p") ?? cancelRuns[cancelRuns.length - 1];
 
     out.docs = {
       timings: docTimings,
       jsHeapBaselineMb: heapBaselineMb,
       jsHeapPeakMb: heapPeakMb,
+      cancelRuns,
       midJobCancel: {
-        keysAtCancel,
-        keysAfter1500Ms,
-        keysAfterWait,
-        ...cancelUi,
+        keysAtCancel: mid20.keysAtCancel,
+        keysAfter1500Ms: mid20.keysAfter1000Ms,
+        keysAfterWait: mid20.keysAfterWait,
+        workspaceHidden: mid20.workspaceHidden,
+        statusText: mid20.statusText,
       },
     };
   }
@@ -862,7 +878,24 @@ if (IS_GATE) {
       if (d.keysAfterStartOver > 0) out.gateFailures.push(`P4 Start Over leaked ${d.keysAfterStartOver} keys (${d.label})`);
     }
   }
-  if (runP4Check && out.docs.midJobCancel && (out.docs.midJobCancel.keysAfterWait > 0 || !out.docs.midJobCancel.workspaceHidden)) {
+  if (runP4Check && out.docs.cancelRuns) {
+    for (const c of out.docs.cancelRuns) {
+      if (
+        c.keysAfter1000Ms > 0 ||
+        c.keysAfterWait > 0 ||
+        !c.workspaceHidden ||
+        !c.statusText.toLowerCase().includes("cancel")
+      ) {
+        out.gateFailures.push(
+          `P4 cancel failed (${c.label}): keys1s=${c.keysAfter1000Ms} keysWait=${c.keysAfterWait} status="${c.statusText}" hidden=${c.workspaceHidden}`
+        );
+      }
+    }
+  } else if (
+    runP4Check &&
+    out.docs.midJobCancel &&
+    (out.docs.midJobCancel.keysAfterWait > 0 || !out.docs.midJobCancel.workspaceHidden)
+  ) {
     out.gateFailures.push(`P4 mid-job cancel leaked keys=${out.docs.midJobCancel.keysAfterWait}`);
   }
 }

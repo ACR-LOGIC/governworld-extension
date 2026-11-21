@@ -190,13 +190,13 @@ export type PopupMessage =
    */
   | { type: "POPUP_DOC_COUNT"; requestId: string; fileKey: string; name: string; mimeType: string; kind: DocKind }
   | { type: "POPUP_DOC_REDACT"; requestId: string; docId: string; fileKey: string; name: string; mimeType: string; kind: DocKind; boxes: { pageIndex: number; rects: Rect[] }[]; findingIds: string[]; options?: RedactionOptions }
-  | { type: "POPUP_DOC_CLEAR"; requestId: string; docId: string }
+  | { type: "POPUP_DOC_CLEAR"; requestId: string; docId?: string; fileKey?: string }
   /**
    * Lift an image off the active page into the Document Studio. Used when a page
    * scan finds no text to read, which is what an image-only page looks like.
    */
   | { type: "POPUP_DOC_CAPTURE_IMAGE"; requestId: string; src: string; name: string }
-  | { type: "POPUP_DOC_CANCEL"; requestId: string; docId: string }
+  | { type: "POPUP_DOC_CANCEL"; requestId: string; docId?: string; fileKey?: string }
   /**
    * Opens the read-only print/PDF view for an already-redacted document. The
    * fileKey names a manifest in the shared store; the page loads the page

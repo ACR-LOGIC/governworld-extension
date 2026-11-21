@@ -2,6 +2,7 @@
 import * as pdfjsLib from "pdfjs-dist";
 import type { TextItem } from "pdfjs-dist/types/src/display/api.js";
 import type { OcrToken } from "./ocr.js";
+import { DocumentCancelledError } from "./contract.js";
 
 /**
  * PDF rendering to canvases using pdf.js in the extension context.
@@ -146,16 +147,23 @@ export async function renderPdfPages(
   maxPages: number,
   dpi = 150,
   /** 0-based index of the first page to render; 0 renders from the start. */
-  startPage = 0
+  startPage = 0,
+  signal?: AbortSignal
 ): Promise<RenderedPage[]> {
+  if (signal?.aborted) throw new DocumentCancelledError();
   configurePdfWorker();
   // `isEvalSupported` is gone in pdf.js 6: the library no longer compiles
   // anything at runtime, so the flag that used to disable it no longer exists.
   // Passing it is a type error, and its absence is the stronger guarantee.
   const loadingTask = pdfjsLib.getDocument({ data, useSystemFonts: true });
-  const pdf = await loadingTask.promise;
+  const onAbort = () => {
+    void loadingTask.destroy().catch(() => undefined);
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
 
   try {
+    const pdf = await loadingTask.promise;
+    if (signal?.aborted) throw new DocumentCancelledError();
     const total = pdf.numPages;
     const offset = Math.min(Math.max(0, Math.floor(Number.isFinite(startPage) ? startPage : 0)), Math.max(0, total - 1));
     const pagesToRender = Math.min(total - offset, maxPages);
@@ -164,6 +172,7 @@ export async function renderPdfPages(
 
     const baseScale = dpi / 72; // 72 points per inch
     for (let i = 1; i <= pagesToRender; i++) {
+      if (signal?.aborted) throw new DocumentCancelledError();
       // Page indices stay ABSOLUTE: a window that starts at page 21 must hand
       // back page 20 (0-based), because every finding, box and store key is
       // keyed by it, and the redaction pass re-renders the same window and
@@ -171,6 +180,7 @@ export async function renderPdfPages(
       // page 21's boxes onto page 1.
       const pageNumber = offset + i;
       const page = await pdf.getPage(pageNumber);
+      if (signal?.aborted) throw new DocumentCancelledError();
       const base = page.getViewport({ scale: 1 });
       let viewport = page.getViewport({ scale: baseScale });
 
@@ -196,6 +206,7 @@ export async function renderPdfPages(
       // pdf.js 6 requires `canvas` on the render parameters; `canvasContext` is
       // the legacy form and must not be passed unless the canvas is null.
       await page.render({ canvas, viewport, intent: "print" }).promise;
+      if (signal?.aborted) throw new DocumentCancelledError();
 
       let hasTextLayer = false;
       let tokens: OcrToken[] | null = null;
@@ -210,6 +221,7 @@ export async function renderPdfPages(
         hasTextLayer = false;
         tokens = null;
       }
+      if (signal?.aborted) throw new DocumentCancelledError();
       out.push({
         index: pageNumber - 1,
         canvas,
@@ -222,7 +234,11 @@ export async function renderPdfPages(
       });
     }
     return out;
+  } catch (error) {
+    if (signal?.aborted) throw new DocumentCancelledError();
+    throw error;
   } finally {
+    signal?.removeEventListener("abort", onAbort);
     // Teardown moved to the loading task in pdf.js 6, and it also tears the
     // worker down. `PDFDocumentProxy.destroy()` no longer exists, so the old
     // call left the worker alive for the life of the document.

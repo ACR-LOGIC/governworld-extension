@@ -290,11 +290,16 @@
   </div>
       </div>
 
-      <div id="doc-progress" class="doc-progress" hidden role="status" aria-live="polite">
-        <div class="doc-progress__spinner" aria-hidden="true"></div>
-        <span id="doc-progress-text" class="doc-progress__text" data-i18n="doc_processing">Processing document…</span>
-        <button id="doc-cancel-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="doc_cancel">Cancel</button>
-      </div>
+        <div id="doc-progress" class="doc-progress" hidden role="status" aria-live="polite">
+          <div class="doc-progress__spinner" aria-hidden="true"></div>
+          <span id="doc-progress-text" class="doc-progress__text" data-i18n="doc_processing">Processing document…</span>
+          <button id="doc-cancel-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="doc_cancel">Cancel</button>
+        </div>
+
+        <p id="doc-staging-help" class="summary__note">
+          Document bytes and page previews stay staged only in your browser&rsquo;s local storage during active review.
+          <strong>Cancel</strong> aborts rendering/OCR and clears staged bytes immediately; <strong>Start Over</strong> removes all staged keys for this document.
+        </p>
 
         <div id="doc-status" class="summary" hidden role="status" aria-live="polite">
           <p id="doc-status-text" class="summary__note"></p>
