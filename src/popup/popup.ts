@@ -149,6 +149,10 @@ export let currentWebTabUrl: string | undefined = undefined;
  * to leave the popup in a valid state rather than inventing one.
  */
 let lastState: PopupState | null = null;
+const pendingStateChunks = new Map<
+  string,
+  { sessionId: string; totalChunks: number; chunks: Map<number, Finding[]> }
+>();
 
 export const CATEGORY_LABELS: Record<string, string> = {
   email: "Email address",
@@ -1140,6 +1144,8 @@ async function refreshReviewTelemetry(currentState?: PopupState | null): Promise
 function renderCoverage(state: PopupState): void {
   const el = document.getElementById("coverage-status");
   const deferred = document.getElementById("coverage-deferred");
+  const scanCoverageEl = document.getElementById("scan-coverage-statement");
+  const windowsDetailEl = document.getElementById("coverage-windows-detail");
 
   if (deferred) {
     const count = state.deferredMediaCount ?? 0;
@@ -1154,6 +1160,16 @@ function renderCoverage(state: PopupState): void {
     el.hidden = true;
     el.textContent = "";
     el.removeAttribute("data-tone");
+    if (scanCoverageEl) {
+      scanCoverageEl.hidden = true;
+      scanCoverageEl.textContent = "";
+      scanCoverageEl.classList.remove("status--error");
+    }
+    if (windowsDetailEl) {
+      windowsDetailEl.hidden = true;
+      windowsDetailEl.textContent = "";
+      windowsDetailEl.removeAttribute("data-tone");
+    }
     return;
   }
 
@@ -1161,6 +1177,39 @@ function renderCoverage(state: PopupState): void {
   const verdict = coverageVerdict(state);
   el.textContent = verdict.text;
   el.setAttribute("data-tone", verdict.tone);
+
+  let statement = "";
+  let statementWarn = false;
+  if (state.incompleteWindows && state.incompleteWindows.length > 0) {
+    const reasons = state.incompleteWindows.map((w) => `Window ${w.windowIndex}: ${w.reason}`).join("; ");
+    statement = t(currentLang, "coverage_windows_incomplete", {
+      scanned: String(state.windowsScanned ?? 0),
+      total: String(state.windowsTotal ?? 0),
+      reasons,
+    });
+    statementWarn = true;
+  } else if ((state.windowsTotal ?? 0) > 0 && !state.truncated) {
+    statement = t(currentLang, "coverage_windows_complete", {
+      scanned: String(state.windowsScanned ?? state.windowsTotal),
+      total: String(state.windowsTotal),
+      chars: state.visibleChars.toLocaleString(),
+    });
+  } else if (state.truncated) {
+    statement = t(currentLang, "status_partial_results");
+    statementWarn = true;
+  }
+
+  if (scanCoverageEl) {
+    scanCoverageEl.hidden = statement.length === 0;
+    scanCoverageEl.textContent = statement;
+    scanCoverageEl.classList.toggle("status--error", statementWarn);
+  }
+  if (windowsDetailEl) {
+    windowsDetailEl.hidden = statement.length === 0;
+    windowsDetailEl.textContent = statement;
+    if (statementWarn) windowsDetailEl.setAttribute("data-tone", "warn");
+    else windowsDetailEl.removeAttribute("data-tone");
+  }
 }
 
 type CoverageTone = "ok" | "warn" | "error";
@@ -4927,9 +4976,67 @@ export async function initPopup(): Promise<void> {
     const validation = validateMessage(raw);
     if (!validation.ok) return;
     const message = validation.message;
+    if (message.type === "POPUP_SCAN_PROGRESS") {
+      const summary = document.getElementById("scan-summary") as HTMLDivElement | null;
+      const status = document.getElementById("status") as HTMLParagraphElement | null;
+      const summaryChars = document.getElementById("summary-chars") as HTMLParagraphElement | null;
+      if (!lastState || lastState.scanning || !lastState.sessionId || lastState.sessionId === message.sessionId) {
+        if (summary) summary.hidden = false;
+        if (status) {
+          status.textContent = t(currentLang, "status_scanning_window", {
+            current: String(message.windowsCompleted),
+            total: String(message.windowsTotal),
+          });
+          status.classList.remove("status--error");
+        }
+        if (summaryChars) {
+          summaryChars.textContent = t(currentLang, "status_scanning_chars_progress", {
+            scanned: message.charsScanned.toLocaleString(),
+            total: message.charsTotal.toLocaleString(),
+            findings: String(message.findingsSoFar),
+          });
+        }
+      }
+      return;
+    }
+    if (message.type === "POPUP_STATE_CHUNK") {
+      const key = `${message.requestId}:${message.sessionId}`;
+      let entry = pendingStateChunks.get(key);
+      if (!entry) {
+        entry = { sessionId: message.sessionId, totalChunks: message.totalChunks, chunks: new Map() };
+        pendingStateChunks.set(key, entry);
+      }
+      entry.chunks.set(message.chunkIndex, message.findings);
+      return;
+    }
     if (message.type === "POPUP_STATE") {
       const priorState = lastState;
-      lastState = message.state;
+      let nextState = message.state;
+      if (message.totalChunks && message.totalChunks > 1) {
+        const key = `${message.requestId}:${message.state.sessionId ?? "state"}`;
+        const entry = pendingStateChunks.get(key);
+        pendingStateChunks.delete(key);
+        const combinedFindings: Finding[] = [];
+        const finalIdx = message.chunkIndex ?? message.totalChunks - 1;
+        let missing = false;
+        for (let i = 0; i < message.totalChunks; i++) {
+          if (i === finalIdx) {
+            combinedFindings.push(...message.state.findings);
+          } else {
+            const chunk = entry?.chunks.get(i);
+            if (!chunk) missing = true;
+            else combinedFindings.push(...chunk);
+          }
+        }
+        nextState = {
+          ...message.state,
+          findings: combinedFindings,
+          findingsTruncated: missing ? true : false,
+          totalFindings: missing ? message.state.totalFindings : combinedFindings.length,
+          ...(missing ? { truncated: true, coverageStatus: "PARTIALLY_SCANNED" } : {}),
+        };
+      }
+      lastState = nextState;
       renderState(lastState);
       if (priorState?.scanning && !lastState.scanning && lastState.scanned) {
         void (async () => {

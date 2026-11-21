@@ -20,7 +20,7 @@ Tick a box only when the task's Definition of Done (S9) is fully met and its S6 
 - [x] **P3** Popup / badge counts current Ref: `docs/releases/directive-reports/P3.md` (branch `task/P3-incremental-scan-result`)
 - [x] **P4** Staged bytes cleared; Cancel stops OCR Ref: `docs/releases/directive-reports/P4.md` (branch `task/P4-cancel-and-staged-bytes`)
 - [x] **P5** Unicode email, exact-span 100% Ref: `docs/releases/directive-reports/P5.md` (branch `task/P5-unicode-email-exact-span`)
-- [ ] **P6** Chunked scanning, complete coverage (D4) Ref: `docs/releases/directive-reports/P6.md`
+- [x] **P6** Chunked scanning, complete coverage (D4) Ref: `docs/releases/directive-reports/P6.md` (branch `task/P6-chunked-windowed-scanning`)
 - [ ] **P7** Adaptive debounce, under 250 ms Ref: `docs/releases/directive-reports/P7.md`
 - [ ] **P8 / M1** Real-scan OCR accuracy measured Ref: `docs/releases/directive-reports/M1.md`
 - [ ] **P9** Finished-PDF re-decode gate Ref: `docs/releases/directive-reports/P9.md`

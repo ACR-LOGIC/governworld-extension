@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 import { PDFDocument } from "pdf-lib";
 
 import { detect } from "../src/content/detect.js";
-import { extractVisibleText, buildScanText } from "../src/content/extract.js";
+import { extractVisibleTextWindows, buildScanText } from "../src/content/extract.js";
 import { detectPasteFindings, sanitizePastedText, insertTextIntoElement } from "../src/content/pasteGuard.js";
 import { findingsFromOcrPages } from "../src/document-pipeline/core.js";
 import { applyBoxes, pagesToPdf } from "../src/document-pipeline/render.js";
@@ -272,15 +272,21 @@ describe("Run 1 Measured Benchmark (GW-BENCH-2026-001)", () => {
       let lastFindings = 0;
       let lastChars = 0;
       let lastTruncated = false;
+      let lastWindowsTotal = 0;
       const timing = measureRuns(
         () => {
           const nodeMap = new Map<string, Node>();
-          const extracted = extractVisibleText(document, 250_000, 10_000, nodeMap);
-          const built = buildScanText(extracted.segments);
-          const matches = detect(built.combined, STRICT_CATEGORIES);
-          lastFindings = matches.length;
-          lastChars = built.combined.length;
+          const extracted = extractVisibleTextWindows(document, 250_000, 10_000, nodeMap);
+          let totalFound = 0;
+          for (const win of extracted.windows) {
+            const built = buildScanText(win.segments);
+            const matches = detect(built.combined, STRICT_CATEGORIES);
+            totalFound += matches.length;
+          }
+          lastFindings = totalFound;
+          lastChars = extracted.totalChars;
           lastTruncated = extracted.truncated;
+          lastWindowsTotal = extracted.windowsTotal;
         },
         count === 10000 ? 5 : 9
       );
@@ -289,6 +295,7 @@ describe("Run 1 Measured Benchmark (GW-BENCH-2026-001)", () => {
         chars: lastChars,
         findings: lastFindings,
         expectedFindings,
+        windowsTotal: lastWindowsTotal,
         truncated: lastTruncated,
       };
     }

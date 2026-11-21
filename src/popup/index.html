@@ -156,6 +156,7 @@
       <div id="scan-summary" class="scan-summary" hidden>
         <p id="status" class="status-text"></p>
         <p id="summary-chars" class="footnote"></p>
+        <p id="scan-coverage-statement" class="footnote" role="status" aria-live="polite" hidden></p>
 
         <!--
         Shown only when a page scan found no text to read AND the page carries
@@ -488,6 +489,7 @@
         <div class="coverage-section">
           <h3 data-i18n="coverage_title">Coverage</h3>
           <p id="coverage-status" class="coverage-status" role="status" aria-live="polite" hidden></p>
+          <p id="coverage-windows-detail" class="footnote" hidden></p>
           <div class="coverage-grid">
             <div class="coverage-item">
               <span class="coverage-icon" aria-hidden="true">·</span>
@@ -972,9 +974,9 @@
             </select>
           </div>
           <div class="form-row">
-            <label for="max-visible-chars-input" data-i18n="max_visible_chars_label">Max visible characters per page scan</label>
+            <label for="max-visible-chars-input" data-i18n="max_visible_chars_label">Per-window character safeguard</label>
             <input id="max-visible-chars-input" type="number" min="100" max="2000000" step="1000" value="250000" />
-            <span class="footnote" data-i18n="max_visible_chars_hint">Default: 250,000 characters. Pages longer than this limit report a partial scan notice.</span>
+            <span class="footnote" data-i18n="max_visible_chars_hint">Default: 250,000 characters per window. Full pages are scanned across consecutive windows rather than cut off; smaller windows bound memory per pass.</span>
           </div>
           <div class="form-row">
             <label for="max-node-chars-input" data-i18n="max_node_chars_label">Max characters per DOM text node</label>

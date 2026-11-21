@@ -104,6 +104,8 @@ describe("service-worker message routing (content-originated types require sende
   it("denies SCAN_RESULT / COPY_REDACTED_TEXT_RESULT / CONTENT_ERROR when sender.tab is absent", async () => {
     const base = { requestId: "req-deny", sessionId: "sess-deny" };
     const cases = [
+      { type: "SCAN_PROGRESS", requestId: "req-deny", sessionId: "sess-deny", windowsCompleted: 1, windowsTotal: 2, charsScanned: 100, charsTotal: 200, findingsSoFar: 1 },
+      { type: "SCAN_RESULT_CHUNK", requestId: "req-deny", sessionId: "sess-deny", chunkIndex: 0, totalChunks: 2, findings: [] },
       { type: "SCAN_RESULT", ...base, findings: [], stats: { visibleChars: 0, truncated: false } },
       { type: "COPY_REDACTED_TEXT_RESULT", ...base, text: "redacted text" },
       { type: "CONTENT_ERROR", ...base, code: "DOC_ERROR", userMessage: "boom" },
@@ -181,6 +183,98 @@ describe("service-worker message routing (content-originated types require sende
     expect(stored?.sessionId).toBeTruthy();
     expect(stored?.sessionId).not.toBe("sess-stale");
     expect(runtimeSent).toEqual([]);
+  });
+
+  it("forwards SCAN_PROGRESS and reassembles SCAN_RESULT_CHUNK into chunked POPUP_STATE under 64 KB (P6)", async () => {
+    (chromeMock.tabs.query as unknown) = async () => [{ id: 42, url: "https://example.com" }];
+    await invoke(
+      { type: "POPUP_SCAN", requestId: "req-p6-sw", mode: "local" },
+      { id: "test", url: "chrome-extension://test/popup.html" }
+    );
+    const scanSession = sessionStore.get("scan:42") as { sessionId: string };
+    runtimeSent.length = 0;
+
+    await invoke(
+      {
+        type: "SCAN_PROGRESS",
+        requestId: "req-p6-sw",
+        sessionId: scanSession.sessionId,
+        windowsCompleted: 1,
+        windowsTotal: 4,
+        charsScanned: 250_000,
+        charsTotal: 870_000,
+        findingsSoFar: 87,
+      },
+      { id: "test", url: "https://example.com/page", tab: { id: 42, url: "https://example.com" } }
+    );
+    expect(runtimeSent.some((m) => (m as { type?: string }).type === "POPUP_SCAN_PROGRESS")).toBe(true);
+
+    const makeFinding = (i: number) => ({
+      id: `ssn_${i * 100}_${i * 100 + 11}_${i}`,
+      category: "ssn" as const,
+      confidence: 0.96,
+      source: "local-rules" as const,
+      preview: "***-**-9999",
+      nodeId: `seg_${i}`,
+      startOffset: 10,
+      endOffset: 21,
+      rects: [{ x: 10, y: 20, width: 100, height: 18 }],
+      contextPreview: "**** **** **** ****",
+      selected: true,
+    });
+    const all300 = Array.from({ length: 300 }, (_, i) => makeFinding(i));
+    const firstHalf = all300.slice(0, 150);
+    const secondHalf = all300.slice(150);
+
+    await invoke(
+      {
+        type: "SCAN_RESULT_CHUNK",
+        requestId: "req-p6-sw",
+        sessionId: scanSession.sessionId,
+        chunkIndex: 0,
+        totalChunks: 2,
+        findings: firstHalf,
+      },
+      { id: "test", url: "https://example.com/page", tab: { id: 42, url: "https://example.com" } }
+    );
+
+    runtimeSent.length = 0;
+    await invoke(
+      {
+        type: "SCAN_RESULT",
+        requestId: "req-p6-sw",
+        sessionId: scanSession.sessionId,
+        chunkIndex: 1,
+        totalChunks: 2,
+        findings: secondHalf,
+        stats: {
+          visibleChars: 870_000,
+          truncated: false,
+          findingsTruncated: false,
+          totalFindings: 300,
+          windowsScanned: 4,
+          windowsTotal: 4,
+          coverageStatus: "FULLY_SCANNED",
+        },
+      },
+      { id: "test", url: "https://example.com/page", tab: { id: 42, url: "https://example.com" } }
+    );
+    await new Promise((r) => setTimeout(r, 40));
+
+    const stored = sessionStore.get("scan:42") as { findings: unknown[]; stats: { windowsScanned: number; windowsTotal: number } };
+    expect(stored.findings).toHaveLength(300);
+    expect(stored.stats.windowsScanned).toBe(4);
+    expect(stored.stats.windowsTotal).toBe(4);
+
+    const stateChunks = runtimeSent.filter((m) => (m as { type?: string }).type === "POPUP_STATE_CHUNK") as Array<{ findings: unknown[]; totalChunks: number }>;
+    const finalPopupStates = runtimeSent.filter((m) => (m as { type?: string }).type === "POPUP_STATE") as Array<{ totalChunks?: number; state: { findings: unknown[]; windowsScanned?: number; windowsTotal?: number } }>;
+    expect(stateChunks.length).toBeGreaterThanOrEqual(1);
+    expect(finalPopupStates).toHaveLength(1);
+    const totalDelivered = stateChunks.reduce((acc, c) => acc + c.findings.length, 0) + finalPopupStates[0]!.state.findings.length;
+    expect(totalDelivered).toBe(300);
+    for (const msg of runtimeSent) {
+      expect(JSON.stringify(msg).length).toBeLessThanOrEqual(64 * 1024);
+    }
   });
 
   it("updates session, popup state, and badge on incremental SCAN_RESULT when no pending scan exists (P3)", async () => {

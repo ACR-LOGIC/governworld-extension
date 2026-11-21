@@ -27,10 +27,10 @@ const args = process.argv.slice(2);
 const modeArg = (args.find((a) => a.startsWith("--mode=")) || "--mode=baseline").split("=")[1];
 const stageArg = (args.find((a) => a.startsWith("--stage=")) || "--stage=all").split("=")[1];
 const outArg = args.find((a) => a.startsWith("--out="))?.slice(6);
-const TAKE_SCREENSHOTS = args.includes("--screenshot") || ["p1", "p2", "p3", "p4", "p5", "p7"].includes(modeArg);
+const TAKE_SCREENSHOTS = args.includes("--screenshot") || ["p1", "p2", "p3", "p4", "p5", "p6", "p7"].includes(modeArg);
 const SCREENSHOT_DIR = join(ROOT, "docs", "releases", "directive-reports", "screenshots");
 const RESULTS_PATH = outArg ? resolve(ROOT, outArg) : join(ROOT, "docs", "benchmarks", "results-run2.json");
-const IS_GATE = ["gate", "p1", "p2", "p3", "p4", "p5", "p7"].includes(modeArg);
+const IS_GATE = ["gate", "p1", "p2", "p3", "p4", "p5", "p6", "p7"].includes(modeArg);
 
 const executablePath = (process.env.GW_BROWSER_EXECUTABLE || "").trim() || chromium.executablePath();
 
@@ -328,16 +328,39 @@ try {
     }, fixtureTabId);
     return await popup.evaluate((tabId) => {
       return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error("Scan timeout")), 20_000);
+        const timer = setTimeout(() => reject(new Error("Scan timeout")), 30_000);
+        const chunks = new Map();
+        const progressEvents = [];
+        const reqId = `r2-${Date.now()}`;
         const listener = (msg) => {
+          if (msg?.type === "POPUP_SCAN_PROGRESS") {
+            progressEvents.push(msg);
+            return;
+          }
+          if (msg?.type === "POPUP_STATE_CHUNK") {
+            chunks.set(msg.chunkIndex, msg.findings || []);
+            return;
+          }
           if (msg?.type !== "POPUP_STATE") return;
           if (msg?.state?.scanning) return;
           clearTimeout(timer);
           chrome.runtime.onMessage.removeListener(listener);
-          resolve(msg.state);
+          let state = msg.state;
+          if (msg.totalChunks && msg.totalChunks > 1) {
+            const merged = [];
+            const finalIdx = msg.chunkIndex ?? msg.totalChunks - 1;
+            for (let i = 0; i < msg.totalChunks; i++) {
+              if (i === finalIdx) merged.push(...(state.findings || []));
+              else merged.push(...(chunks.get(i) || []));
+            }
+            state = { ...state, findings: merged, _progressEvents: progressEvents };
+          } else {
+            state = { ...state, _progressEvents: progressEvents };
+          }
+          resolve(state);
         };
         chrome.runtime.onMessage.addListener(listener);
-        chrome.runtime.sendMessage({ type: "POPUP_SCAN", requestId: `r2-${Date.now()}`, mode: "local", tabId });
+        chrome.runtime.sendMessage({ type: "POPUP_SCAN", requestId: reqId, mode: "local", tabId });
       });
     }, fixtureTabId);
   }
@@ -592,6 +615,123 @@ try {
       mkdirSync(SCREENSHOT_DIR, { recursive: true });
       await page.screenshot({ path: join(SCREENSHOT_DIR, "P5-unicode-email-span.png"), fullPage: false });
     }
+  }
+
+  // -------------------------------------------------------------------------
+  // STAGE: P6 (10,000-node windowed complete scan + incomplete window warning)
+  // -------------------------------------------------------------------------
+  if (shouldRun("p6")) {
+    console.log("\n[Run 2 - P6 Chunked Windowed Scan Stage]");
+    await page.goto(fixtureUrl, { waitUntil: "load" });
+    await page.evaluate(() => {
+      const stage = document.getElementById("stage");
+      stage.innerHTML = "";
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < 10000; i++) {
+        const p = document.createElement("p");
+        const hasSecret = i % 100 < 3;
+        p.textContent = hasSecret
+          ? `Synthetic patient intake node ${i}: SSN 219-09-9999 recorded for synthetic chart verify.`
+          : `Synthetic patient routine status note ${i}: general non-identifying review line in log.`;
+        frag.appendChild(p);
+      }
+      stage.appendChild(frag);
+      document.getElementById("batch-container").innerHTML = "";
+    });
+    const st10k = await injectAndScan();
+    await popup.waitForTimeout(300);
+    const ui10k = await popup.evaluate(() => ({
+      statusText: (document.getElementById("status")?.textContent || "").trim(),
+      summaryChars: (document.getElementById("summary-chars")?.textContent || "").trim(),
+      coverageStatement: (document.getElementById("scan-coverage-statement")?.textContent || "").trim(),
+      resultsCount: (document.getElementById("results-count")?.textContent || "").trim(),
+      renderedFindings: document.querySelectorAll("#findings-list li").length,
+    }));
+    const session10k = await sw.evaluate(async (tabId) => {
+      const raw = await chrome.storage.session.get(`scan:${tabId}`);
+      const s = raw[`scan:${tabId}`];
+      return {
+        findingsCount: s?.findings?.length ?? 0,
+        stats: s?.stats ?? null,
+      };
+    }, fixtureTabId);
+    if (TAKE_SCREENSHOTS) {
+      mkdirSync(SCREENSHOT_DIR, { recursive: true });
+      await popup.screenshot({ path: join(SCREENSHOT_DIR, "P6-10k-complete.png"), fullPage: false });
+    }
+
+    // Trigger technical window ceiling (maxTotalWindows=200 with maxVisibleChars=100 on 220 blocks)
+    const prevSettings = await sw.evaluate(async () => {
+      const raw = await chrome.storage.local.get("settings");
+      const current = raw.settings || {};
+      await chrome.storage.local.set({ settings: { ...current, maxVisibleChars: 100 } });
+      return current;
+    });
+    await page.goto(fixtureUrl, { waitUntil: "load" });
+    await page.evaluate(() => {
+      const stage = document.getElementById("stage");
+      stage.innerHTML = "";
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < 220; i++) {
+        const p = document.createElement("p");
+        p.textContent = `Window ceiling check block ${String(i).padStart(3, "0")}: ${i === 10 ? "SSN 219-09-9999 recorded" : "routine clinical review note"}.`;
+        frag.appendChild(p);
+      }
+      stage.appendChild(frag);
+    });
+    const stLimit = await injectAndScan();
+    await popup.waitForTimeout(250);
+    const uiLimit = await popup.evaluate(() => ({
+      statusText: (document.getElementById("status")?.textContent || "").trim(),
+      coverageStatement: (document.getElementById("scan-coverage-statement")?.textContent || "").trim(),
+      coverageStatementHidden: document.getElementById("scan-coverage-statement")?.hidden ?? true,
+    }));
+    if (TAKE_SCREENSHOTS) {
+      mkdirSync(SCREENSHOT_DIR, { recursive: true });
+      await popup.screenshot({ path: join(SCREENSHOT_DIR, "P6-incomplete-window-warning.png"), fullPage: false });
+    }
+    // Restore original settings
+    await sw.evaluate(async (prev) => {
+      if (Object.keys(prev || {}).length > 0) {
+        await chrome.storage.local.set({ settings: prev });
+      } else {
+        await chrome.storage.local.remove("settings");
+      }
+    }, prevSettings);
+
+    out.scan.windowedP6 = {
+      full10k: {
+        findingsCount: st10k.findings?.length ?? 0,
+        sessionFindingsCount: session10k.findingsCount,
+        windowsScanned: st10k.windowsScanned ?? session10k.stats?.windowsScanned ?? 0,
+        windowsTotal: st10k.windowsTotal ?? session10k.stats?.windowsTotal ?? 0,
+        truncated: st10k.truncated,
+        findingsTruncated: st10k.findingsTruncated,
+        coverageStatus: st10k.coverageStatus,
+        progressEventsCount: (st10k._progressEvents || []).length,
+        progressEvents: (st10k._progressEvents || []).map((e) => ({
+          windowsCompleted: e.windowsCompleted,
+          windowsTotal: e.windowsTotal,
+          charsScanned: e.charsScanned,
+          findingsSoFar: e.findingsSoFar,
+        })),
+        ui: ui10k,
+      },
+      incompleteCeiling: {
+        windowsScanned: stLimit.windowsScanned ?? 0,
+        windowsTotal: stLimit.windowsTotal ?? 0,
+        truncated: stLimit.truncated,
+        coverageStatus: stLimit.coverageStatus,
+        incompleteWindows: stLimit.incompleteWindows ?? [],
+        ui: uiLimit,
+      },
+    };
+    console.log(
+      `  P6 10k-node: findings=${out.scan.windowedP6.full10k.findingsCount}/300 windows=${out.scan.windowedP6.full10k.windowsScanned}/${out.scan.windowedP6.full10k.windowsTotal} progressEvents=${out.scan.windowedP6.full10k.progressEventsCount} truncated=${out.scan.windowedP6.full10k.truncated}`
+    );
+    console.log(
+      `  P6 ceiling: windows=${out.scan.windowedP6.incompleteCeiling.windowsScanned}/${out.scan.windowedP6.incompleteCeiling.windowsTotal} truncated=${out.scan.windowedP6.incompleteCeiling.truncated} status=${out.scan.windowedP6.incompleteCeiling.coverageStatus} statement="${uiLimit.coverageStatement}"`
+    );
   }
 
   // -------------------------------------------------------------------------
@@ -892,10 +1032,30 @@ const runP2Check = modeArg === "gate" || modeArg === "p2";
 const runP3Check = modeArg === "gate" || modeArg === "p3";
 const runP4Check = modeArg === "gate" || modeArg === "p4";
 const runP5Check = modeArg === "p5";
+const runP6Check = modeArg === "p6";
 const runPasteCheck = modeArg === "gate";
 const runLatencyP7Check = modeArg === "p7";
 
 if (IS_GATE) {
+  if (runP6Check) {
+    const p6 = out.scan.windowedP6;
+    if (
+      !p6 ||
+      p6.full10k.findingsCount !== 300 ||
+      p6.full10k.sessionFindingsCount !== 300 ||
+      p6.full10k.truncated !== false ||
+      p6.full10k.findingsTruncated !== false ||
+      p6.full10k.windowsTotal < 3 ||
+      p6.full10k.windowsScanned !== p6.full10k.windowsTotal ||
+      p6.full10k.progressEventsCount < 2 ||
+      !p6.incompleteCeiling.truncated ||
+      p6.incompleteCeiling.coverageStatus !== "PARTIALLY_SCANNED" ||
+      !(p6.incompleteCeiling.incompleteWindows || []).length ||
+      !p6.incompleteCeiling.ui.coverageStatement.includes("201")
+    ) {
+      out.gateFailures.push(`P6 windowed scan check failed: ${JSON.stringify(p6)}`);
+    }
+  }
   if (runP5Check) {
     const p5 = out.scan.unicodeEmailP5;
     if (!p5 || p5.exactMatched < p5.total || p5.overlayEmailMasks < p5.total || p5.popupCount < p5.total) {

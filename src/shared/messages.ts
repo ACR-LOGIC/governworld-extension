@@ -10,7 +10,7 @@ import { isAllowedGatewayOrigin, isCategory } from "./settings.js";
 import { isPageImageKey, isPreviewKey } from "./docStore.js";
 import { parseCustomPattern } from "./customPatterns.js";
 import type { CustomPattern } from "./customPatterns.js";
-import type { FindingCategory, PopupState } from "./types.js";
+import type { FindingCategory, IncompleteWindowInfo, PopupState, ScanStats } from "./types.js";
 import type { AccountView } from "./account.js";
 import { parseAccountView } from "./account.js";
 import type { PatternTestResult, WizardAnalysis } from "./wizardAnalyzer.js";
@@ -317,19 +317,68 @@ function normalizePdfQueue(value: unknown): import("../shared/types.js").PdfExtr
   return out.length > 0 ? out : undefined;
 }
 
-function normalizeScanStats(value: unknown): { visibleChars: number; attrChars?: number; truncated: boolean; findingsTruncated?: boolean; totalFindings?: number; startedAt?: number; finishedAt?: number; imageCandidates?: ImageCandidate[] } | null {
+export const DEFAULT_FINDINGS_CHUNK_BYTES = 48 * 1024;
+
+/**
+ * Partition findings into byte-bounded chunks so every IPC message stays
+ * comfortably under Chrome's 64 KB MAX_MESSAGE_BYTES limit without dropping findings.
+ */
+export function chunkFindingsByByteBudget(
+  findings: Finding[],
+  budgetBytes: number = DEFAULT_FINDINGS_CHUNK_BYTES
+): Finding[][] {
+  if (findings.length <= 1) return [findings];
+  const full = JSON.stringify(findings);
+  if (full.length <= budgetBytes) return [findings];
+
+  const chunks: Finding[][] = [];
+  let current: Finding[] = [];
+  let currentBytes = 2; // "[]"
+  for (const finding of findings) {
+    const serializedLen = JSON.stringify(finding).length;
+    const addition = current.length > 0 ? serializedLen + 1 : serializedLen;
+    if (current.length > 0 && currentBytes + addition > budgetBytes) {
+      chunks.push(current);
+      current = [finding];
+      currentBytes = 2 + serializedLen;
+    } else {
+      current.push(finding);
+      currentBytes += addition;
+    }
+  }
+  if (current.length > 0) chunks.push(current);
+  return chunks.length > 0 ? chunks : [[]];
+}
+
+function normalizeIncompleteWindows(value: unknown): IncompleteWindowInfo[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out: IncompleteWindowInfo[] = [];
+  for (const entry of value) {
+    if (out.length >= 256) break;
+    if (!isRecord(entry)) continue;
+    if (typeof entry.windowIndex !== "number" || !Number.isSafeInteger(entry.windowIndex) || entry.windowIndex < 1) continue;
+    if (typeof entry.reason !== "string" || entry.reason.length === 0 || entry.reason.length > 256) continue;
+    out.push({ windowIndex: entry.windowIndex, reason: entry.reason });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+function normalizeScanStats(value: unknown): ScanStats | null {
   if (!isRecord(value) || typeof value.visibleChars !== "number" || !Number.isSafeInteger(value.visibleChars) || value.visibleChars < 0) return null;
   if (value.attrChars !== undefined && (typeof value.attrChars !== "number" || !Number.isSafeInteger(value.attrChars) || value.attrChars < 0)) return null;
   if (typeof value.truncated !== "boolean") return null;
+  if (value.windowsScanned !== undefined && (typeof value.windowsScanned !== "number" || !Number.isSafeInteger(value.windowsScanned) || value.windowsScanned < 0)) return null;
+  if (value.windowsTotal !== undefined && (typeof value.windowsTotal !== "number" || !Number.isSafeInteger(value.windowsTotal) || value.windowsTotal < 0)) return null;
   if (value.findingsTruncated !== undefined && typeof value.findingsTruncated !== "boolean") return null;
   if (value.totalFindings !== undefined && (typeof value.totalFindings !== "number" || !Number.isSafeInteger(value.totalFindings) || value.totalFindings < 0)) return null;
   if (value.startedAt !== undefined && (typeof value.startedAt !== "number" || !Number.isFinite(value.startedAt))) return null;
   if (value.finishedAt !== undefined && (typeof value.finishedAt !== "number" || !Number.isFinite(value.finishedAt))) return null;
   const imageCandidates = value.imageCandidates === undefined ? undefined : normalizeImageCandidates(value.imageCandidates);
-  // Advisory fields (visualQueue, pdfQueue, deferredMediaCount, coverageStatus) are dropped
+  // Advisory fields (visualQueue, pdfQueue, deferredMediaCount, coverageStatus, incompleteWindows) are dropped
   // rather than failing the whole scan when malformed. Findings remain valid.
   const visualQueue = value.visualQueue === undefined ? undefined : normalizeVisualQueue(value.visualQueue);
   const pdfQueue = value.pdfQueue === undefined ? undefined : normalizePdfQueue(value.pdfQueue);
+  const incompleteWindows = value.incompleteWindows === undefined ? undefined : normalizeIncompleteWindows(value.incompleteWindows);
   const deferredMediaCount =
     typeof value.deferredMediaCount === "number" &&
     Number.isSafeInteger(value.deferredMediaCount) &&
@@ -344,6 +393,9 @@ function normalizeScanStats(value: unknown): { visibleChars: number; attrChars?:
     visibleChars: value.visibleChars,
     ...(value.attrChars !== undefined ? { attrChars: value.attrChars } : {}),
     truncated: value.truncated,
+    ...(value.windowsScanned !== undefined ? { windowsScanned: value.windowsScanned } : {}),
+    ...(value.windowsTotal !== undefined ? { windowsTotal: value.windowsTotal } : {}),
+    ...(incompleteWindows ? { incompleteWindows } : {}),
     ...(value.findingsTruncated !== undefined ? { findingsTruncated: value.findingsTruncated } : {}),
     ...(value.totalFindings !== undefined ? { totalFindings: value.totalFindings } : {}),
     ...(value.startedAt !== undefined ? { startedAt: value.startedAt } : {}),
@@ -473,6 +525,20 @@ function normalizePopupState(value: unknown): PopupState | null {
     value.deferredMediaCount >= 0
       ? value.deferredMediaCount
       : undefined;
+  const windowsScanned =
+    typeof value.windowsScanned === "number" &&
+    Number.isSafeInteger(value.windowsScanned) &&
+    value.windowsScanned >= 0
+      ? value.windowsScanned
+      : undefined;
+  const windowsTotal =
+    typeof value.windowsTotal === "number" &&
+    Number.isSafeInteger(value.windowsTotal) &&
+    value.windowsTotal >= 0
+      ? value.windowsTotal
+      : undefined;
+  const incompleteWindows =
+    value.incompleteWindows === undefined ? undefined : normalizeIncompleteWindows(value.incompleteWindows);
   return {
     mode: value.mode,
     ...(value.operatingMode === "MANAGE" || value.operatingMode === "LOCAL" ? { operatingMode: value.operatingMode } : {}),
@@ -489,6 +555,9 @@ function normalizePopupState(value: unknown): PopupState | null {
     ...(value.sessionId !== undefined ? { sessionId: value.sessionId } : {}),
     ...(coverageStatus ? { coverageStatus } : {}),
     ...(deferredMediaCount !== undefined ? { deferredMediaCount } : {}),
+    ...(windowsScanned !== undefined ? { windowsScanned } : {}),
+    ...(windowsTotal !== undefined ? { windowsTotal } : {}),
+    ...(incompleteWindows ? { incompleteWindows } : {}),
   };
 }
 
@@ -648,13 +717,67 @@ export function validateMessage(raw: unknown): ValidationResult {
       if (!isScanSettings(raw.settings)) return { ok: false, error: "Invalid settings" };
       return { ok: true, message: { type, requestId, mode: raw.mode, sessionId: raw.sessionId, settings: raw.settings } };
     }
+    case "SCAN_PROGRESS":
+    case "POPUP_SCAN_PROGRESS": {
+      if (typeof raw.sessionId !== "string" || !raw.sessionId) return { ok: false, error: "Invalid sessionId" };
+      if (typeof raw.windowsCompleted !== "number" || !Number.isSafeInteger(raw.windowsCompleted) || raw.windowsCompleted < 0) return { ok: false, error: "Invalid windowsCompleted" };
+      if (typeof raw.windowsTotal !== "number" || !Number.isSafeInteger(raw.windowsTotal) || raw.windowsTotal < 0) return { ok: false, error: "Invalid windowsTotal" };
+      if (typeof raw.charsScanned !== "number" || !Number.isSafeInteger(raw.charsScanned) || raw.charsScanned < 0) return { ok: false, error: "Invalid charsScanned" };
+      if (typeof raw.charsTotal !== "number" || !Number.isSafeInteger(raw.charsTotal) || raw.charsTotal < 0) return { ok: false, error: "Invalid charsTotal" };
+      if (typeof raw.findingsSoFar !== "number" || !Number.isSafeInteger(raw.findingsSoFar) || raw.findingsSoFar < 0) return { ok: false, error: "Invalid findingsSoFar" };
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          sessionId: raw.sessionId,
+          windowsCompleted: raw.windowsCompleted,
+          windowsTotal: raw.windowsTotal,
+          charsScanned: raw.charsScanned,
+          charsTotal: raw.charsTotal,
+          findingsSoFar: raw.findingsSoFar,
+        },
+      };
+    }
+    case "SCAN_RESULT_CHUNK":
+    case "POPUP_STATE_CHUNK": {
+      if (typeof raw.sessionId !== "string" || !raw.sessionId) return { ok: false, error: "Invalid sessionId" };
+      if (typeof raw.totalChunks !== "number" || !Number.isSafeInteger(raw.totalChunks) || raw.totalChunks < 1 || raw.totalChunks > 200) return { ok: false, error: "Invalid totalChunks" };
+      if (typeof raw.chunkIndex !== "number" || !Number.isSafeInteger(raw.chunkIndex) || raw.chunkIndex < 0 || raw.chunkIndex >= raw.totalChunks) return { ok: false, error: "Invalid chunkIndex" };
+      const chunkFindings = normalizeFindingArray(raw.findings);
+      if (!chunkFindings) return { ok: false, error: "Invalid findings" };
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          sessionId: raw.sessionId,
+          chunkIndex: raw.chunkIndex,
+          totalChunks: raw.totalChunks,
+          findings: chunkFindings,
+        },
+      };
+    }
     case "SCAN_RESULT": {
       if (typeof raw.sessionId !== "string" || !raw.sessionId) return { ok: false, error: "Invalid sessionId" };
       const findings = normalizeFindingArray(raw.findings);
       if (!findings) return { ok: false, error: "Invalid findings" };
       const stats = normalizeScanStats(raw.stats);
       if (!stats) return { ok: false, error: "Invalid stats" };
-      return { ok: true, message: { type, requestId, sessionId: raw.sessionId, findings, stats } };
+      if (raw.totalChunks !== undefined && (typeof raw.totalChunks !== "number" || !Number.isSafeInteger(raw.totalChunks) || raw.totalChunks < 1 || raw.totalChunks > 200)) return { ok: false, error: "Invalid totalChunks" };
+      if (raw.chunkIndex !== undefined && (typeof raw.chunkIndex !== "number" || !Number.isSafeInteger(raw.chunkIndex) || raw.chunkIndex < 0 || (typeof raw.totalChunks === "number" && raw.chunkIndex >= raw.totalChunks))) return { ok: false, error: "Invalid chunkIndex" };
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          sessionId: raw.sessionId,
+          findings,
+          stats,
+          ...(typeof raw.chunkIndex === "number" ? { chunkIndex: raw.chunkIndex } : {}),
+          ...(typeof raw.totalChunks === "number" ? { totalChunks: raw.totalChunks } : {}),
+        },
+      };
     }
     case "CONTENT_ERROR": {
       if (typeof raw.sessionId !== "string" || !raw.sessionId) return { ok: false, error: "Invalid sessionId" };
@@ -698,7 +821,18 @@ export function validateMessage(raw: unknown): ValidationResult {
     case "POPUP_STATE": {
       const state = normalizePopupState(raw.state);
       if (!state) return { ok: false, error: "Invalid state" };
-      return { ok: true, message: { type, requestId, state } };
+      if (raw.totalChunks !== undefined && (typeof raw.totalChunks !== "number" || !Number.isSafeInteger(raw.totalChunks) || raw.totalChunks < 1 || raw.totalChunks > 200)) return { ok: false, error: "Invalid totalChunks" };
+      if (raw.chunkIndex !== undefined && (typeof raw.chunkIndex !== "number" || !Number.isSafeInteger(raw.chunkIndex) || raw.chunkIndex < 0 || (typeof raw.totalChunks === "number" && raw.chunkIndex >= raw.totalChunks))) return { ok: false, error: "Invalid chunkIndex" };
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          state,
+          ...(typeof raw.chunkIndex === "number" ? { chunkIndex: raw.chunkIndex } : {}),
+          ...(typeof raw.totalChunks === "number" ? { totalChunks: raw.totalChunks } : {}),
+        },
+      };
     }
     case "POPUP_COPY_RESULT": {
       if (typeof raw.text !== "string") return { ok: false, error: "Invalid text" };

@@ -1,0 +1,83 @@
+{
+  "generatedAt": "2026-11-21T22:33:42.121Z",
+  "mode": "p6",
+  "stage": "p6",
+  "executablePath": "C:\\Users\\omg\\AppData\\Local\\ms-playwright\\chromium-1255\\chrome-win64\\chrome.exe",
+  "browserVersion": "Chrome/159.0.8154.6",
+  "nodeVersion": "v22.22.2",
+  "scan": {
+    "windowedP6": {
+      "full10k": {
+        "findingsCount": 300,
+        "sessionFindingsCount": 300,
+        "windowsScanned": 4,
+        "windowsTotal": 4,
+        "truncated": false,
+        "findingsTruncated": false,
+        "coverageStatus": "FULLY_SCANNED",
+        "progressEventsCount": 5,
+        "progressEvents": [
+          {
+            "windowsCompleted": 0,
+            "windowsTotal": 4,
+            "charsScanned": 0,
+            "findingsSoFar": 0
+          },
+          {
+            "windowsCompleted": 1,
+            "windowsTotal": 4,
+            "charsScanned": 249996,
+            "findingsSoFar": 87
+          },
+          {
+            "windowsCompleted": 2,
+            "windowsTotal": 4,
+            "charsScanned": 499947,
+            "findingsSoFar": 174
+          },
+          {
+            "windowsCompleted": 3,
+            "windowsTotal": 4,
+            "charsScanned": 749898,
+            "findingsSoFar": 261
+          },
+          {
+            "windowsCompleted": 4,
+            "windowsTotal": 4,
+            "charsScanned": 869220,
+            "findingsSoFar": 300
+          }
+        ],
+        "ui": {
+          "statusText": "Completed securely on-device",
+          "summaryChars": "879,221 visible characters analyzed",
+          "coverageStatement": "All 4 of 4 windows scanned (879,221 characters).",
+          "resultsCount": "300 detected",
+          "renderedFindings": 300
+        }
+      },
+      "incompleteCeiling": {
+        "windowsScanned": 200,
+        "windowsTotal": 200,
+        "truncated": true,
+        "coverageStatus": "PARTIALLY_SCANNED",
+        "incompleteWindows": [
+          {
+            "reason": "Technical window ceiling reached (200 windows)",
+            "windowIndex": 201
+          }
+        ],
+        "ui": {
+          "statusText": "Displaying partial results",
+          "coverageStatement": "Incomplete scan: 200 of 200 windows scanned — not scanned: Window 201: Technical window ceiling reached (200 windows)",
+          "coverageStatementHidden": false
+        }
+      }
+    }
+  },
+  "paste": {},
+  "docs": {},
+  "ocrNode": {},
+  "network": {},
+  "gateFailures": []
+}

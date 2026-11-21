@@ -52,10 +52,11 @@ The **GovernWorld Extension** (`v0.4.0`) is a local-first browser protection too
 ## Core Capabilities
 
 1. **On-Demand Page Scanning & Visual Masking:**
-   - Scans visible page text (and report-only accessibility attributes like `aria-label`, `alt`, `placeholder`, `title`) only after explicit user action.
+   - Scans visible page text across the entire document using **chunked (windowed) scanning** (`Settings → Advanced → Per-window character safeguard`, default `250,000` chars per window — a per-window memory bound, not a whole-page cut-off) and report-only accessibility attributes (`aria-label`, `alt`, `placeholder`, `title`) only after explicit user action.
+   - Displays live window/character progress in the popup while scanning (`Scanning window X of Y`) and chunks large finding sets across runtime IPC (`<= 64 KB` per message) so all findings arrive without silent drops.
    - Highlights findings, applies non-destructive visual masks in a shadow-root overlay, and copies securely redacted text (sensitive values replaced with `[REDACTED]`).
    - Structured **possible name** findings are enriched with parsed components (prefix/first/middle/last/suffix/credentials/gender/age/DOB) for review and export; structured names are boosted before thresholding and low-structure names are not auto-selected for masking to reduce false-positive redaction.
-   - Coverage is reported honestly (including truncated/partial/no-readable-text cases). A page with no readable text is not reported as a clean scan; image-only pages can be routed into the Document Studio via detected image candidates.
+   - Ends every scan with an explicit coverage statement naming all scanned windows or any incomplete/unreadable window (such as the 200-window technical ceiling, partial/truncated nodes, or no-readable-text pages). Never reports an incomplete scan as clean; image-only pages can be routed into the Document Studio via detected image candidates.
    - Keyboard shortcuts (rebindable at `chrome://extensions/shortcuts`): `Alt+Shift+E` opens popup, `Alt+Shift+S` scans page, `Alt+Shift+M` applies/removes masks, `Alt+Shift+P` opens side panel.
 
 2. **"Paste, Prompt & Submit" Shield (on-demand, policy-aware):**

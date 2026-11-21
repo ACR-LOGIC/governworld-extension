@@ -10,11 +10,11 @@ import { createOverlay } from "./overlay.js";
 import type { OverlayController } from "./overlay.js";
 import { initPasteGuard } from "./pasteGuard.js";
 import { showToast } from "./toast.js";
-import { validateMessage } from "../shared/messages.js";
-import type { Finding, FindingCategory, Rect, WorkerMessage } from "../shared/types.js";
+import { validateMessage, DEFAULT_FINDINGS_CHUNK_BYTES, chunkFindingsByByteBudget } from "../shared/messages.js";
+import type { Finding, FindingCategory, IncompleteWindowInfo, Rect, WorkerMessage } from "../shared/types.js";
 import { ALL_CATEGORIES } from "../shared/settings.js";
 import type { CustomPattern } from "../shared/customPatterns.js";
-import { buildCanonicalDocument } from "./normalization/canonical.js";
+import { buildCanonicalDocumentWindows } from "./normalization/canonical.js";
 import { observeMutations, getAffectedNodeIds, type MutationObserverHandle, type MutationBatch } from "./normalization/mutation.js";
 import { setDynamicContentMonitored, updateCoverageWithBoundaries } from "./normalization/coverage.js";
 import { traverseIframes } from "./normalization/iframe.js";
@@ -79,6 +79,9 @@ if (g.__gwRedactionContentLoaded !== true) {
   let lastTruncated = false;
   let lastCoverageStatus: import("../shared/types.js").ScanCoverageStatus | undefined;
   let lastDeferredMediaCount = 0;
+  let lastWindowsScanned: number | undefined;
+  let lastWindowsTotal: number | undefined;
+  let lastIncompleteWindows: IncompleteWindowInfo[] | undefined;
 
   function clearSession() {
     sessionId = null;
@@ -98,6 +101,9 @@ if (g.__gwRedactionContentLoaded !== true) {
     lastTruncated = false;
     lastCoverageStatus = undefined;
     lastDeferredMediaCount = 0;
+    lastWindowsScanned = undefined;
+    lastWindowsTotal = undefined;
+    lastIncompleteWindows = undefined;
     if (mutationDebounceTimer !== null) {
       clearTimeout(mutationDebounceTimer);
       mutationDebounceTimer = null;
@@ -235,37 +241,7 @@ if (g.__gwRedactionContentLoaded !== true) {
     return rects;
   }
 
-  /**
-   * Findings travel to the service worker inside SCAN_RESULT, which — like every
-   * runtime message — is dropped whole past MAX_MESSAGE_BYTES (64 KB). A dense
-   * page (a long table, a log dump) can easily produce hundreds of findings and
-   * would otherwise vanish into a "Scan timed out" with no honest signal. Cap the
-   * list by serialized byte budget so the result always arrives, and report the
-   * true count so the UI can say the results are partial.
-   */
-  const MAX_SCAN_FINDINGS_BYTES = 48 * 1024;
-
-  function capFindingsForTransport(findings: Finding[]): {
-    findings: Finding[];
-    totalFindings: number;
-    findingsTruncated: boolean;
-  } {
-    const totalFindings = findings.length;
-    let capped = findings;
-    if (findings.length > 1) {
-      const probe = JSON.stringify(findings);
-      if (probe.length > MAX_SCAN_FINDINGS_BYTES) {
-        const perFinding = probe.length / findings.length;
-        const keep = Math.max(1, Math.floor(MAX_SCAN_FINDINGS_BYTES / perFinding));
-        capped = findings.slice(0, keep);
-        // Per-finding sizes vary, so confirm the slice actually fits.
-        while (capped.length > 1 && JSON.stringify(capped).length > MAX_SCAN_FINDINGS_BYTES) {
-          capped = capped.slice(0, Math.max(1, Math.floor(capped.length / 2)));
-        }
-      }
-    }
-    return { findings: capped, totalFindings, findingsTruncated: capped.length < totalFindings };
-  }
+  /** Findings travel via chunkFindingsByByteBudget so all findings survive Chrome IPC. */
 
   function buildFindings(
     rawMatches: ReturnType<typeof detect>,
@@ -364,8 +340,8 @@ if (g.__gwRedactionContentLoaded !== true) {
       inventory = null;
     }
 
-    // ── Layer 1: DOM canonical text (existing path, unchanged) ─────────────
-    const canonical = buildCanonicalDocument({
+    // ── Layer 1: DOM canonical text (windowed full-page scan, P6 / D4) ────
+    const canonical = buildCanonicalDocumentWindows({
       root: document,
       sourceKind: "web-dom",
       maxVisibleChars: settings.maxVisibleChars,
@@ -378,6 +354,9 @@ if (g.__gwRedactionContentLoaded !== true) {
       canonical.segments = annotateSegmentsWithTableStructure(canonical.segments, nodeIds);
       canonical.metadata.tableCount = tables.length;
     }
+
+    const frameGlobalStart = canonical.combined.length > 0 ? canonical.combined.length + 1 : 0;
+    const frameTextParts: string[] = [];
 
     // Frame text is appended after the top document's, so the scan string
     // contains every frame. Each frame contributes an independently offset
@@ -401,6 +380,7 @@ if (g.__gwRedactionContentLoaded !== true) {
       );
       canonical.combined += (canonical.combined.length > 0 ? "\n" : "") + frameDoc.combined;
       canonical.segmentStarts.push(...frameDoc.segmentStarts.map((s) => s + shift));
+      if (frameDoc.combined.length > 0) frameTextParts.push(frameDoc.combined);
     }
     canonical.boundaries.push(...iframeResult.boundaries);
 
@@ -442,16 +422,93 @@ if (g.__gwRedactionContentLoaded !== true) {
     currentCustomPatterns = customPatterns;
 
     const threshold = (cat: FindingCategory) => settings.confidenceThresholds?.[cat] ?? 0;
-    const detectedMain = detectWithCoverage(combined, settings.enabledCategories, customPatterns);
-    let customPatternsPartiallyScanned = detectedMain.partiallyScanned;
-    let rawMatches = detectedMain.matches;
+    let customPatternsPartiallyScanned = false;
+    let rawMatches: RawMatch[] = [];
 
-    // Name intelligence: parse every possible_name span, attach structured
-    // components, and boost structured names before the confidence gate so real
-    // PHI names are not filtered out as low-confidence.
-    if (settings.enabledCategories.includes("possible_name")) {
-      rawMatches = enrichAndBoostNames(rawMatches);
+    const totalWindows = canonical.windowsTotal;
+    const charsTotal = combined.length;
+    const incompleteWindows: IncompleteWindowInfo[] = [...canonical.incompleteWindows];
+    let windowsScanned = 0;
+    let charsScanned = 0;
+
+    if (totalWindows > 1) {
+      respond(
+        {
+          type: "SCAN_PROGRESS",
+          requestId,
+          sessionId: sessionId as string,
+          windowsCompleted: 0,
+          windowsTotal: totalWindows,
+          charsScanned: 0,
+          charsTotal,
+          findingsSoFar: 0,
+        },
+        requestId
+      );
     }
+
+    for (let wIdx = 0; wIdx < canonical.windowSlices.length; wIdx++) {
+      const slice = canonical.windowSlices[wIdx];
+      try {
+        const winDetected = detectWithCoverage(slice.combined, settings.enabledCategories, customPatterns);
+        if (winDetected.partiallyScanned) customPatternsPartiallyScanned = true;
+        let winMatches = winDetected.matches.map((m) => ({
+          ...m,
+          start: slice.globalStartOffset + m.start,
+          end: slice.globalStartOffset + m.end,
+        }));
+        if (settings.enabledCategories.includes("possible_name")) {
+          winMatches = enrichAndBoostNames(winMatches);
+        }
+        rawMatches.push(...winMatches);
+        windowsScanned += 1;
+      } catch (err) {
+        incompleteWindows.push({
+          windowIndex: slice.windowIndex,
+          reason: err instanceof Error && err.message ? err.message.slice(0, 120) : "Window scan failed",
+        });
+      }
+      charsScanned += slice.charCount;
+      if (totalWindows > 1) {
+        respond(
+          {
+            type: "SCAN_PROGRESS",
+            requestId,
+            sessionId: sessionId as string,
+            windowsCompleted: wIdx + 1,
+            windowsTotal: totalWindows,
+            charsScanned: Math.min(charsScanned, charsTotal),
+            charsTotal,
+            findingsSoFar: rawMatches.filter((m) => m.confidence >= threshold(m.category)).length,
+          },
+          requestId
+        );
+        if (wIdx < canonical.windowSlices.length - 1) {
+          await new Promise((r) => setTimeout(r, 0));
+        }
+      }
+    }
+
+    if (frameTextParts.length > 0) {
+      const frameCombined = frameTextParts.join("\n");
+      const frameDetected = detectWithCoverage(frameCombined, settings.enabledCategories, customPatterns);
+      if (frameDetected.partiallyScanned) customPatternsPartiallyScanned = true;
+      let frameMatches = frameDetected.matches.map((m) => ({
+        ...m,
+        start: frameGlobalStart + m.start,
+        end: frameGlobalStart + m.end,
+      }));
+      if (settings.enabledCategories.includes("possible_name")) {
+        frameMatches = enrichAndBoostNames(frameMatches);
+      }
+      rawMatches.push(...frameMatches);
+    }
+
+    const effectiveTruncated =
+      canonical.truncated ||
+      canonical.hardLimitReached ||
+      customPatternsPartiallyScanned ||
+      incompleteWindows.length > 0;
 
     const filteredMatches = rawMatches.filter(
       (m) => m.confidence >= threshold(m.category)
@@ -599,62 +656,94 @@ if (g.__gwRedactionContentLoaded !== true) {
           unresolvedRegions: remainingUnresolved,
           deferredMediaCount,
           visibleChars: combined.length,
-          truncated: canonical.truncated,
+          truncated: effectiveTruncated,
           customPatternsPartiallyScanned,
         });
-      } else if (canonical.truncated || customPatternsPartiallyScanned) {
+      } else if (effectiveTruncated) {
         coverageStatus = "PARTIALLY_SCANNED";
       }
     } catch {
       // Media queue is best-effort — never fail the scan.
-      if (canonical.truncated || customPatternsPartiallyScanned) {
+      if (effectiveTruncated) {
         coverageStatus = "PARTIALLY_SCANNED";
       }
     }
 
     lastAttrChars = attrChars;
-    lastTruncated = canonical.truncated || customPatternsPartiallyScanned;
-    lastCoverageStatus = coverageStatus;
+    lastTruncated = effectiveTruncated;
+    lastCoverageStatus = incompleteWindows.length > 0 ? "PARTIALLY_SCANNED" : coverageStatus;
     lastDeferredMediaCount = deferredMediaCount;
+    lastWindowsScanned = windowsScanned;
+    lastWindowsTotal = totalWindows;
+    lastIncompleteWindows = incompleteWindows.length > 0 ? incompleteWindows : undefined;
 
     const imageCandidates = (combined.length === 0 || (combined.length < 300 && findings.length === 0)) ? collectImageCandidates() : undefined;
 
-    emitScanResult(requestId, {
+    await emitScanResult(requestId, {
       ...(imageCandidates ? { imageCandidates } : {}),
       ...(visualQueue ? { visualQueue } : {}),
       ...(pdfQueue ? { pdfQueue } : {}),
     });
   }
 
-  function emitScanResult(
+  async function emitScanResult(
     requestId: string,
     extraStats: Record<string, unknown> = {}
-  ): void {
+  ): Promise<void> {
     if (!sessionId) return;
+    const currentSessionId = sessionId;
     const result: Finding[] = findings.map((f) => ({
       ...f,
       rects: f.rects.map((r) => ({ ...r })),
     }));
-    const capped = capFindingsForTransport(result);
-    respond(
-      {
-        type: "SCAN_RESULT",
-        requestId,
-        sessionId,
-        findings: capped.findings,
-        stats: {
-          visibleChars: combined.length,
-          attrChars: lastAttrChars,
-          truncated: lastTruncated,
-          findingsTruncated: capped.findingsTruncated,
-          totalFindings: capped.totalFindings,
-          ...(lastDeferredMediaCount > 0 ? { deferredMediaCount: lastDeferredMediaCount } : {}),
-          ...(lastCoverageStatus !== undefined ? { coverageStatus: lastCoverageStatus } : {}),
-          ...extraStats,
-        },
+    const chunks = chunkFindingsByByteBudget(result, DEFAULT_FINDINGS_CHUNK_BYTES);
+    const totalFindings = result.length;
+
+    if (chunks.length > 1) {
+      for (let i = 0; i < chunks.length - 1; i++) {
+        try {
+          await chrome.runtime.sendMessage({
+            type: "SCAN_RESULT_CHUNK",
+            requestId,
+            sessionId: currentSessionId,
+            chunkIndex: i,
+            totalChunks: chunks.length,
+            findings: chunks[i],
+          });
+        } catch {
+          // Best-effort chunk delivery; final SCAN_RESULT will report honest completeness.
+        }
+      }
+    }
+
+    const lastChunk = chunks[chunks.length - 1] ?? [];
+    const payload = {
+      type: "SCAN_RESULT",
+      requestId,
+      sessionId: currentSessionId,
+      findings: lastChunk,
+      ...(chunks.length > 1 ? { chunkIndex: chunks.length - 1, totalChunks: chunks.length } : {}),
+      stats: {
+        visibleChars: combined.length,
+        attrChars: lastAttrChars,
+        truncated: lastTruncated,
+        findingsTruncated: false,
+        totalFindings,
+        ...(lastWindowsScanned !== undefined ? { windowsScanned: lastWindowsScanned } : {}),
+        ...(lastWindowsTotal !== undefined ? { windowsTotal: lastWindowsTotal } : {}),
+        ...(lastIncompleteWindows && lastIncompleteWindows.length > 0
+          ? { incompleteWindows: lastIncompleteWindows }
+          : {}),
+        ...(lastDeferredMediaCount > 0 ? { deferredMediaCount: lastDeferredMediaCount } : {}),
+        ...(lastCoverageStatus !== undefined ? { coverageStatus: lastCoverageStatus } : {}),
+        ...extraStats,
       },
-      requestId
-    );
+    };
+    try {
+      await chrome.runtime.sendMessage(payload);
+    } catch {
+      // SW may have suspended; delivery is best-effort.
+    }
   }
 
 
@@ -1189,7 +1278,7 @@ if (g.__gwRedactionContentLoaded !== true) {
 
     // Notify service worker and popup after every incremental rescan so badge
     // and findings count stay synchronized with on-page overlay masks (Task P3).
-    emitScanResult(`rescan_${Date.now()}`);
+    void emitScanResult(`rescan_${Date.now()}`);
   }
 
   function mergeMutationBatch(existing: MutationBatch | null, incoming: MutationBatch): MutationBatch {

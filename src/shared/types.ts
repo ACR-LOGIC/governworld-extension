@@ -139,11 +139,22 @@ export type ScanCoverageStatus =
   | "NO_SENSITIVE_DATA_DETECTED"
   | "SCAN_FAILED";
 
+export interface IncompleteWindowInfo {
+  windowIndex: number;
+  reason: string;
+}
+
 export interface ScanStats {
   visibleChars: number;
   /** Characters of accessibility-attribute text also analyzed. */
   attrChars?: number;
   truncated: boolean;
+  /** Number of content windows actually scanned (chunked full-page scanning, P6/D4). */
+  windowsScanned?: number;
+  /** Total content windows extracted for the page (P6/D4). */
+  windowsTotal?: number;
+  /** Windows that could not be scanned (with 1-based index and plain-language reason). */
+  incompleteWindows?: IncompleteWindowInfo[];
   /**
    * The findings list was capped to fit the runtime message limit.
    * totalFindings is the true match count; the popup reports partial results.
@@ -278,7 +289,33 @@ export interface ScanSettingsMessage {
 
 export type WorkerMessage =
   | { type: "SCAN_PAGE"; requestId: string; mode: ScanMode; sessionId: string; settings: ScanSettingsMessage }
-  | { type: "SCAN_RESULT"; requestId: string; sessionId: string; findings: Finding[]; stats: ScanStats }
+  | {
+      type: "SCAN_PROGRESS";
+      requestId: string;
+      sessionId: string;
+      windowsCompleted: number;
+      windowsTotal: number;
+      charsScanned: number;
+      charsTotal: number;
+      findingsSoFar: number;
+    }
+  | {
+      type: "SCAN_RESULT_CHUNK";
+      requestId: string;
+      sessionId: string;
+      chunkIndex: number;
+      totalChunks: number;
+      findings: Finding[];
+    }
+  | {
+      type: "SCAN_RESULT";
+      requestId: string;
+      sessionId: string;
+      findings: Finding[];
+      stats: ScanStats;
+      chunkIndex?: number;
+      totalChunks?: number;
+    }
   | { type: "CONTENT_ERROR"; requestId: string; sessionId: string; code: string; userMessage: string }
   | { type: "APPLY_MASKS"; requestId: string; sessionId: string; findingIds: string[] }
   | { type: "REMOVE_MASKS"; requestId: string; sessionId: string }
@@ -337,6 +374,12 @@ export interface PopupState {
   coverageStatus?: ScanCoverageStatus;
   /** Visual regions found beyond the per-pass budget that were not queued. */
   deferredMediaCount?: number;
+  /** Number of DOM scan windows completed (P6/D4). */
+  windowsScanned?: number;
+  /** Total DOM scan windows discovered on the page (P6/D4). */
+  windowsTotal?: number;
+  /** Any windows that could not be scanned, named for honest reporting. */
+  incompleteWindows?: IncompleteWindowInfo[];
 }
 
 /** One processed document page for the review UI (thumbnails only, no raw text). */
@@ -362,7 +405,25 @@ export interface DocPageMeta {
 }
 
 export type PopupFromWorker =
-  | { type: "POPUP_STATE"; requestId: string; state: PopupState }
+  | { type: "POPUP_STATE"; requestId: string; state: PopupState; chunkIndex?: number; totalChunks?: number }
+  | {
+      type: "POPUP_SCAN_PROGRESS";
+      requestId: string;
+      sessionId: string;
+      windowsCompleted: number;
+      windowsTotal: number;
+      charsScanned: number;
+      charsTotal: number;
+      findingsSoFar: number;
+    }
+  | {
+      type: "POPUP_STATE_CHUNK";
+      requestId: string;
+      sessionId: string;
+      chunkIndex: number;
+      totalChunks: number;
+      findings: Finding[];
+    }
   | { type: "POPUP_COPY_RESULT"; requestId: string; text: string }
   | {
       type: "POPUP_AUDIT_EXPORT";
@@ -560,6 +621,8 @@ export const MESSAGE_TYPES = new Set<string>([
   "POPUP_DOC_STATUS",
   "POPUP_DOC_DELIVERY_REPORT",
   "SCAN_PAGE",
+  "SCAN_PROGRESS",
+  "SCAN_RESULT_CHUNK",
   "SCAN_RESULT",
   "CONTENT_ERROR",
   "APPLY_MASKS",
@@ -569,6 +632,8 @@ export const MESSAGE_TYPES = new Set<string>([
   "CONTEXT_REDACT_SELECTION",
   "CONTEXT_MASK_SELECTION",
   "POPUP_STATE",
+  "POPUP_SCAN_PROGRESS",
+  "POPUP_STATE_CHUNK",
   "POPUP_COPY_RESULT",
   "POPUP_DOC_STATE",
   "POPUP_DOC_DONE",

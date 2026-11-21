@@ -1,9 +1,9 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
-import { validateMessage, type ImageCandidate } from "../shared/messages.js";
+import { validateMessage, chunkFindingsByByteBudget, DEFAULT_FINDINGS_CHUNK_BYTES, type ImageCandidate } from "../shared/messages.js";
 import { loadSettings, saveSettings, isCloudAllowed, isAllowedGatewayOrigin, meetsThreshold } from "../shared/settings.js";
 import { recordAudit, exportSignedAuditLog, handlePopupRecordAudit } from "./auditService.js";
 import type { Settings } from "../shared/settings.js";
-import type { DocKind, PopupState, ScanMode, WorkerMessage, ExtensionMessage, Finding, FindingCategory, PopupFromWorker, Rect, RedactionOptions, ScanSettingsMessage, ScanCoverageStatus } from "../shared/types.js";
+import { MAX_MESSAGE_BYTES, type DocKind, type PopupState, type ScanMode, type WorkerMessage, type ExtensionMessage, type Finding, type FindingCategory, type PopupFromWorker, type Rect, type RedactionOptions, type ScanSettingsMessage, type ScanCoverageStatus, type IncompleteWindowInfo } from "../shared/types.js";
 import {
   previewDocument,
   redactDocument,
@@ -138,7 +138,11 @@ interface SessionState {
    */
   stats: {
     visibleChars: number;
+    attrChars?: number;
     truncated: boolean;
+    windowsScanned?: number;
+    windowsTotal?: number;
+    incompleteWindows?: IncompleteWindowInfo[];
     findingsTruncated?: boolean;
     totalFindings?: number;
     imageCandidates?: ImageCandidate[];
@@ -159,6 +163,16 @@ function pushMaskHistory(state: SessionState, appliedIds: string[]): SessionStat
 }
 
 const pendingScans = new Map<number, { requestId: string; sessionId: string; timer: ReturnType<typeof setTimeout> }>();
+const pendingResultChunks = new Map<
+  string,
+  { tabId: number; sessionId: string; totalChunks: number; chunks: Map<number, Finding[]> }
+>();
+
+function clearPendingChunksForTab(tabId: number): void {
+  for (const [key, entry] of pendingResultChunks) {
+    if (entry.tabId === tabId) pendingResultChunks.delete(key);
+  }
+}
 
 function sessionKey(tabId: number): string {
   return `${SESSION_KEY_PREFIX}${tabId}`;
@@ -184,6 +198,9 @@ function isSessionState(value: unknown): value is SessionState {
     v.stats !== null &&
     typeof v.stats.visibleChars === "number" &&
     typeof v.stats.truncated === "boolean" &&
+    (v.stats.windowsScanned === undefined || (typeof v.stats.windowsScanned === "number" && Number.isSafeInteger(v.stats.windowsScanned) && v.stats.windowsScanned >= 0)) &&
+    (v.stats.windowsTotal === undefined || (typeof v.stats.windowsTotal === "number" && Number.isSafeInteger(v.stats.windowsTotal) && v.stats.windowsTotal >= 0)) &&
+    (v.stats.incompleteWindows === undefined || Array.isArray(v.stats.incompleteWindows)) &&
     (v.stats.findingsTruncated === undefined || typeof v.stats.findingsTruncated === "boolean") &&
     (v.stats.totalFindings === undefined ||
       (typeof v.stats.totalFindings === "number" &&
@@ -589,6 +606,39 @@ export async function resolveTargetTab(explicitTabId?: number): Promise<chrome.t
 }
 
 function notifyPopup(message: PopupFromWorker): void {
+  if (message.type === "POPUP_STATE" && message.state.findings.length > 1) {
+    const serialized = JSON.stringify(message);
+    if (serialized.length > MAX_MESSAGE_BYTES - 1024) {
+      const chunks = chunkFindingsByByteBudget(message.state.findings, DEFAULT_FINDINGS_CHUNK_BYTES);
+      if (chunks.length > 1) {
+        const sessionId = message.state.sessionId ?? "state";
+        void (async () => {
+          for (let i = 0; i < chunks.length - 1; i++) {
+            await chrome.runtime.sendMessage({
+              type: "POPUP_STATE_CHUNK",
+              requestId: message.requestId,
+              sessionId,
+              chunkIndex: i,
+              totalChunks: chunks.length,
+              findings: chunks[i],
+            }).catch(() => undefined);
+          }
+          await chrome.runtime.sendMessage({
+            ...message,
+            chunkIndex: chunks.length - 1,
+            totalChunks: chunks.length,
+            state: {
+              ...message.state,
+              findings: chunks[chunks.length - 1],
+              findingsTruncated: false,
+              totalFindings: message.state.findings.length,
+            },
+          }).catch(() => undefined);
+        })();
+        return;
+      }
+    }
+  }
   void chrome.runtime.sendMessage(message).catch(() => {
     // Popup may be closed; state lives in storage.session for the next open.
   });
@@ -680,13 +730,15 @@ function buildPopupState(
   session: SessionState | null,
   error?: { code: string; userMessage: string }
 ): PopupState {
+  const incompleteWindows = session?.stats.incompleteWindows;
+  const hasIncompleteWindows = Boolean(incompleteWindows && incompleteWindows.length > 0);
   return {
     mode: settings.mode,
     operatingMode: currentOperatingMode,
     scanning: session?.scanning ?? false,
     findings: session?.findings ?? [],
     scanned: session !== null,
-    truncated: (session?.stats.truncated ?? false) || (session?.stats.findingsTruncated ?? false),
+    truncated: (session?.stats.truncated ?? false) || (session?.stats.findingsTruncated ?? false) || hasIncompleteWindows,
     findingsTruncated: session?.stats.findingsTruncated,
     totalFindings: session?.stats.totalFindings,
     visibleChars: session?.stats.visibleChars ?? 0,
@@ -699,8 +751,11 @@ function buildPopupState(
     // Carried so the coverage panel reports the real outcome. Without these the
     // panel's five tick marks are static markup asserting a clean bill of
     // health the scan never gave.
-    coverageStatus: session?.stats.coverageStatus,
+    coverageStatus: hasIncompleteWindows ? "PARTIALLY_SCANNED" : session?.stats.coverageStatus,
     deferredMediaCount: session?.stats.deferredMediaCount,
+    ...(session?.stats.windowsScanned !== undefined ? { windowsScanned: session.stats.windowsScanned } : {}),
+    ...(session?.stats.windowsTotal !== undefined ? { windowsTotal: session.stats.windowsTotal } : {}),
+    ...(hasIncompleteWindows ? { incompleteWindows } : {}),
   };
 }
 
@@ -742,6 +797,7 @@ async function handlePopupScan(mode: ScanMode, requestId: string, explicitTabId?
 
   const sessionId = crypto.randomUUID();
   const tabId = tab.id;
+  clearPendingChunksForTab(tabId);
   const timer = setTimeout(() => {
     pendingScans.delete(tabId);
     void (async () => {
@@ -1188,21 +1244,120 @@ function tabHost(tab: chrome.tabs.Tab | undefined): string | undefined {
   }
 }
 
+async function handleContentScanProgress(
+  message: Extract<WorkerMessage, { type: "SCAN_PROGRESS" }>,
+  tabId: number
+): Promise<void> {
+  const pending = pendingScans.get(tabId);
+  if (!pending || pending.sessionId !== message.sessionId) return;
+  notifyPopup({
+    type: "POPUP_SCAN_PROGRESS",
+    requestId: pending.requestId,
+    sessionId: message.sessionId,
+    windowsCompleted: message.windowsCompleted,
+    windowsTotal: message.windowsTotal,
+    charsScanned: message.charsScanned,
+    charsTotal: message.charsTotal,
+    findingsSoFar: message.findingsSoFar,
+  });
+}
+
+async function handleContentScanResultChunk(
+  message: Extract<WorkerMessage, { type: "SCAN_RESULT_CHUNK" }>,
+  tabId: number
+): Promise<void> {
+  const pending = pendingScans.get(tabId);
+  const existing = pending ? null : await readSession(tabId);
+  const expectedSessionId = pending?.sessionId ?? existing?.sessionId;
+  if (!expectedSessionId || expectedSessionId !== message.sessionId) {
+    return;
+  }
+  const chunkKey = `${tabId}:${message.sessionId}:${message.requestId}`;
+  let buffer = pendingResultChunks.get(chunkKey);
+  if (!buffer) {
+    buffer = {
+      tabId,
+      sessionId: message.sessionId,
+      totalChunks: message.totalChunks,
+      chunks: new Map(),
+    };
+    pendingResultChunks.set(chunkKey, buffer);
+  }
+  buffer.chunks.set(message.chunkIndex, message.findings);
+}
+
+function reassembleScanResult(
+  message: Extract<WorkerMessage, { type: "SCAN_RESULT" }>,
+  tabId: number
+): { findings: Finding[]; stats: Extract<WorkerMessage, { type: "SCAN_RESULT" }>["stats"] } {
+  const chunkKey = `${tabId}:${message.sessionId}:${message.requestId}`;
+  const buffer = pendingResultChunks.get(chunkKey);
+  pendingResultChunks.delete(chunkKey);
+
+  if (!message.totalChunks || message.totalChunks <= 1) {
+    return { findings: message.findings, stats: message.stats };
+  }
+
+  const combined: Finding[] = [];
+  const missingChunkIndices: number[] = [];
+  const finalIdx = message.chunkIndex ?? message.totalChunks - 1;
+  for (let i = 0; i < message.totalChunks; i++) {
+    if (i === finalIdx) {
+      combined.push(...message.findings);
+      continue;
+    }
+    const part = buffer?.chunks.get(i);
+    if (!part) {
+      missingChunkIndices.push(i);
+      continue;
+    }
+    combined.push(...part);
+  }
+
+  if (missingChunkIndices.length === 0) {
+    return {
+      findings: combined,
+      stats: {
+        ...message.stats,
+        findingsTruncated: false,
+        totalFindings: combined.length,
+      },
+    };
+  }
+
+  const extraIncomplete: IncompleteWindowInfo[] = missingChunkIndices.map((idx) => ({
+    windowIndex: idx + 1,
+    reason: `IPC findings chunk ${idx + 1} of ${message.totalChunks} missing`,
+  }));
+  return {
+    findings: combined,
+    stats: {
+      ...message.stats,
+      truncated: true,
+      findingsTruncated: true,
+      coverageStatus: "PARTIALLY_SCANNED",
+      incompleteWindows: [...(message.stats.incompleteWindows ?? []), ...extraIncomplete],
+    },
+  };
+}
+
 async function handleContentScanResult(message: Extract<WorkerMessage, { type: "SCAN_RESULT" }>, tabId: number): Promise<void> {
   const pending = pendingScans.get(tabId);
   if (!pending) {
     const existing = await readSession(tabId);
     if (!existing || existing.sessionId !== message.sessionId) {
+      pendingResultChunks.delete(`${tabId}:${message.sessionId}:${message.requestId}`);
       return;
     }
+    const reassembled = reassembleScanResult(message, tabId);
     const settings = await loadSettings();
-    const findings = message.findings.filter((f) => meetsThreshold(settings, f.category, f.confidence));
+    const findings = reassembled.findings.filter((f) => meetsThreshold(settings, f.category, f.confidence));
     await writeSession(tabId, {
       sessionId: message.sessionId,
       mode: settings.mode,
       findings,
       stats: {
-        ...message.stats,
+        ...reassembled.stats,
         ...(existing.stats.imageCandidates ? { imageCandidates: existing.stats.imageCandidates } : {}),
       },
       scannedAt: Date.now(),
@@ -1216,17 +1371,19 @@ async function handleContentScanResult(message: Extract<WorkerMessage, { type: "
   if (message.sessionId !== pending.sessionId) {
     clearTimeout(pending.timer);
     pendingScans.delete(tabId);
+    clearPendingChunksForTab(tabId);
     return;
   }
   clearTimeout(pending.timer);
   pendingScans.delete(tabId);
+  const reassembled = reassembleScanResult(message, tabId);
   const settings = await loadSettings();
-  const findings = message.findings.filter((f) => meetsThreshold(settings, f.category, f.confidence));
+  const findings = reassembled.findings.filter((f) => meetsThreshold(settings, f.category, f.confidence));
   await writeSession(tabId, {
     sessionId: message.sessionId,
     mode: settings.mode,
     findings,
-    stats: message.stats,
+    stats: reassembled.stats,
     scannedAt: Date.now(),
     scanning: false,
   });
@@ -2252,6 +2409,8 @@ async function handleApiSubmitLogic(patternId: string, requestId: string): Promi
 }
 
 const CONTENT_MESSAGE_TYPES = new Set<ExtensionMessage["type"]>([
+  "SCAN_PROGRESS",
+  "SCAN_RESULT_CHUNK",
   "SCAN_RESULT",
   "COPY_REDACTED_TEXT_RESULT",
   "CONTENT_ERROR",
@@ -2297,11 +2456,15 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
       return;
     }
     switch (msg.type) {
+      case "SCAN_PROGRESS":
+      case "SCAN_RESULT_CHUNK":
       case "SCAN_RESULT":
       case "COPY_REDACTED_TEXT_RESULT":
       case "CONTENT_ERROR":
         if (!sender.tab?.id) return;
-        if (msg.type === "SCAN_RESULT") await handleContentScanResult(msg, sender.tab.id);
+        if (msg.type === "SCAN_PROGRESS") await handleContentScanProgress(msg, sender.tab.id);
+        else if (msg.type === "SCAN_RESULT_CHUNK") await handleContentScanResultChunk(msg, sender.tab.id);
+        else if (msg.type === "SCAN_RESULT") await handleContentScanResult(msg, sender.tab.id);
         else if (msg.type === "COPY_REDACTED_TEXT_RESULT") await handleContentCopyResult(msg, sender.tab.id);
         else await handleContentError(msg, sender.tab.id);
         return;
@@ -2566,5 +2729,6 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     clearTimeout(pending.timer);
     pendingScans.delete(tabId);
   }
+  clearPendingChunksForTab(tabId);
   void chrome.storage.session.remove(sessionKey(tabId));
 });
