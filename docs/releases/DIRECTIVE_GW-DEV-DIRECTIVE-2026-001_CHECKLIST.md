@@ -25,7 +25,7 @@ Tick a box only when the task's Definition of Done (S9) is fully met and its S6 
 - [ ] **P8 / M1** Real-scan OCR accuracy measured Ref: `docs/releases/directive-reports/M1.md`
 - [ ] **P9** Finished-PDF re-decode gate Ref: `docs/releases/directive-reports/P9.md`
 - [ ] **P10** Completed via A4 Ref: `docs/releases/directive-reports/A4.md`
-- [ ] **P11** Single version source, CI-checked Ref: `docs/releases/directive-reports/P11.md`
+- [x] **P11** Single version source, CI-checked Ref: `docs/releases/directive-reports/P11.md` (branch `task/P11-single-version-source`)
 - [ ] **P12** Vacuous tests replaced, fail-on-revert proven Ref: `docs/releases/directive-reports/P12.md`
 - [ ] **P13 / M2** Submit / Enter measured live Ref: `docs/releases/directive-reports/M2.md`
 - [ ] **P14 / M3** DOCX timing measured Ref: `docs/releases/directive-reports/M3.md`

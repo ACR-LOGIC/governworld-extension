@@ -50,6 +50,9 @@ jobs:
       - name: Verify Sidepanel Is In Sync
         run: npm run sync:sidepanel:check
 
+      - name: Verify Single-Source Version Parity
+        run: npm run sync:version:check
+
       - name: Verify Release Digests
         run: npm run verify:digests
 

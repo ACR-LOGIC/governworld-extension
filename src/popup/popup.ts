@@ -72,6 +72,7 @@ import type {
   RedactionStyle,
 } from "../shared/types.js";
 import type { ParsedName } from "../content/detectors/nameParser.js";
+import { CURRENT_EXTENSION_VERSION } from "../api/config.js";
 import { loadCustomPatterns, saveCustomPatterns, parseCustomPattern, type CustomPattern, type CommunityAccount, type CommunityRule } from "../shared/customPatterns.js";
 import { inferLocationRule, type SelectionSample } from "../shared/locationAwareWizard.js";
 import { parseSampleLines, type WizardAnalysis } from "../shared/wizardAnalyzer.js";
@@ -2383,6 +2384,11 @@ export async function refreshProtectionStatus(): Promise<ProtectionStatusSnapsho
   if (!docsSupported) {
     if (diagDocVal) diagDocVal.textContent = t(lang, "status_val_chromium_only");
     if (diagOcrVal) diagOcrVal.textContent = t(lang, "status_val_chromium_only");
+  }
+  const diagVersionVal = document.getElementById("diag-version-value");
+  if (diagVersionVal) {
+    const manifestVer = typeof chrome !== "undefined" ? chrome.runtime?.getManifest?.()?.version : undefined;
+    diagVersionVal.textContent = manifestVer || CURRENT_EXTENSION_VERSION;
   }
 
   const managedNotice = document.getElementById("managed-lock-notice");

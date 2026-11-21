@@ -27,10 +27,10 @@ const args = process.argv.slice(2);
 const modeArg = (args.find((a) => a.startsWith("--mode=")) || "--mode=baseline").split("=")[1];
 const stageArg = (args.find((a) => a.startsWith("--stage=")) || "--stage=all").split("=")[1];
 const outArg = args.find((a) => a.startsWith("--out="))?.slice(6);
-const TAKE_SCREENSHOTS = args.includes("--screenshot") || ["p1", "p2", "p3", "p4", "p5", "p6", "p7"].includes(modeArg);
+const TAKE_SCREENSHOTS = args.includes("--screenshot") || ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p11"].includes(modeArg);
 const SCREENSHOT_DIR = join(ROOT, "docs", "releases", "directive-reports", "screenshots");
 const RESULTS_PATH = outArg ? resolve(ROOT, outArg) : join(ROOT, "docs", "benchmarks", "results-run2.json");
-const IS_GATE = ["gate", "p1", "p2", "p3", "p4", "p5", "p6", "p7"].includes(modeArg);
+const IS_GATE = ["gate", "p1", "p2", "p3", "p4", "p5", "p6", "p7", "p11"].includes(modeArg);
 
 const executablePath = (process.env.GW_BROWSER_EXECUTABLE || "").trim() || chromium.executablePath();
 
@@ -735,6 +735,28 @@ try {
   }
 
   // -------------------------------------------------------------------------
+  // STAGE: P11 (About & Diagnostics live version parity)
+  // -------------------------------------------------------------------------
+  if (shouldRun("p11")) {
+    console.log("\n[Run 2 - P11 About Version Stage]");
+    await popup.evaluate(() => {
+      document.querySelector('[data-tab="settings"]')?.click();
+      document.getElementById('settings-nav-about')?.click();
+    });
+    await popup.waitForTimeout(200);
+    const aboutInfo = await popup.evaluate(() => ({
+      diagVersionText: (document.getElementById("diag-version-value")?.textContent || "").trim(),
+      manifestVersion: chrome.runtime.getManifest().version,
+    }));
+    out.scan.p11About = aboutInfo;
+    console.log(`  P11 About UI: version="${aboutInfo.diagVersionText}" manifest="${aboutInfo.manifestVersion}"`);
+    if (TAKE_SCREENSHOTS) {
+      mkdirSync(SCREENSHOT_DIR, { recursive: true });
+      await popup.screenshot({ path: join(SCREENSHOT_DIR, "P11-about-version.png"), fullPage: false });
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // STAGE: PASTE (Real clipboard Ctrl+V, 15 trials, dialog latency + 0 escapes)
   // -------------------------------------------------------------------------
   if (shouldRun("paste")) {
@@ -1033,10 +1055,17 @@ const runP3Check = modeArg === "gate" || modeArg === "p3";
 const runP4Check = modeArg === "gate" || modeArg === "p4";
 const runP5Check = modeArg === "p5";
 const runP6Check = modeArg === "p6";
+const runP11Check = modeArg === "p11";
 const runPasteCheck = modeArg === "gate";
 const runLatencyP7Check = modeArg === "p7";
 
 if (IS_GATE) {
+  if (runP11Check) {
+    const a = out.scan.p11About;
+    if (!a || !a.diagVersionText || a.diagVersionText !== a.manifestVersion) {
+      out.gateFailures.push(`P11 About version mismatch: ${JSON.stringify(a)}`);
+    }
+  }
   if (runP6Check) {
     const p6 = out.scan.windowedP6;
     if (

@@ -1,0 +1,19 @@
+{
+  "generatedAt": "2026-11-21T22:46:42.808Z",
+  "mode": "p11",
+  "stage": "p11",
+  "executablePath": "C:\\Users\\omg\\AppData\\Local\\ms-playwright\\chromium-1255\\chrome-win64\\chrome.exe",
+  "browserVersion": "Chrome/159.0.8154.6",
+  "nodeVersion": "v22.22.2",
+  "scan": {
+    "p11About": {
+      "diagVersionText": "0.4.1",
+      "manifestVersion": "0.4.1"
+    }
+  },
+  "paste": {},
+  "docs": {},
+  "ocrNode": {},
+  "network": {},
+  "gateFailures": []
+}

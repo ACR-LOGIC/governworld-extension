@@ -83,3 +83,21 @@ If GovernWorld helps protect your privacy or workflow, you can support ongoing m
 - **Zero Host Permissions:** Do not add broad host permissions (`*://*` or domain-specific wildcards). All tab interactions must occur through explicit user action (`activeTab`).
 - **Fail-Closed Audit:** Any operation affecting redaction policies or document outputs must generate an immutable, ECDSA-signed audit record.
 - **Clean Code & Testing:** Every new detection pattern or feature must include unit tests under `tests/` and maintain 100% test pass rates.
+
+---
+
+## Release Versioning & Single-Source Parity
+
+`package.json` (`"version"`) is the **single source of truth** for the extension version (`0.4.1`). Do not edit version strings manually across manifests, source files, or documentation:
+
+1. Bump `"version"` in `package.json` only.
+2. Synchronize all derived surfaces (`package-lock.json`, `manifest.json`, `manifest.firefox.json`, `src/api/config.ts`, `src/landing/index.html`, `src/popup/privacy.html`, `README.md`, and `AGENTS.md`) via:
+   ```bash
+   npm run sync:version
+   ```
+3. Popup & About UI read the runtime version from `chrome.runtime.getManifest().version` / `CURRENT_EXTENSION_VERSION`.
+4. Verify parity locally (and enforced as a hard CI failure in `.github/workflows/ci.yml` and `release.yml`):
+   ```bash
+   npm run sync:version:check
+   npx vitest run tests/version-parity.test.ts
+   ```
