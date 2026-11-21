@@ -12,6 +12,8 @@ import {
   clearSession as clearDocSession,
   cancelDocument as cancelDocSession,
   purgeOrphanedStagedKeys,
+  getStagedStorageAudit,
+  purgeStagedData,
   clearAllFiles,
   storeFile,
   deleteFile,
@@ -2679,6 +2681,28 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
         await cancelDocSession(msg.docId, msg.fileKey);
         void recordAudit({ ts: new Date().toISOString(), action: "doc_cleared", outcome: "ok" });
         break;
+      case "POPUP_GET_STAGED_STATS": {
+        const stats = await getStagedStorageAudit();
+        notifyPopup({
+          type: "POPUP_STAGED_STATS_STATE",
+          requestId: msg.requestId,
+          stats,
+        });
+        break;
+      }
+      case "POPUP_PURGE_STAGED_DATA": {
+        const purged = await purgeStagedData({
+          includeIdleSession: msg.includeIdleSession !== false,
+        });
+        void recordAudit({ ts: new Date().toISOString(), action: "doc_cleared", outcome: "ok" });
+        notifyPopup({
+          type: "POPUP_STAGED_STATS_STATE",
+          requestId: msg.requestId,
+          stats: purged.remaining,
+          purged,
+        });
+        break;
+      }
       case "POPUP_API_GET_STATUS":
         await handleApiGetStatus(msg.requestId);
         break;

@@ -2891,3 +2891,38 @@ body[data-reduced-motion="true"] *::after {
   line-height: 1.5;
   color: var(--text);
 }
+
+.doc-staged-audit {
+  margin-top: 6px;
+}
+
+.doc-staged-audit__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.doc-staged-audit__confirm {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.doc-staged-audit__confirm[hidden],
+.doc-staged-audit__msg[hidden] {
+  display: none;
+}
+
+.doc-staged-audit__confirm-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.doc-staged-audit__msg {
+  margin-top: 4px;
+}

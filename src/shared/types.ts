@@ -208,6 +208,8 @@ export type PopupMessage =
    */
   | { type: "POPUP_DOC_CAPTURE_IMAGE"; requestId: string; src: string; name: string }
   | { type: "POPUP_DOC_CANCEL"; requestId: string; docId?: string; fileKey?: string }
+  | { type: "POPUP_GET_STAGED_STATS"; requestId: string }
+  | { type: "POPUP_PURGE_STAGED_DATA"; requestId: string; includeIdleSession?: boolean }
   /**
    * Opens the read-only print/PDF view for an already-redacted document. The
    * fileKey names a manifest in the shared store; the page loads the page
@@ -601,7 +603,30 @@ export type PopupFromWorker =
       appliedPolicyVersion?: number;
       lastSyncStatus?: string;
       error?: string;
+    }
+  | {
+      type: "POPUP_STAGED_STATS_STATE";
+      requestId: string;
+      stats: StagedStorageAudit;
+      purged?: PurgeStagedDataResult;
     };
+
+export interface StagedStorageAudit {
+  totalKeys: number;
+  totalBytes: number;
+  liveKeys: number;
+  liveBytes: number;
+  orphanKeys: number;
+  orphanBytes: number;
+  hasInFlightJob: boolean;
+}
+
+export interface PurgeStagedDataResult {
+  deletedKeys: number;
+  deletedBytes: number;
+  preservedLiveSession: boolean;
+  remaining: StagedStorageAudit;
+}
 
 export const MESSAGE_TYPES = new Set<string>([
   "POPUP_SCAN",
@@ -693,6 +718,9 @@ export const MESSAGE_TYPES = new Set<string>([
   "SCAN_PAGE_VISUAL_RESULT",
   "CONTENT_SHOW_TOAST",
   "POPUP_SCAN_COVERAGE",
+  "POPUP_GET_STAGED_STATS",
+  "POPUP_PURGE_STAGED_DATA",
+  "POPUP_STAGED_STATS_STATE",
 ]);
 
 export const MAX_MESSAGE_BYTES = 64 * 1024;

@@ -2,7 +2,8 @@ import { sanitizeErrorForLog } from "../shared/errorSanitizer.js";
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 import { validateMessage } from "../shared/messages.js";
 import { previewObjectUrl } from "../shared/docStore.js";
-import { docStoreFile, docDeleteByPrefix, markDocumentStaged, clearStagedMarker } from "../shared/docDb.js";
+import { docStoreFile, docDeleteByPrefix, docGetStagedStats, getStagedFileKey, markDocumentStaged, clearStagedMarker } from "../shared/docDb.js";
+import type { PurgeStagedDataResult, StagedStorageAudit } from "../shared/types.js";
 import {
   ALL_CATEGORIES,
   loadSettings,
@@ -255,10 +256,118 @@ function requestId(): string {
 async function storeFile(fileKey: string, bytes: ArrayBuffer): Promise<void> {
   await markDocumentStaged(fileKey);
   await docStoreFile(fileKey, bytes);
+  void refreshStagedStorageAudit();
 }
 
 async function deleteFile(fileKey: string, options?: { keepRedacted?: boolean }): Promise<void> {
   await docDeleteByPrefix(fileKey, options);
+  void refreshStagedStorageAudit();
+}
+
+function formatStagedByteSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+let lastStagedStats: StagedStorageAudit = {
+  totalKeys: 0,
+  totalBytes: 0,
+  liveKeys: 0,
+  liveBytes: 0,
+  orphanKeys: 0,
+  orphanBytes: 0,
+  hasInFlightJob: false,
+};
+
+function renderStagedStorageAudit(stats: StagedStorageAudit, purged?: PurgeStagedDataResult): void {
+  lastStagedStats = stats;
+  const summaryEl = document.getElementById("doc-staged-summary");
+  const confirmMsgEl = document.getElementById("doc-staged-confirm-msg");
+  if (summaryEl) {
+    summaryEl.setAttribute("data-total-keys", String(stats.totalKeys));
+    summaryEl.setAttribute("data-total-bytes", String(stats.totalBytes));
+    summaryEl.setAttribute("data-live-keys", String(stats.liveKeys));
+    summaryEl.setAttribute("data-orphan-keys", String(stats.orphanKeys));
+    if (stats.totalKeys <= 0) {
+      summaryEl.textContent = t(currentLang, "doc_staged_zero");
+    } else if (stats.liveKeys > 0 && stats.orphanKeys <= 0) {
+      summaryEl.textContent = t(currentLang, "doc_staged_live_only", {
+        keys: String(stats.totalKeys),
+        size: formatStagedByteSize(stats.totalBytes),
+      });
+    } else if (stats.liveKeys <= 0 && stats.orphanKeys > 0) {
+      summaryEl.textContent = t(currentLang, "doc_staged_orphan_only", {
+        keys: String(stats.totalKeys),
+        size: formatStagedByteSize(stats.totalBytes),
+      });
+    } else {
+      summaryEl.textContent = t(currentLang, "doc_staged_mixed", {
+        keys: String(stats.totalKeys),
+        size: formatStagedByteSize(stats.totalBytes),
+        liveKeys: String(stats.liveKeys),
+        liveSize: formatStagedByteSize(stats.liveBytes),
+        orphanKeys: String(stats.orphanKeys),
+        orphanSize: formatStagedByteSize(stats.orphanBytes),
+      });
+    }
+  }
+  if (confirmMsgEl && purged) {
+    confirmMsgEl.hidden = false;
+    if (purged.remaining.totalKeys <= 0) {
+      confirmMsgEl.textContent = t(currentLang, "doc_purge_done_zero", {
+        deletedKeys: String(purged.deletedKeys),
+        deletedSize: formatStagedByteSize(purged.deletedBytes),
+      });
+    } else {
+      confirmMsgEl.textContent = t(currentLang, "doc_purge_done_live_kept", {
+        deletedKeys: String(purged.deletedKeys),
+        deletedSize: formatStagedByteSize(purged.deletedBytes),
+        liveKeys: String(purged.remaining.liveKeys),
+        liveSize: formatStagedByteSize(purged.remaining.liveBytes),
+      });
+    }
+  }
+}
+
+async function refreshStagedStorageAudit(): Promise<void> {
+  try {
+    const [rawStats, stagedMarkerKey] = await Promise.all([
+      docGetStagedStats().catch(() => ({ keyCount: 0, totalBytes: 0, byPrefix: {} })),
+      getStagedFileKey().catch(() => null),
+    ]);
+    const liveSet = new Set<string>();
+    if (stagedMarkerKey) liveSet.add(stagedMarkerKey);
+    let liveKeys = 0;
+    let liveBytes = 0;
+    let orphanKeys = 0;
+    let orphanBytes = 0;
+    for (const [prefix, entry] of Object.entries(rawStats.byPrefix)) {
+      if (liveSet.has(prefix)) {
+        liveKeys += entry.keyCount;
+        liveBytes += entry.bytes;
+      } else {
+        orphanKeys += entry.keyCount;
+        orphanBytes += entry.bytes;
+      }
+    }
+    renderStagedStorageAudit({
+      totalKeys: rawStats.keyCount,
+      totalBytes: rawStats.totalBytes,
+      liveKeys,
+      liveBytes,
+      orphanKeys,
+      orphanBytes,
+      hasInFlightJob: false,
+    });
+  } catch {
+    // best-effort local snapshot before SW authoritative response
+  }
+  void sendMessage({
+    type: "POPUP_GET_STAGED_STATS",
+    requestId: requestId(),
+  }).catch(() => undefined);
 }
 
 /** Web Speech API Speech Synthesis and Screen Reader Live Region for audio announcements */
@@ -3024,7 +3133,49 @@ export async function initPopup(): Promise<void> {
     hideDocProgress();
     clearDocUi();
     setDocStatus("Document processing cancelled.", false);
+    void refreshStagedStorageAudit();
   });
+
+  const docPurgeStagedBtn = document.getElementById("doc-purge-staged-btn") as HTMLButtonElement | null;
+  const docPurgeConfirmBar = document.getElementById("doc-purge-confirm-bar") as HTMLElement | null;
+  const docPurgeConfirmYes = document.getElementById("doc-purge-confirm-yes") as HTMLButtonElement | null;
+  const docPurgeConfirmNo = document.getElementById("doc-purge-confirm-no") as HTMLButtonElement | null;
+  const docStagedConfirmMsg = document.getElementById("doc-staged-confirm-msg") as HTMLElement | null;
+
+  docPurgeStagedBtn?.addEventListener("click", () => {
+    if (docStagedConfirmMsg) {
+      docStagedConfirmMsg.hidden = true;
+      docStagedConfirmMsg.textContent = "";
+    }
+    if (docPurgeConfirmBar) {
+      docPurgeConfirmBar.hidden = false;
+    }
+  });
+
+  docPurgeConfirmNo?.addEventListener("click", () => {
+    if (docPurgeConfirmBar) {
+      docPurgeConfirmBar.hidden = true;
+    }
+  });
+
+  docPurgeConfirmYes?.addEventListener("click", () => {
+    if (docPurgeConfirmBar) {
+      docPurgeConfirmBar.hidden = true;
+    }
+    const docProgressEl = document.getElementById("doc-progress");
+    const isInFlight = Boolean(docProgressEl && !docProgressEl.hidden);
+    if (!isInFlight) {
+      clearDocUi();
+      setDocStatus("", false);
+    }
+    void sendDocMessage({
+      type: "POPUP_PURGE_STAGED_DATA",
+      requestId: requestId(),
+      includeIdleSession: !isInFlight,
+    });
+  });
+
+  void refreshStagedStorageAudit();
 
   // ── Page-window chooser (documents longer than one pass) ────────────────
   const windowDialog = document.getElementById("doc-window-dialog") as HTMLDialogElement | null;
@@ -5210,6 +5361,7 @@ export async function initPopup(): Promise<void> {
       doc.pageOffset = message.pageOffset ?? 0;
       doc.truncated = message.truncated === true;
       renderDoc(doc);
+      void refreshStagedStorageAudit();
       const found = message.pages.reduce((n, p) => n + p.findings.length, 0);
       // The preview is finished, so the progress row must stay down. Calling
       // renderDocStage() unconditionally re-showed it with "Processing
@@ -5318,6 +5470,7 @@ export async function initPopup(): Promise<void> {
         }
       }
       clearDocUi({ keepRedacted: Boolean(message.printFileKey) });
+      void refreshStagedStorageAudit();
       return;
     }
     if (message.type === "POPUP_DOC_STATUS") {
@@ -5331,6 +5484,11 @@ export async function initPopup(): Promise<void> {
       // "Processing document..." next to an error.
       hideDocProgress();
       setDocStatus(message.userMessage, true);
+      void refreshStagedStorageAudit();
+      return;
+    }
+    if (message.type === "POPUP_STAGED_STATS_STATE") {
+      renderStagedStorageAudit(message.stats, message.purged);
       return;
     }
     if (message.type === "POPUP_NOTIFICATIONS_STATE") {

@@ -1,0 +1,49 @@
+{
+  "generatedAt": "2026-11-21T23:47:36.072Z",
+  "mode": "c2",
+  "stage": "c2",
+  "executablePath": "C:\\Users\\omg\\AppData\\Local\\ms-playwright\\chromium-1255\\chrome-win64\\chrome.exe",
+  "browserVersion": "Chrome/159.0.8154.6",
+  "nodeVersion": "v22.22.2",
+  "scan": {},
+  "paste": {},
+  "docs": {
+    "c2Audit": {
+      "beforeKeys": [
+        "live_c2",
+        "live_c2::preview::0",
+        "orphan_c2",
+        "orphan_c2::preview::0"
+      ],
+      "beforeUi": {
+        "text": "Staged data: 4 keys (11.0 KB) — 2 live-session (8.0 KB), 2 orphaned (3.0 KB)",
+        "totalKeys": 4,
+        "totalBytes": 11264,
+        "liveKeys": 2,
+        "orphanKeys": 2
+      },
+      "afterStartupPurgeKeys": [
+        "live_c2",
+        "live_c2::preview::0"
+      ],
+      "afterStartupUi": {
+        "text": "Staged data: 2 keys (8.0 KB) — live-session data",
+        "totalKeys": 2,
+        "liveKeys": 2,
+        "orphanKeys": 0
+      },
+      "confirmVisible": true,
+      "afterManualPurgeKeys": [],
+      "afterManualUi": {
+        "text": "Staged data: 0 keys (0 B)",
+        "totalKeys": 0,
+        "totalBytes": 0,
+        "confirmMsgHidden": false,
+        "confirmMsgText": "Purged 2 staged key(s) (8.0 KB). Staged data: 0 keys (0 B)."
+      }
+    }
+  },
+  "ocrNode": {},
+  "network": {},
+  "gateFailures": []
+}

@@ -302,6 +302,21 @@
           <strong>Cancel</strong> aborts rendering/OCR and clears staged bytes immediately; <strong>Start Over</strong> removes all staged keys for this document.
         </p>
 
+        <div id="doc-staged-audit" class="summary doc-staged-audit" role="region" aria-label="Staged storage audit">
+          <div class="doc-staged-audit__row">
+            <span id="doc-staged-summary" class="summary__note" data-i18n="doc_staged_zero">Staged data: 0 keys (0 B)</span>
+            <button id="doc-purge-staged-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="doc_purge_staged_btn">Purge staged data</button>
+          </div>
+          <div id="doc-purge-confirm-bar" class="doc-staged-audit__confirm" hidden>
+            <span class="summary__note" data-i18n="doc_purge_confirm_prompt">Delete staged document data now?</span>
+            <div class="doc-staged-audit__confirm-actions">
+              <button id="doc-purge-confirm-yes" class="btn btn--primary btn--sm" type="button" data-i18n="doc_purge_confirm_yes">Confirm purge</button>
+              <button id="doc-purge-confirm-no" class="btn btn--ghost btn--sm" type="button" data-i18n="doc_cancel">Cancel</button>
+            </div>
+          </div>
+          <p id="doc-staged-confirm-msg" class="summary__note doc-staged-audit__msg" role="status" aria-live="polite" hidden></p>
+        </div>
+
         <div id="doc-status" class="summary" hidden role="status" aria-live="polite">
           <p id="doc-status-text" class="summary__note"></p>
         </div>

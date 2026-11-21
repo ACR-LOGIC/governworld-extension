@@ -18,11 +18,13 @@ import {
   docDeleteByPrefix,
   docClearFiles,
   docListKeys,
+  docGetStagedStats,
   markDocumentStaged,
   isDocumentStaged,
   getStagedFileKey,
   clearStagedMarker,
 } from "../shared/docDb.js";
+import type { PurgeStagedDataResult, StagedStorageAudit } from "../shared/types.js";
 
 /**
  * Document session management for the service worker. File bytes are held in
@@ -278,7 +280,7 @@ export async function cancelDocument(docId?: string, fileKey?: string): Promise<
   }
 }
 
-export async function purgeOrphanedStagedKeys(): Promise<number> {
+async function collectLiveStagedRoots(): Promise<Set<string>> {
   const liveRoots = new Set<string>();
   for (const s of sessions.values()) liveRoots.add(s.fileKey);
   for (const fk of inFlightFileKeys) liveRoots.add(fk);
@@ -292,6 +294,11 @@ export async function purgeOrphanedStagedKeys(): Promise<number> {
     const stagedKey = await getStagedFileKey();
     if (stagedKey) liveRoots.add(stagedKey);
   }
+  return liveRoots;
+}
+
+export async function purgeOrphanedStagedKeys(): Promise<number> {
+  const liveRoots = await collectLiveStagedRoots();
 
   let keys: string[];
   try {
@@ -313,6 +320,77 @@ export async function purgeOrphanedStagedKeys(): Promise<number> {
     deletedCount += await docDeleteByPrefix(root).catch(() => 0);
   }
   return deletedCount;
+}
+
+export async function getStagedStorageAudit(): Promise<StagedStorageAudit> {
+  const [rawStats, liveRoots] = await Promise.all([
+    docGetStagedStats().catch(() => ({ keyCount: 0, totalBytes: 0, byPrefix: {} })),
+    collectLiveStagedRoots(),
+  ]);
+
+  let liveKeys = 0;
+  let liveBytes = 0;
+  let orphanKeys = 0;
+  let orphanBytes = 0;
+
+  for (const [prefix, entry] of Object.entries(rawStats.byPrefix)) {
+    if (liveRoots.has(prefix)) {
+      liveKeys += entry.keyCount;
+      liveBytes += entry.bytes;
+    } else {
+      orphanKeys += entry.keyCount;
+      orphanBytes += entry.bytes;
+    }
+  }
+
+  return {
+    totalKeys: rawStats.keyCount,
+    totalBytes: rawStats.totalBytes,
+    liveKeys,
+    liveBytes,
+    orphanKeys,
+    orphanBytes,
+    hasInFlightJob: inFlightFileKeys.size > 0,
+  };
+}
+
+export async function purgeStagedData(options?: {
+  includeIdleSession?: boolean;
+}): Promise<PurgeStagedDataResult> {
+  const includeIdle = options?.includeIdleSession !== false;
+  const before = await docGetStagedStats().catch(() => ({ keyCount: 0, totalBytes: 0, byPrefix: {} }));
+  const protectedRoots = includeIdle ? new Set(inFlightFileKeys) : await collectLiveStagedRoots();
+
+  if (includeIdle) {
+    for (const [docId, s] of [...sessions.entries()]) {
+      if (!protectedRoots.has(s.fileKey)) {
+        sessions.delete(docId);
+      }
+    }
+    if (inFlightFileKeys.size === 0) {
+      await chrome.storage.session.remove([LAST_DOC_KEY, LAST_SESSION_KEY]).catch(() => undefined);
+      await clearStagedMarker().catch(() => undefined);
+      lastDocId = null;
+    }
+  }
+
+  let deletedKeys = 0;
+  let deletedBytes = 0;
+  for (const [prefix, entry] of Object.entries(before.byPrefix)) {
+    if (!protectedRoots.has(prefix)) {
+      const removed = await docDeleteByPrefix(prefix).catch(() => 0);
+      deletedKeys += removed;
+      if (removed > 0) deletedBytes += entry.bytes;
+    }
+  }
+
+  const remaining = await getStagedStorageAudit();
+  return {
+    deletedKeys,
+    deletedBytes,
+    preservedLiveSession: remaining.liveKeys > 0,
+    remaining,
+  };
 }
 
 function uniqueCategories(pages: DocumentPage[]): FindingCategory[] {

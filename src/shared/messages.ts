@@ -1236,6 +1236,76 @@ export function validateMessage(raw: unknown): ValidationResult {
       if (typeof raw.deferredMediaCount !== "number" || !Number.isSafeInteger(raw.deferredMediaCount) || raw.deferredMediaCount < 0) return { ok: false, error: "Invalid deferredMediaCount" };
       return { ok: true, message: { type, requestId, coverageStatus: raw.coverageStatus as string, deferredMediaCount: raw.deferredMediaCount as number } };
     }
+    case "POPUP_GET_STAGED_STATS":
+      return { ok: true, message: { type, requestId } };
+    case "POPUP_PURGE_STAGED_DATA": {
+      if (raw.includeIdleSession !== undefined && typeof raw.includeIdleSession !== "boolean") {
+        return { ok: false, error: "Invalid includeIdleSession" };
+      }
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          ...(typeof raw.includeIdleSession === "boolean" ? { includeIdleSession: raw.includeIdleSession } : {}),
+        },
+      };
+    }
+    case "POPUP_STAGED_STATS_STATE": {
+      const isStats = (s: unknown): s is import("./types.js").StagedStorageAudit =>
+        isRecord(s) &&
+        typeof s.totalKeys === "number" &&
+        Number.isSafeInteger(s.totalKeys) &&
+        s.totalKeys >= 0 &&
+        typeof s.totalBytes === "number" &&
+        Number.isFinite(s.totalBytes) &&
+        s.totalBytes >= 0 &&
+        typeof s.liveKeys === "number" &&
+        Number.isSafeInteger(s.liveKeys) &&
+        s.liveKeys >= 0 &&
+        typeof s.liveBytes === "number" &&
+        Number.isFinite(s.liveBytes) &&
+        s.liveBytes >= 0 &&
+        typeof s.orphanKeys === "number" &&
+        Number.isSafeInteger(s.orphanKeys) &&
+        s.orphanKeys >= 0 &&
+        typeof s.orphanBytes === "number" &&
+        Number.isFinite(s.orphanBytes) &&
+        s.orphanBytes >= 0 &&
+        typeof s.hasInFlightJob === "boolean";
+      if (!isStats(raw.stats)) return { ok: false, error: "Invalid stats" };
+      let purged: import("./types.js").PurgeStagedDataResult | undefined;
+      if (raw.purged !== undefined) {
+        if (
+          !isRecord(raw.purged) ||
+          typeof raw.purged.deletedKeys !== "number" ||
+          !Number.isSafeInteger(raw.purged.deletedKeys) ||
+          raw.purged.deletedKeys < 0 ||
+          typeof raw.purged.deletedBytes !== "number" ||
+          !Number.isFinite(raw.purged.deletedBytes) ||
+          raw.purged.deletedBytes < 0 ||
+          typeof raw.purged.preservedLiveSession !== "boolean" ||
+          !isStats(raw.purged.remaining)
+        ) {
+          return { ok: false, error: "Invalid purged result" };
+        }
+        purged = {
+          deletedKeys: raw.purged.deletedKeys,
+          deletedBytes: raw.purged.deletedBytes,
+          preservedLiveSession: raw.purged.preservedLiveSession,
+          remaining: raw.purged.remaining,
+        };
+      }
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          stats: raw.stats,
+          ...(purged ? { purged } : {}),
+        },
+      };
+    }
     default:
       return { ok: false, error: "Unhandled message type" };
   }

@@ -270,4 +270,67 @@ describe("P4: Staged Document Prefix Deletion, Cooperative Abort & Startup Orpha
 
     expect(await docListKeys()).toEqual([]);
   });
+
+  it("C2: getStagedStorageAudit & purgeStagedData report exact live vs orphan bytes and purge cleanly", async () => {
+    const { docStoreFile, docListKeys } = await import("../src/shared/docDb.js");
+    const { previewKey } = await import("../src/shared/docStore.js");
+    const { getStagedStorageAudit, purgeStagedData } = await import("../src/service-worker/documents.js");
+    const { validateMessage } = await import("../src/shared/messages.js");
+
+    await docStoreFile("orphanDoc", new Uint8Array(1024).buffer);
+    await docStoreFile(previewKey("orphanDoc", 0), new Uint8Array(2048).buffer);
+    await docStoreFile("activeDoc", new Uint8Array(4096).buffer);
+    await docStoreFile(previewKey("activeDoc", 0), new Uint8Array(4096).buffer);
+
+    sessionStore.set("lastDocSession", {
+      docId: "doc-active",
+      fileKey: "activeDoc",
+      name: "active.pdf",
+      mimeType: "application/pdf",
+      kind: "pdf",
+      pages: [],
+      categories: [],
+    });
+
+    const auditBefore = await getStagedStorageAudit();
+    expect(auditBefore).toEqual({
+      totalKeys: 4,
+      totalBytes: 11264,
+      liveKeys: 2,
+      liveBytes: 8192,
+      orphanKeys: 2,
+      orphanBytes: 3072,
+      hasInFlightJob: false,
+    });
+
+    // 1. Orphan-only purge (preserving live session)
+    const orphanPurge = await purgeStagedData({ includeIdleSession: false });
+    expect(orphanPurge.deletedKeys).toBe(2);
+    expect(orphanPurge.deletedBytes).toBe(3072);
+    expect(orphanPurge.preservedLiveSession).toBe(true);
+    expect(orphanPurge.remaining.totalKeys).toBe(2);
+    expect(orphanPurge.remaining.liveKeys).toBe(2);
+    expect(orphanPurge.remaining.orphanKeys).toBe(0);
+    expect(await docListKeys()).toEqual(["activeDoc", "activeDoc::preview::0"]);
+
+    // 2. Full manual Document Studio purge clears remaining idle session to 0 keys
+    const fullPurge = await purgeStagedData({ includeIdleSession: true });
+    expect(fullPurge.deletedKeys).toBe(2);
+    expect(fullPurge.deletedBytes).toBe(8192);
+    expect(fullPurge.preservedLiveSession).toBe(false);
+    expect(fullPurge.remaining.totalKeys).toBe(0);
+    expect(fullPurge.remaining.totalBytes).toBe(0);
+    expect(await docListKeys()).toEqual([]);
+
+    expect(validateMessage({ type: "POPUP_GET_STAGED_STATS", requestId: "r-s1" }).ok).toBe(true);
+    expect(validateMessage({ type: "POPUP_PURGE_STAGED_DATA", requestId: "r-s2", includeIdleSession: true }).ok).toBe(true);
+    expect(
+      validateMessage({
+        type: "POPUP_STAGED_STATS_STATE",
+        requestId: "r-s3",
+        stats: fullPurge.remaining,
+        purged: fullPurge,
+      }).ok
+    ).toBe(true);
+  });
 });

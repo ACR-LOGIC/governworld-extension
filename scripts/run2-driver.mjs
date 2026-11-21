@@ -27,10 +27,10 @@ const args = process.argv.slice(2);
 const modeArg = (args.find((a) => a.startsWith("--mode=")) || "--mode=baseline").split("=")[1];
 const stageArg = (args.find((a) => a.startsWith("--stage=")) || "--stage=all").split("=")[1];
 const outArg = args.find((a) => a.startsWith("--out="))?.slice(6);
-const TAKE_SCREENSHOTS = args.includes("--screenshot") || ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p11"].includes(modeArg);
+const TAKE_SCREENSHOTS = args.includes("--screenshot") || ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p11", "c2"].includes(modeArg);
 const SCREENSHOT_DIR = join(ROOT, "docs", "releases", "directive-reports", "screenshots");
 const RESULTS_PATH = outArg ? resolve(ROOT, outArg) : join(ROOT, "docs", "benchmarks", "results-run2.json");
-const IS_GATE = ["gate", "p1", "p2", "p3", "p4", "p5", "p6", "p7", "p11"].includes(modeArg);
+const IS_GATE = ["gate", "p1", "p2", "p3", "p4", "p5", "p6", "p7", "p11", "c2"].includes(modeArg);
 
 const executablePath = (process.env.GW_BROWSER_EXECUTABLE || "").trim() || chromium.executablePath();
 
@@ -758,6 +758,135 @@ try {
   }
 
   // -------------------------------------------------------------------------
+  // STAGE: C2 (Startup orphan purge + Document Studio staged-data audit & purge UI)
+  // -------------------------------------------------------------------------
+  if (shouldRun("c2")) {
+    console.log("\n[Run 2 - C2 Startup Purge & Staged-Data Audit Stage]");
+    await clearIndexedDb(popup);
+    await popup.evaluate(() => {
+      document.querySelector('[data-tab="documents"]')?.click();
+    });
+    await popup.waitForTimeout(150);
+
+    // 1. Seed 2 orphan keys (3 KB) and 2 live-session keys (8 KB) into extension IndexedDB + session storage
+    await popup.evaluate(async () => {
+      await new Promise((res, rej) => {
+        const req = indexedDB.open("governworld-redaction", 1);
+        req.onsuccess = () => {
+          const db = req.result;
+          const tx = db.transaction("docfiles", "readwrite");
+          const st = tx.objectStore("docfiles");
+          st.put(new Uint8Array(1024).buffer, "orphan_c2");
+          st.put(new Uint8Array(2048).buffer, "orphan_c2::preview::0");
+          st.put(new Uint8Array(4096).buffer, "live_c2");
+          st.put(new Uint8Array(4096).buffer, "live_c2::preview::0");
+          tx.oncomplete = () => {
+            db.close();
+            res(true);
+          };
+          tx.onerror = () => {
+            db.close();
+            rej(tx.error);
+          };
+        };
+      });
+    });
+    await sw.evaluate(async () => {
+      await chrome.storage.session.set({
+        lastDocSession: {
+          docId: "doc-c2-live",
+          fileKey: "live_c2",
+          name: "live-c2.pdf",
+          mimeType: "application/pdf",
+          kind: "pdf",
+          pages: [],
+          categories: [],
+        },
+      });
+    });
+
+    await popup.evaluate(() => {
+      chrome.runtime.sendMessage({ type: "POPUP_GET_STAGED_STATS", requestId: `c2-get-1-${Date.now()}` });
+    });
+    await popup.waitForTimeout(250);
+
+    const beforeKeys = await readIndexedDbKeys(popup);
+    const beforeUi = await popup.evaluate(() => {
+      const el = document.getElementById("doc-staged-summary");
+      return {
+        text: (el?.textContent || "").trim(),
+        totalKeys: Number(el?.getAttribute("data-total-keys") || "-1"),
+        totalBytes: Number(el?.getAttribute("data-total-bytes") || "-1"),
+        liveKeys: Number(el?.getAttribute("data-live-keys") || "-1"),
+        orphanKeys: Number(el?.getAttribute("data-orphan-keys") || "-1"),
+      };
+    });
+    if (TAKE_SCREENSHOTS) {
+      mkdirSync(SCREENSHOT_DIR, { recursive: true });
+      await popup.screenshot({ path: join(SCREENSHOT_DIR, "C2-staged-before-purge.png"), fullPage: false });
+    }
+
+    // 2. Simulate Service Worker startup orphan purge (deletes orphan_c2*, preserves live_c2*)
+    await popup.evaluate(() => {
+      chrome.runtime.sendMessage({
+        type: "POPUP_PURGE_STAGED_DATA",
+        requestId: `c2-startup-${Date.now()}`,
+        includeIdleSession: false,
+      });
+    });
+    await popup.waitForTimeout(250);
+    const afterStartupPurgeKeys = await readIndexedDbKeys(popup);
+    const afterStartupUi = await popup.evaluate(() => {
+      const el = document.getElementById("doc-staged-summary");
+      return {
+        text: (el?.textContent || "").trim(),
+        totalKeys: Number(el?.getAttribute("data-total-keys") || "-1"),
+        liveKeys: Number(el?.getAttribute("data-live-keys") || "-1"),
+        orphanKeys: Number(el?.getAttribute("data-orphan-keys") || "-1"),
+      };
+    });
+
+    // 3. Click "Purge staged data" -> Confirm in Document Studio UI
+    await popup.click("#doc-purge-staged-btn");
+    await popup.waitForTimeout(100);
+    const confirmVisible = await popup.evaluate(
+      () => !document.getElementById("doc-purge-confirm-bar")?.hidden
+    );
+    await popup.click("#doc-purge-confirm-yes");
+    await popup.waitForTimeout(250);
+
+    const afterManualPurgeKeys = await readIndexedDbKeys(popup);
+    const afterManualUi = await popup.evaluate(() => {
+      const el = document.getElementById("doc-staged-summary");
+      const msg = document.getElementById("doc-staged-confirm-msg");
+      return {
+        text: (el?.textContent || "").trim(),
+        totalKeys: Number(el?.getAttribute("data-total-keys") || "-1"),
+        totalBytes: Number(el?.getAttribute("data-total-bytes") || "-1"),
+        confirmMsgHidden: Boolean(msg?.hidden),
+        confirmMsgText: (msg?.textContent || "").trim(),
+      };
+    });
+    if (TAKE_SCREENSHOTS) {
+      mkdirSync(SCREENSHOT_DIR, { recursive: true });
+      await popup.screenshot({ path: join(SCREENSHOT_DIR, "C2-staged-after-purge.png"), fullPage: false });
+    }
+
+    out.docs.c2Audit = {
+      beforeKeys,
+      beforeUi,
+      afterStartupPurgeKeys,
+      afterStartupUi,
+      confirmVisible,
+      afterManualPurgeKeys,
+      afterManualUi,
+    };
+    console.log(
+      `  C2 before: keys=${beforeKeys.length} ui="${beforeUi.text}" | after startup purge: keys=${afterStartupPurgeKeys.join(",")} ui="${afterStartupUi.text}" | after UI purge: keys=${afterManualPurgeKeys.length} ui="${afterManualUi.text}" msg="${afterManualUi.confirmMsgText}"`
+    );
+  }
+
+  // -------------------------------------------------------------------------
   // STAGE: PASTE (Real clipboard Ctrl+V, 15 trials, dialog latency + 0 escapes)
   // -------------------------------------------------------------------------
   if (shouldRun("paste")) {
@@ -1057,10 +1186,32 @@ const runP4Check = modeArg === "gate" || modeArg === "p4";
 const runP5Check = modeArg === "p5";
 const runP6Check = modeArg === "p6";
 const runP11Check = modeArg === "p11";
+const runC2Check = modeArg === "c2";
 const runPasteCheck = modeArg === "gate";
 const runLatencyP7Check = modeArg === "p7";
 
 if (IS_GATE) {
+  if (runC2Check) {
+    const c2 = out.docs.c2Audit;
+    if (
+      !c2 ||
+      c2.beforeKeys.length !== 4 ||
+      c2.beforeUi.totalKeys !== 4 ||
+      c2.beforeUi.liveKeys !== 2 ||
+      c2.beforeUi.orphanKeys !== 2 ||
+      c2.afterStartupPurgeKeys.length !== 2 ||
+      c2.afterStartupUi.totalKeys !== 2 ||
+      c2.afterStartupUi.liveKeys !== 2 ||
+      c2.afterStartupUi.orphanKeys !== 0 ||
+      !c2.confirmVisible ||
+      c2.afterManualPurgeKeys.length !== 0 ||
+      c2.afterManualUi.totalKeys !== 0 ||
+      c2.afterManualUi.confirmMsgHidden ||
+      !c2.afterManualUi.confirmMsgText
+    ) {
+      out.gateFailures.push(`C2 staged-data audit check failed: ${JSON.stringify(c2)}`);
+    }
+  }
   if (runP11Check) {
     const a = out.scan.p11About;
     if (!a || !a.diagVersionText || a.diagVersionText !== a.manifestVersion) {
