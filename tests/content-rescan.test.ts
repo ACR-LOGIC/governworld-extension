@@ -240,4 +240,58 @@ describe("Content Script Live Incremental Rescan (P1 / P2 / P3)", () => {
     expect(afterLabels.some((l) => l.startsWith("email:"))).toBe(false);
     expect(afterLabels.some((l) => l.startsWith("ssn:") && l.includes("8888"))).toBe(true);
   });
+
+  it("P2: assigns unique session-scoped segment IDs across multi-node batches so removing node 1 leaves zero ghost masks and keeps survivors masked", async () => {
+    document.body.innerHTML = '<div id="batch-container"></div>';
+    env = setupContentEnvironment();
+    await import("../src/content/content.js");
+
+    await env.dispatchMessage({
+      type: "SCAN_PAGE",
+      requestId: "req-p2-init",
+      sessionId: "sess-p2-1",
+      mode: "local",
+      settings: defaultSettings(),
+    });
+
+    // Append a 3-node batch simultaneously (NPI, email, SSN)
+    const container = document.getElementById("batch-container")!;
+    const n1 = document.createElement("p");
+    n1.id = "b-npi";
+    n1.textContent = "Provider NPI: 1234567893";
+    const n2 = document.createElement("p");
+    n2.id = "b-email";
+    n2.textContent = "Email: batch.user@example.test";
+    const n3 = document.createElement("p");
+    n3.id = "b-ssn";
+    n3.textContent = "SSN: 219-09-9999";
+    container.append(n1, n2, n3);
+
+    await new Promise((r) => setTimeout(r, 850));
+
+    const batchLabels = getOverlayMaskLabels(env);
+    expect(batchLabels.length).toBe(3);
+    expect(batchLabels.some((l) => l.startsWith("npi:"))).toBe(true);
+    expect(batchLabels.some((l) => l.startsWith("email:"))).toBe(true);
+    expect(batchLabels.some((l) => l.startsWith("ssn:"))).toBe(true);
+
+    // Remove first batch node -> only its NPI mask must disappear; email & SSN must remain
+    n1.remove();
+    await new Promise((r) => setTimeout(r, 850));
+
+    const afterRemoveLabels = getOverlayMaskLabels(env);
+    expect(afterRemoveLabels.length).toBe(2);
+    expect(afterRemoveLabels.some((l) => l.startsWith("npi:"))).toBe(false);
+    expect(afterRemoveLabels.some((l) => l.startsWith("email:"))).toBe(true);
+    expect(afterRemoveLabels.some((l) => l.startsWith("ssn:"))).toBe(true);
+
+    // In-place edit on the second node (email -> clean) must also remove only the email mask
+    (n2.firstChild as Text).data = "Email cleared cleanly.";
+    await new Promise((r) => setTimeout(r, 850));
+
+    const afterEditLabels = getOverlayMaskLabels(env);
+    expect(afterEditLabels.length).toBe(1);
+    expect(afterEditLabels.some((l) => l.startsWith("email:"))).toBe(false);
+    expect(afterEditLabels.some((l) => l.startsWith("ssn:"))).toBe(true);
+  });
 });

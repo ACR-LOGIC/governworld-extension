@@ -462,15 +462,23 @@ try {
       await page.waitForTimeout(1000);
       const afterMasks = await readOverlayMasksViaCdp(cdp);
       const ghostNpiRemains = afterMasks.some((m) => m.label.includes("npi"));
+      const survivorsIntact =
+        afterMasks.some((m) => m.label.includes("email")) &&
+        afterMasks.some((m) => m.label.includes("ssn"));
       batchCollisionResults.push({
         trial: t + 1,
         beforeCount: beforeMasks.length,
         afterCount: afterMasks.length,
         ghostNpiRemains,
+        survivorsIntact,
       });
       console.log(
-        `  P2 batch removal trial ${t + 1}: before=${beforeMasks.length} after=${afterMasks.length} ghostNpi=${ghostNpiRemains}`
+        `  P2 batch removal trial ${t + 1}: before=${beforeMasks.length} after=${afterMasks.length} ghostNpi=${ghostNpiRemains} survivors=${survivorsIntact}`
       );
+      if (TAKE_SCREENSHOTS && modeArg === "p2" && t === 2) {
+        mkdirSync(SCREENSHOT_DIR, { recursive: true });
+        await page.screenshot({ path: join(SCREENSHOT_DIR, "P2-no-ghost-masks.png"), fullPage: false });
+      }
     }
 
     // 4. P3: Popup & badge sync across 5 incremental additions
@@ -830,8 +838,13 @@ if (IS_GATE) {
   if (runLatencyP7Check && out.scan.charData && out.scan.charData.latencies.max >= 250) {
     out.gateFailures.push(`P7 latency max=${out.scan.charData.latencies.max}ms >= 250ms`);
   }
-  if (runP2Check && out.scan.batchRemoval && out.scan.batchRemoval.ghostCount > 0) {
-    out.gateFailures.push(`P2 ghost masks: ${out.scan.batchRemoval.ghostCount}`);
+  if (
+    runP2Check &&
+    out.scan.batchRemoval &&
+    (out.scan.batchRemoval.ghostCount > 0 ||
+      out.scan.batchRemoval.details?.some((d) => !d.survivorsIntact || d.afterCount !== d.beforeCount - 1))
+  ) {
+    out.gateFailures.push(`P2 ghost masks or survivor loss: ${JSON.stringify(out.scan.batchRemoval)}`);
   }
   if (runP3Check && out.scan.popupBadgeSync && out.scan.popupBadgeSync.syncedCount < 5) {
     out.gateFailures.push(`P3 popup/badge sync: ${out.scan.popupBadgeSync.syncedCount}/5`);

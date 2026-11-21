@@ -30,7 +30,7 @@
 | Finding | Reference (`GW-BENCH-2026-001`) | Phase 0 Baseline Observed | Target Task |
 | :--- | :--- | :--- | :--- |
 | Large-page completeness (10,000 nodes) | 87/300 findings (truncated at `maxVisibleChars=250,000`) | **87/300 findings** (`252,944` chars, `truncated=true`, `p50=95.902 ms`) | `P6` (D4) |
-| Batch `rescan_seg_0` collision (`P2`) | 3/3 ghost NPI mask after node-1 removal | **3/3 ghost NPI remains** (`beforeCount=3`, `afterCount=3`) | `P2` |
+| Batch `rescan_seg_0` collision (`P2`) | 3/3 ghost NPI mask after node-1 removal | **Baseline:** 3/3 ghost NPI remains (`beforeCount=3`, `afterCount=3`) → **After P2 (`results-p2.json`):** **0/3 ghost masks** (`before=3, after=2, survivors=true` across 3/3 trials) | `P2` (Fixed & verified) |
 | Stale popup & badge counts (`P3`) | SW session 0 findings in 2/3 trials (1/3 intermittent) | **0/5 synced** (`sessionFindings=0`, `badge=""`, `popup=0`) | `P3` |
 | Staged-byte cleanup on Start Over (`P4`) | Surviving `::page::`/`::preview::` keys: 2 / 10 / 40 across 1/5/20p | **2 / 10 / 40 surviving keys** after Start Over across 1/5/20p | `P4`, `C2` |
 | Version parity (`P11`) | `v0.4.1` git tag vs `0.4.0` package.json/README | Confirmed out of sync (`0.4.0` in `package.json`, manifests, README) | `P11` |

@@ -73,6 +73,8 @@ if (g.__gwRedactionContentLoaded !== true) {
   let mutationObserver: MutationObserverHandle | null = null;
   let pendingMutationBatch: MutationBatch | null = null;
   let mutationDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let nextRescanSegId = 0;
+  let nextRescanFindingSeq = 0;
 
   function clearSession() {
     sessionId = null;
@@ -86,6 +88,8 @@ if (g.__gwRedactionContentLoaded !== true) {
     placeholdersEnabled = false;
     manualSelectionRanges = [];
     pendingMutationBatch = null;
+    nextRescanSegId = 0;
+    nextRescanFindingSeq = 0;
     if (mutationDebounceTimer !== null) {
       clearTimeout(mutationDebounceTimer);
       mutationDebounceTimer = null;
@@ -1028,8 +1032,9 @@ if (g.__gwRedactionContentLoaded !== true) {
     const offset = combined.length > 0 ? combined.length + 1 : 0;
     for (let i = 0; i < extracted.segments.length; i++) {
       const seg = extracted.segments[i];
+      const uniqueNodeId = `rescan_seg_${nextRescanSegId++}`;
       const newSeg: import("./normalization/types.js").CanonicalSegment = {
-        nodeId: `rescan_${seg.nodeId}`,
+        nodeId: uniqueNodeId,
         startOffset: seg.startOffset,
         endOffset: seg.endOffset,
         text: seg.text,
@@ -1038,8 +1043,8 @@ if (g.__gwRedactionContentLoaded !== true) {
       };
       segments.push(newSeg);
       const targetNode = newNodeIds.get(seg.nodeId) ?? sourceNode;
-      nodeIds.set(newSeg.nodeId, targetNode);
-      segmentIndexById.set(newSeg.nodeId, segments.length - 1);
+      nodeIds.set(uniqueNodeId, targetNode);
+      segmentIndexById.set(uniqueNodeId, segments.length - 1);
     }
     combined += (combined.length > 0 ? "\n" : "") + newBuilt.combined;
     segmentStarts.push(...newBuilt.segmentStarts.map((s) => s + offset));
@@ -1060,6 +1065,7 @@ if (g.__gwRedactionContentLoaded !== true) {
     const newFindings = buildFindings(adjustedMatches, settings.enabledCategories, currentCustomPatterns);
     const existingIds = new Set(findings.map((f) => f.id));
     for (const nf of newFindings) {
+      nf.id = `rescan_${nf.category}_${nextRescanFindingSeq++}`;
       if (!existingIds.has(nf.id) && nf.confidence >= threshold(nf.category)) {
         findings.push(nf);
       }
