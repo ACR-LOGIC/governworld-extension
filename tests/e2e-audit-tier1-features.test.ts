@@ -52,9 +52,18 @@ import {
 import { createOverlay } from "../src/content/overlay.js";
 import { buildOcrWorkerOptions } from "../src/document-pipeline/ocr.js";
 import { DEFAULT_SETTINGS, ALL_CATEGORIES } from "../src/shared/settings.js";
-import type { Finding, FindingCategory, ScanSettingsMessage } from "../src/shared/types.js";
+import type { Finding, FindingCategory, ScanSettingsMessage, WorkerMessage } from "../src/shared/types.js";
+
+type ScanResultMessage = Extract<WorkerMessage, { type: "SCAN_RESULT" }>;
 import type { CustomPattern } from "../src/shared/customPatterns.js";
 import { resolveScanCoverageStatus } from "../src/content/normalization/pageInventory.js";
+import {
+  observeMutations,
+  shouldInvalidateBatch,
+  selectObserverDebounceMs,
+  BURST_DEBOUNCE_MS,
+  type MutationBatch,
+} from "../src/content/normalization/mutation.js";
 
 const ALL_BUILTIN: FindingCategory[] = [
   "email", "phone", "ssn", "dob", "medical_record_number",
@@ -355,46 +364,134 @@ describe("Tier 1: Feature Coverage — 19 Master Issue Categories", () => {
   // Processing batches >50 mutations without destroying session or stripping masks
   // =========================================================================
   describe("Category 5: Mutation Batch Limit (>50 mutations)", () => {
-    it("F7.1: batch with 51 mutations does not throw or invalidate session container", () => {
+    let cleanupRuntime: (() => void) | null = null;
+
+    afterEach(() => {
+      cleanupRuntime?.();
+      cleanupRuntime = null;
+    });
+
+    it("F7.1: observeMutations delivers 55-node burst without invalidating session", async () => {
       const parent = document.createElement("div");
       document.body.appendChild(parent);
 
-      const addedNodes: Node[] = [];
+      let observed: MutationBatch | null = null;
+      const handle = observeMutations(parent, (batch) => {
+        observed = batch;
+      });
+
       for (let i = 0; i < 55; i++) {
         const p = document.createElement("p");
         p.textContent = `Entry item number ${i}`;
         parent.appendChild(p);
-        addedNodes.push(p);
       }
 
-      expect(addedNodes.length).toBe(55);
-      expect(addedNodes.length).toBeGreaterThan(50);
-      expect(parent.children.length).toBe(55);
+      await vi.waitFor(() => {
+        expect(observed).not.toBeNull();
+      });
+
+      expect(observed!.addedNodes).toHaveLength(55);
+      expect(shouldInvalidateBatch(observed!)).toBe(true);
+      expect(selectObserverDebounceMs(observed!.addedNodes.length)).toBe(BURST_DEBOUNCE_MS);
+      handle.disconnect();
     });
 
-    it("F7.2: batch with 100 mutations preserves existing DOM findings list", () => {
-      const existingFindings: Finding[] = [
-        {
-          id: "find_1",
-          category: "email",
-          confidence: 0.95,
-          source: "local-rules",
-          preview: "u***@example.com",
-          nodeId: "seg_0",
-          startOffset: 0,
-          endOffset: 16,
-          rects: [{ x: 10, y: 10, width: 100, height: 20 }],
-          contextPreview: "...",
-          selected: true,
+    it("F7.2: live content script preserves initial findings and detects new secrets across 100-node batch", async () => {
+      delete (globalThis as Record<string, unknown>).__gwRedactionContentLoaded;
+      const listeners: Array<(msg: unknown, sender: chrome.runtime.MessageSender, sendResponse: (r?: unknown) => void) => boolean | void> = [];
+      const sentMessages: WorkerMessage[] = [];
+      const createdObservers: MutationObserver[] = [];
+      const OrigMutationObserver = globalThis.MutationObserver;
+      globalThis.MutationObserver = class TrackedMutationObserver extends OrigMutationObserver {
+        constructor(cb: MutationCallback) {
+          super(cb);
+          createdObservers.push(this);
         }
-      ];
+      } as typeof MutationObserver;
 
-      // Simulate batch arriving
-      const batchCount = 100;
-      expect(batchCount).toBeGreaterThan(50);
-      // Findings array must NOT be cleared to empty
-      expect(existingFindings.length).toBe(1);
-      expect(existingFindings[0].id).toBe("find_1");
+      const origGetClientRects = Range.prototype.getClientRects;
+      Range.prototype.getClientRects = function (): DOMRectList {
+        const rect = { x: 10, y: 10, width: 100, height: 18, top: 10, left: 10, right: 110, bottom: 28, toJSON: () => ({}) } as DOMRect;
+        const list = [rect] as unknown as DOMRectList & { item: (i: number) => DOMRect | null };
+        list.item = (i: number) => (i === 0 ? rect : null);
+        return list;
+      };
+
+      const prevChrome = (globalThis as Record<string, unknown>).chrome;
+      (globalThis as Record<string, unknown>).chrome = {
+        runtime: {
+          id: "test-extension-id",
+          onMessage: {
+            addListener(fn: (typeof listeners)[number]) { listeners.push(fn); },
+            removeListener(fn: (typeof listeners)[number]) {
+              const idx = listeners.indexOf(fn);
+              if (idx >= 0) listeners.splice(idx, 1);
+            },
+          },
+          sendMessage(msg: WorkerMessage) {
+            sentMessages.push(msg);
+            return Promise.resolve({ ok: true });
+          },
+        },
+        storage: {
+          local: { get: vi.fn().mockResolvedValue({}), set: vi.fn().mockResolvedValue(undefined) },
+        },
+      };
+
+      cleanupRuntime = () => {
+        for (const obs of createdObservers) obs.disconnect();
+        globalThis.MutationObserver = OrigMutationObserver;
+        Range.prototype.getClientRects = origGetClientRects;
+        (globalThis as Record<string, unknown>).chrome = prevChrome;
+        delete (globalThis as Record<string, unknown>).__gwRedactionContentLoaded;
+      };
+
+      document.body.innerHTML = `<p id="seed-f72">Primary contact: patient.one@example.test</p>`;
+      vi.resetModules();
+      await import("../src/content/content.js");
+
+      const handler = listeners[listeners.length - 1];
+      await new Promise((resolve) => {
+        handler(
+          {
+            type: "SCAN_PAGE",
+            requestId: "req-f72",
+            sessionId: "sess-f72",
+            mode: "local",
+            settings: {
+              enabledCategories: [...ALL_CATEGORIES],
+              maxVisibleChars: 250_000,
+              maxNodeChars: 20_000,
+              maskPlaceholders: false,
+              sessionTimeoutMs: 900_000,
+            },
+          },
+          { id: "test-extension-id" } as chrome.runtime.MessageSender,
+          resolve
+        );
+      });
+
+      const container = document.createElement("section");
+      document.body.appendChild(container);
+      for (let i = 0; i < 100; i++) {
+        const p = document.createElement("p");
+        p.textContent = i === 88 ? "Attending NPI: 1234567893" : `Batch row ${i}`;
+        container.appendChild(p);
+      }
+
+      await vi.waitFor(
+        () => {
+          const results = sentMessages.filter((m): m is ScanResultMessage => m.type === "SCAN_RESULT");
+          const latest = results[results.length - 1];
+          expect(latest?.findings.length).toBeGreaterThanOrEqual(2);
+        },
+        { timeout: 2500, interval: 40 }
+      );
+
+      const results = sentMessages.filter((m): m is ScanResultMessage => m.type === "SCAN_RESULT");
+      const latest = results[results.length - 1];
+      expect(latest.findings.some((f) => f.category === "email")).toBe(true);
+      expect(latest.findings.some((f) => f.category === "npi")).toBe(true);
     });
 
     it("F7.3: batch of 200 nodes processes without stripping active overlay elements", () => {

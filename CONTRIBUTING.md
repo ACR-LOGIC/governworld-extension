@@ -101,3 +101,14 @@ If GovernWorld helps protect your privacy or workflow, you can support ongoing m
    npm run sync:version:check
    npx vitest run tests/version-parity.test.ts
    ```
+
+---
+
+## Testing Standards & Anti-Vacuity Policy (P12)
+
+Every automated test in `tests/` SHALL exercise real module code and fail when the underlying fix is reverted:
+
+1. **No Vacuous Constants or Tautologies:** Never assert properties of local literals (`expect(52).toBeGreaterThan(50)`, `if (0) {}`, `expect(true).toBe(false)` inside early returns).
+2. **No Inline Bug Simulations:** Tests must import and execute the real production modules (`src/content/content.ts`, `src/content/normalization/mutation.ts`, `src/content/pasteGuard.ts`, etc.) rather than duplicating stale logic inline.
+3. **Exact-Span Recall:** Detection benchmarks (`tests/benchmark-measured.test.ts`, `tests/detection-benchmark.test.ts`) SHALL assert exact character offsets (`m.start === expectedStart && m.end === expectedEnd`), never substring `.includes()` overlap checks.
+4. **Fail-on-Revert Proof:** Every bug-fix test must be verified to **fail** (`exit 1`) when its corresponding production fix is reverted, and **pass** when restored.

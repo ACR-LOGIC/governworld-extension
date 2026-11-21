@@ -56,6 +56,7 @@ const ALL_CATEGORIES: FindingCategory[] = [
 export const SYNTHETIC_POSITIVES: BenchmarkSample[] = [
   { category: "email", text: "Contact patient at test.user@example.test for details.", expectedMatch: "test.user@example.test", description: "Standard dot email" },
   { category: "email", text: "Direct inquiries to dr_smith@hospital.test.", expectedMatch: "dr_smith@hospital.test", description: "Underscore email" },
+  { category: "email", text: "Spanish contact josé.maría@example.test confirmed.", expectedMatch: "josé.maría@example.test", description: "Unicode accented local-part email" },
   { category: "phone", text: "Direct callback number is (555) 234-5678.", expectedMatch: "(555) 234-5678", description: "Parenthesized area code phone" },
   { category: "phone", text: "Emergency line: +1-555-987-6543.", expectedMatch: "+1-555-987-6543", description: "Leading +1 with hyphens" },
   { category: "ssn", text: "Applicant SSN listed as 219-09-9999 on form.", expectedMatch: "219-09-9999", description: "Standard dashed SSN" },
@@ -206,9 +207,16 @@ describe("detection benchmark, precision, recall, and unsupported inputs (Object
 
     for (const sample of corpus) {
       stats[sample.category].total++;
+      const expectedStart = sample.text.indexOf(sample.expectedMatch);
+      expect(expectedStart, `Expected match substring missing in [${sample.description}]`).toBeGreaterThanOrEqual(0);
+      const expectedEnd = expectedStart + sample.expectedMatch.length;
       const matches = detect(sample.text, [sample.category]);
       const matched = matches.some(
-        (m) => m.category === sample.category && sample.text.slice(m.start, m.end).includes(sample.expectedMatch)
+        (m) =>
+          m.category === sample.category &&
+          m.start === expectedStart &&
+          m.end === expectedEnd &&
+          sample.text.slice(m.start, m.end) === sample.expectedMatch
       );
       if (matched) {
         stats[sample.category].detected++;

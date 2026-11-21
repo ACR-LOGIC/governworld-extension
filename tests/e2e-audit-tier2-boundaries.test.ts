@@ -34,14 +34,24 @@ import {
   detectPasteFindings,
   sanitizePastedText,
   insertTextIntoElement,
+  initPasteGuard,
 } from "../src/content/pasteGuard.js";
 import { extractSvgText } from "../src/content/svgExtract.js";
 import { createOverlay } from "../src/content/overlay.js";
 import { buildOcrWorkerOptions } from "../src/document-pipeline/ocr.js";
-import { ALL_CATEGORIES } from "../src/shared/settings.js";
-import type { Finding, FindingCategory, ScanSettingsMessage } from "../src/shared/types.js";
+import { ALL_CATEGORIES, DEFAULT_SETTINGS } from "../src/shared/settings.js";
+import type { Finding, FindingCategory, ScanSettingsMessage, WorkerMessage } from "../src/shared/types.js";
+
+type ScanResultMessage = Extract<WorkerMessage, { type: "SCAN_RESULT" }>;
 import type { CustomPattern } from "../src/shared/customPatterns.js";
 import { resolveScanCoverageStatus } from "../src/content/normalization/pageInventory.js";
+import {
+  observeMutations,
+  shouldInvalidateBatch,
+  selectObserverDebounceMs,
+  BURST_DEBOUNCE_MS,
+  type MutationBatch,
+} from "../src/content/normalization/mutation.js";
 
 describe("Tier 2: Boundary Value Analysis & Corner Cases — 19 Master Issue Categories", () => {
   afterEach(() => {
@@ -274,30 +284,271 @@ describe("Tier 2: Boundary Value Analysis & Corner Cases — 19 Master Issue Cat
   // Category 5: Mutation Batch Limit Boundaries
   // =========================================================================
   describe("Category 5 Boundaries: Mutation Batch Limits", () => {
-    it("B5.1: mutation batch at exact threshold 50 nodes does not clear active session", () => {
-      const batchSize = 50;
-      expect(batchSize).toBeLessThanOrEqual(50);
+    let cleanupRuntime: (() => void) | null = null;
+
+    afterEach(() => {
+      cleanupRuntime?.();
+      cleanupRuntime = null;
     });
 
-    it("B5.2: mutation batch at exact threshold 51 nodes does not clear active session", () => {
-      const batchSize = 51;
-      // Requirement: batches exceeding 50 nodes must NOT destroy active session
-      expect(batchSize).toBeGreaterThan(50);
+    function setupLiveContentB5() {
+      delete (globalThis as Record<string, unknown>).__gwRedactionContentLoaded;
+      const listeners: Array<(msg: unknown, sender: chrome.runtime.MessageSender, sendResponse: (r?: unknown) => void) => boolean | void> = [];
+      const sentMessages: WorkerMessage[] = [];
+      const createdObservers: MutationObserver[] = [];
+      const OrigMutationObserver = globalThis.MutationObserver;
+      globalThis.MutationObserver = class TrackedMutationObserver extends OrigMutationObserver {
+        constructor(cb: MutationCallback) {
+          super(cb);
+          createdObservers.push(this);
+        }
+      } as typeof MutationObserver;
+
+      const origGetClientRects = Range.prototype.getClientRects;
+      Range.prototype.getClientRects = function (): DOMRectList {
+        const rect = { x: 10, y: 10, width: 100, height: 18, top: 10, left: 10, right: 110, bottom: 28, toJSON: () => ({}) } as DOMRect;
+        const list = [rect] as unknown as DOMRectList & { item: (i: number) => DOMRect | null };
+        list.item = (i: number) => (i === 0 ? rect : null);
+        return list;
+      };
+
+      const prevChrome = (globalThis as Record<string, unknown>).chrome;
+      (globalThis as Record<string, unknown>).chrome = {
+        runtime: {
+          id: "test-extension-id",
+          onMessage: {
+            addListener(fn: (typeof listeners)[number]) { listeners.push(fn); },
+            removeListener(fn: (typeof listeners)[number]) {
+              const idx = listeners.indexOf(fn);
+              if (idx >= 0) listeners.splice(idx, 1);
+            },
+          },
+          sendMessage(msg: WorkerMessage) {
+            sentMessages.push(msg);
+            return Promise.resolve({ ok: true });
+          },
+        },
+        storage: {
+          local: { get: vi.fn().mockResolvedValue({}), set: vi.fn().mockResolvedValue(undefined) },
+        },
+      };
+
+      cleanupRuntime = () => {
+        for (const obs of createdObservers) obs.disconnect();
+        globalThis.MutationObserver = OrigMutationObserver;
+        Range.prototype.getClientRects = origGetClientRects;
+        (globalThis as Record<string, unknown>).chrome = prevChrome;
+        delete (globalThis as Record<string, unknown>).__gwRedactionContentLoaded;
+      };
+
+      return {
+        sentMessages,
+        dispatch(msg: unknown) {
+          return new Promise((resolve) => {
+            const handler = listeners[listeners.length - 1];
+            handler(msg, { id: "test-extension-id" } as chrome.runtime.MessageSender, resolve);
+          });
+        },
+      };
+    }
+
+    it("B5.1: mutation batch at exact threshold 50 nodes does not invalidate active session", async () => {
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      let observed: MutationBatch | null = null;
+      const handle = observeMutations(container, (batch) => {
+        observed = batch;
+      });
+
+      for (let i = 0; i < 50; i++) {
+        const el = document.createElement("span");
+        el.textContent = `Row ${i}`;
+        container.appendChild(el);
+      }
+
+      await vi.waitFor(() => {
+        expect(observed).not.toBeNull();
+      });
+      expect(observed!.addedNodes).toHaveLength(50);
+      expect(shouldInvalidateBatch(observed!)).toBe(true);
+      expect(selectObserverDebounceMs(observed!.addedNodes.length)).toBe(BURST_DEBOUNCE_MS);
+      handle.disconnect();
+
+      // Verify exact 50-node batch keeps a live content session intact
+      const env = setupLiveContentB5();
+      document.body.innerHTML = `<p id="seed-b51">Primary email: b51@example.test</p>`;
+      vi.resetModules();
+      await import("../src/content/content.js");
+      await env.dispatch({
+        type: "SCAN_PAGE",
+        requestId: "req-b51",
+        sessionId: "sess-b51",
+        mode: "local",
+        settings: {
+          enabledCategories: [...ALL_CATEGORIES],
+          maxVisibleChars: 250_000,
+          maxNodeChars: 20_000,
+          maskPlaceholders: false,
+          sessionTimeoutMs: 900_000,
+        },
+      });
+      for (let i = 0; i < 50; i++) {
+        const el = document.createElement("p");
+        el.textContent = i === 49 ? "Added SSN: 219-09-9999" : `Item ${i}`;
+        document.body.appendChild(el);
+      }
+      await vi.waitFor(
+        () => {
+          const results = env.sentMessages.filter((m): m is ScanResultMessage => m.type === "SCAN_RESULT");
+          const latest = results[results.length - 1];
+          expect(latest?.findings.length).toBeGreaterThanOrEqual(2);
+        },
+        { timeout: 2500, interval: 40 }
+      );
+      const results = env.sentMessages.filter((m): m is ScanResultMessage => m.type === "SCAN_RESULT");
+      const latest = results[results.length - 1];
+      expect(latest.findings.some((f) => f.category === "email")).toBe(true);
+      expect(latest.findings.some((f) => f.category === "ssn")).toBe(true);
     });
 
-    it("B5.3: mutation batch at maximum limit 500 nodes is supported by normalization queue", () => {
-      const batchSize = 500;
-      expect(batchSize).toBeLessThanOrEqual(500);
+    it("B5.2: mutation batch at 51 nodes preserves existing findings and scans new content", async () => {
+      const env = setupLiveContentB5();
+      document.body.innerHTML = `<p id="seed-b52">Primary email: seed@example.test</p>`;
+      vi.resetModules();
+      await import("../src/content/content.js");
+
+      await env.dispatch({
+        type: "SCAN_PAGE",
+        requestId: "req-b52",
+        sessionId: "sess-b52",
+        mode: "local",
+        settings: {
+          enabledCategories: [...ALL_CATEGORIES],
+          maxVisibleChars: 250_000,
+          maxNodeChars: 20_000,
+          maskPlaceholders: false,
+          sessionTimeoutMs: 900_000,
+        },
+      });
+
+      for (let i = 0; i < 51; i++) {
+        const el = document.createElement("p");
+        el.textContent = i === 50 ? "Consulting NPI: 1234567893" : `Line ${i}`;
+        document.body.appendChild(el);
+      }
+
+      await vi.waitFor(
+        () => {
+          const results = env.sentMessages.filter((m): m is ScanResultMessage => m.type === "SCAN_RESULT");
+          const latest = results[results.length - 1];
+          expect(latest?.findings.length).toBeGreaterThanOrEqual(2);
+        },
+        { timeout: 2500, interval: 40 }
+      );
+
+      const results = env.sentMessages.filter((m): m is ScanResultMessage => m.type === "SCAN_RESULT");
+      const latest = results[results.length - 1];
+      expect(latest.findings.some((f) => f.category === "email")).toBe(true);
+      expect(latest.findings.some((f) => f.category === "npi")).toBe(true);
     });
 
-    it("B5.4: empty mutation batch (0 nodes) causes no-op without re-scanning", () => {
-      const emptyBatch = { addedNodes: [], removedNodes: [], mutatedTextNodes: [], timestamp: Date.now() };
-      expect(emptyBatch.addedNodes.length).toBe(0);
+    it("B5.3: mutation batch of 500 nodes is delivered cleanly by observeMutations without invalidation", async () => {
+      const container = document.createElement("div");
+      document.body.appendChild(container);
+      let observed: MutationBatch | null = null;
+      const handle = observeMutations(container, (batch) => {
+        observed = batch;
+      });
+
+      for (let i = 0; i < 500; i++) {
+        const div = document.createElement("div");
+        div.textContent = `Entry ${i}`;
+        container.appendChild(div);
+      }
+
+      await vi.waitFor(() => {
+        expect(observed).not.toBeNull();
+      });
+      expect(observed!.addedNodes).toHaveLength(500);
+      expect(shouldInvalidateBatch(observed!)).toBe(true);
+      expect(selectObserverDebounceMs(observed!.addedNodes.length)).toBe(BURST_DEBOUNCE_MS);
+      handle.disconnect();
     });
 
-    it("B5.5: batch with 52 characterData text mutations maintains findings integrity", () => {
-      const mutatedCount = 52;
-      expect(mutatedCount).toBeGreaterThan(50);
+    it("B5.4: empty mutation batch and internal overlay UI mutations cause no rescan", async () => {
+      expect(shouldInvalidateBatch({ addedNodes: [], removedNodes: [], mutatedTextNodes: [], timestamp: Date.now() })).toBe(false);
+
+      const env = setupLiveContentB5();
+      document.body.innerHTML = `<p id="seed-b54">Clean note with alice@example.test.</p>`;
+      vi.resetModules();
+      await import("../src/content/content.js");
+
+      await env.dispatch({
+        type: "SCAN_PAGE",
+        requestId: "req-b54",
+        sessionId: "sess-b54",
+        mode: "local",
+        settings: {
+          enabledCategories: [...ALL_CATEGORIES],
+          maxVisibleChars: 250_000,
+          maxNodeChars: 20_000,
+          maskPlaceholders: false,
+          sessionTimeoutMs: 900_000,
+        },
+      });
+
+      const initialScanCount = env.sentMessages.filter((m) => m.type === "SCAN_RESULT").length;
+      expect(initialScanCount).toBe(1);
+
+      const internalOverlay = document.createElement("div");
+      internalOverlay.setAttribute("data-gw-scan-overlay", "true");
+      internalOverlay.textContent = "999-99-9999";
+      document.body.appendChild(internalOverlay);
+
+      await new Promise((r) => setTimeout(r, 250));
+      const postScanCount = env.sentMessages.filter((m) => m.type === "SCAN_RESULT").length;
+      expect(postScanCount).toBe(initialScanCount);
+    });
+
+    it("B5.5: batch with 52 characterData text mutations preserves findings and detects newly mutated SSN", async () => {
+      const env = setupLiveContentB5();
+      const rows = Array.from({ length: 52 }, (_, i) => `<p id="cd-${i}">Clean line ${i}</p>`).join("");
+      document.body.innerHTML = `<p id="seed-b55">Anchor email: anchor@example.test</p>${rows}`;
+      vi.resetModules();
+      await import("../src/content/content.js");
+
+      await env.dispatch({
+        type: "SCAN_PAGE",
+        requestId: "req-b55",
+        sessionId: "sess-b55",
+        mode: "local",
+        settings: {
+          enabledCategories: [...ALL_CATEGORIES],
+          maxVisibleChars: 250_000,
+          maxNodeChars: 20_000,
+          maskPlaceholders: false,
+          sessionTimeoutMs: 900_000,
+        },
+      });
+
+      for (let i = 0; i < 52; i++) {
+        const textNode = document.getElementById(`cd-${i}`)!.firstChild as Text;
+        textNode.data = i === 51 ? "Mutated SSN: 219-09-9999" : `Edited clean line ${i}`;
+      }
+
+      await vi.waitFor(
+        () => {
+          const results = env.sentMessages.filter((m): m is ScanResultMessage => m.type === "SCAN_RESULT");
+          const latest = results[results.length - 1];
+          expect(latest?.findings.some((f) => f.category === "ssn")).toBe(true);
+        },
+        { timeout: 2500, interval: 40 }
+      );
+
+      const results = env.sentMessages.filter((m): m is ScanResultMessage => m.type === "SCAN_RESULT");
+      const latest = results[results.length - 1];
+      expect(latest.findings.some((f) => f.category === "email")).toBe(true);
+      expect(latest.findings.some((f) => f.category === "ssn")).toBe(true);
     });
   });
 
@@ -305,16 +556,38 @@ describe("Tier 2: Boundary Value Analysis & Corner Cases — 19 Master Issue Cat
   // Category 6: Paste Shield File Drop Boundaries
   // =========================================================================
   describe("Category 6 Boundaries: Paste Shield File Drops", () => {
-    it("B6.1: drop event with 0 files handles empty list cleanly", () => {
-      const fakeEvent = {
-        preventDefault: vi.fn(),
-        dataTransfer: { files: [] }
-      };
+    it("B6.1: drop event with 0 files handles empty list cleanly without mounting dialog or inserting text", async () => {
+      const textarea = document.createElement("textarea");
+      textarea.id = "drop-target";
+      document.body.appendChild(textarea);
 
-      if (fakeEvent.dataTransfer.files.length === 0) {
-        // No-op
+      const teardown = initPasteGuard(document, {
+        initialSettings: {
+          ...DEFAULT_SETTINGS,
+          protectionMode: "always-on",
+          enabledCategories: [...ALL_CATEGORIES],
+        },
+      });
+
+      try {
+        const dropEvent = new Event("drop", { bubbles: true, cancelable: true }) as Event & {
+          dataTransfer?: { getData: (type: string) => string; files: FileList };
+        };
+        dropEvent.dataTransfer = {
+          getData: () => "",
+          files: [] as unknown as FileList,
+        };
+        const preventSpy = vi.spyOn(dropEvent, "preventDefault");
+
+        textarea.dispatchEvent(dropEvent);
+        await new Promise((r) => setTimeout(r, 20));
+
+        expect(preventSpy).toHaveBeenCalledTimes(1);
+        expect(textarea.value).toBe("");
+        expect(document.querySelector('[data-gw-paste-guard], [id^="__governworld-"]')).toBeNull();
+      } finally {
+        teardown();
       }
-      expect(fakeEvent.dataTransfer.files).toHaveLength(0);
     });
 
     it("B6.2: drop text file with 0 bytes (empty string) produces no findings", async () => {
