@@ -70,6 +70,9 @@ if (g.__gwRedactionContentLoaded !== true) {
   let currentCustomPatterns: CustomPattern[] = [];
   /** Manual selection ranges from CONTEXT_MASK_SELECTION (selection, not scan findings). */
   let manualSelectionRanges: Array<{ range: Range; rects: DOMRectList; label: string; placeholder?: string }> = [];
+  let mutationObserver: MutationObserverHandle | null = null;
+  let pendingMutationBatch: MutationBatch | null = null;
+  let mutationDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   function clearSession() {
     sessionId = null;
@@ -82,6 +85,11 @@ if (g.__gwRedactionContentLoaded !== true) {
     findings = [];
     placeholdersEnabled = false;
     manualSelectionRanges = [];
+    pendingMutationBatch = null;
+    if (mutationDebounceTimer !== null) {
+      clearTimeout(mutationDebounceTimer);
+      mutationDebounceTimer = null;
+    }
     overlay?.clear();
     overlay?.destroy();
     overlay = null;
@@ -282,6 +290,11 @@ if (g.__gwRedactionContentLoaded !== true) {
     for (const finding of findings) {
       if (!finding.selected) continue;
       if (finding.source !== "attr" && finding.nodeId && finding.nodeId !== "svg" && !finding.nodeId.startsWith("media")) {
+        const mappedNode = nodeIds.get(finding.nodeId);
+        if (!mappedNode || !mappedNode.isConnected) {
+          finding.rects = [];
+          continue;
+        }
         const fresh = findingRects(finding.startOffset, finding.endOffset);
         if (fresh.length > 0) {
           finding.rects = fresh;
@@ -1001,15 +1014,70 @@ if (g.__gwRedactionContentLoaded !== true) {
     invalidateOnNavigation();
   };
 
-  let mutationObserver: MutationObserverHandle | null = null;
-  let pendingMutationBatch: MutationBatch | null = null;
-  let mutationDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  function appendAndDetectNode(sourceNode: Element | Text, settings: ScanSettings): void {
+    const newNodeIds = new Map<string, Node>();
+    const extracted = extractVisibleText(
+      sourceNode,
+      settings.maxVisibleChars,
+      settings.maxNodeChars,
+      newNodeIds
+    );
+    if (extracted.segments.length === 0) return;
+
+    const newBuilt = buildScanText(extracted.segments);
+    const offset = combined.length > 0 ? combined.length + 1 : 0;
+    for (let i = 0; i < extracted.segments.length; i++) {
+      const seg = extracted.segments[i];
+      const newSeg: import("./normalization/types.js").CanonicalSegment = {
+        nodeId: `rescan_${seg.nodeId}`,
+        startOffset: seg.startOffset,
+        endOffset: seg.endOffset,
+        text: seg.text,
+        combinedStartOffset: offset + newBuilt.segmentStarts[i],
+        combinedEndOffset: offset + newBuilt.segmentStarts[i] + seg.text.length,
+      };
+      segments.push(newSeg);
+      const targetNode = newNodeIds.get(seg.nodeId) ?? sourceNode;
+      nodeIds.set(newSeg.nodeId, targetNode);
+      segmentIndexById.set(newSeg.nodeId, segments.length - 1);
+    }
+    combined += (combined.length > 0 ? "\n" : "") + newBuilt.combined;
+    segmentStarts.push(...newBuilt.segmentStarts.map((s) => s + offset));
+
+    const threshold = (cat: FindingCategory) => settings.confidenceThresholds?.[cat] ?? 0;
+    let deltaMatches = detect(newBuilt.combined, settings.enabledCategories, currentCustomPatterns);
+    if (settings.enabledCategories.includes("possible_name")) {
+      deltaMatches = enrichAndBoostNames(deltaMatches);
+    }
+    deltaMatches = deltaMatches.filter((m) => m.confidence >= threshold(m.category));
+    if (deltaMatches.length === 0) return;
+
+    const adjustedMatches = deltaMatches.map((m) => ({
+      ...m,
+      start: m.start + offset,
+      end: m.end + offset,
+    }));
+    const newFindings = buildFindings(adjustedMatches, settings.enabledCategories, currentCustomPatterns);
+    const existingIds = new Set(findings.map((f) => f.id));
+    for (const nf of newFindings) {
+      if (!existingIds.has(nf.id) && nf.confidence >= threshold(nf.category)) {
+        findings.push(nf);
+      }
+    }
+  }
 
   function rescanAffectedRegions(batch: MutationBatch): void {
     if (!sessionId || !currentSettings) return;
+    const settings = currentSettings;
 
     const affectedNodeIds = getAffectedNodeIds(batch, nodeIds);
-    if (affectedNodeIds.size === 0 && batch.addedNodes.length === 0) return;
+    if (
+      affectedNodeIds.size === 0 &&
+      batch.addedNodes.length === 0 &&
+      batch.mutatedTextNodes.length === 0
+    ) {
+      return;
+    }
 
     const findingsToRemove = new Set<string>();
     for (const finding of findings) {
@@ -1019,6 +1087,22 @@ if (g.__gwRedactionContentLoaded !== true) {
     }
     if (findingsToRemove.size > 0) {
       findings = findings.filter((f) => !findingsToRemove.has(f.id));
+    }
+
+    // Record surviving findings' segment-local offsets so rebuilding `combined`
+    // after splicing keeps surviving mask and copy ranges aligned.
+    const survivingOffsets = new Map<string, { nodeId: string; deltaStart: number; len: number }>();
+    for (const f of findings) {
+      if (f.source !== "attr" && f.nodeId && f.nodeId !== "svg" && f.nodeId !== "video-caption" && !f.nodeId.startsWith("media")) {
+        const oldIdx = segmentIndexById.get(f.nodeId);
+        if (oldIdx !== undefined) {
+          survivingOffsets.set(f.id, {
+            nodeId: f.nodeId,
+            deltaStart: f.startOffset - segmentStarts[oldIdx],
+            len: f.endOffset - f.startOffset,
+          });
+        }
+      }
     }
 
     const removedIndices: number[] = [];
@@ -1036,73 +1120,66 @@ if (g.__gwRedactionContentLoaded !== true) {
         segments.splice(idx, 1);
       }
       segmentIndexById.clear();
-      for (let i = 0; i < segments.length; i++) {
-        segmentIndexById.set(segments[i].nodeId, i);
-      }
       const rebuilt = buildScanText(segments);
       segmentStarts = rebuilt.segmentStarts;
       combined = rebuilt.combined;
-    }
-
-    for (const node of batch.addedNodes) {
-      if (node.nodeType === Node.ELEMENT_NODE || node.nodeType === Node.TEXT_NODE) {
-        const newNodeIds = new Map<string, Node>();
-        const extracted = extractVisibleText(
-          node as Element,
-          currentSettings.maxVisibleChars,
-          currentSettings.maxNodeChars,
-          newNodeIds
-        );
-        if (extracted.segments.length > 0) {
-          const newBuilt = buildScanText(extracted.segments);
-          const offset = combined.length > 0 ? combined.length + 1 : 0;
-          for (let i = 0; i < extracted.segments.length; i++) {
-            const seg = extracted.segments[i];
-            const newSeg: import("./normalization/types.js").CanonicalSegment = {
-              nodeId: `rescan_${seg.nodeId}`,
-              startOffset: seg.startOffset,
-              endOffset: seg.endOffset,
-              text: seg.text,
-              combinedStartOffset: offset + newBuilt.segmentStarts[i],
-              combinedEndOffset: offset + newBuilt.segmentStarts[i] + seg.text.length,
-            };
-            segments.push(newSeg);
-            const targetNode = newNodeIds.get(seg.nodeId) ?? (node as Node);
-            nodeIds.set(newSeg.nodeId, targetNode);
-            segmentIndexById.set(newSeg.nodeId, segments.length - 1);
-          }
-          combined += (combined.length > 0 ? "\n" : "") + newBuilt.combined;
-          segmentStarts.push(...newBuilt.segmentStarts.map((s) => s + offset));
-
-          // Run delta scan on newBuilt.combined only
-          if (currentSettings) {
-            const settings = currentSettings;
-            const threshold = (cat: FindingCategory) => settings.confidenceThresholds?.[cat] ?? 0;
-            const deltaMatches = detect(newBuilt.combined, settings.enabledCategories, currentCustomPatterns).filter(
-              (m) => m.confidence >= threshold(m.category)
-            );
-            if (deltaMatches.length > 0) {
-              const adjustedMatches = deltaMatches.map((m) => ({
-                ...m,
-                start: m.start + offset,
-                end: m.end + offset,
-              }));
-              const newFindings = buildFindings(adjustedMatches, settings.enabledCategories, currentCustomPatterns);
-              const existingIds = new Set(findings.map((f) => f.id));
-              for (const nf of newFindings) {
-                if (!existingIds.has(nf.id) && nf.confidence >= threshold(nf.category)) {
-                  findings.push(nf);
-                }
-              }
-            }
-          }
+      for (let i = 0; i < segments.length; i++) {
+        segmentIndexById.set(segments[i].nodeId, i);
+        segments[i].combinedStartOffset = segmentStarts[i];
+        segments[i].combinedEndOffset = segmentStarts[i] + segments[i].text.length;
+      }
+      for (const f of findings) {
+        const saved = survivingOffsets.get(f.id);
+        if (!saved) continue;
+        const newIdx = segmentIndexById.get(saved.nodeId);
+        if (newIdx !== undefined) {
+          f.startOffset = segmentStarts[newIdx] + saved.deltaStart;
+          f.endOffset = f.startOffset + saved.len;
         }
       }
     }
 
+    const connectedAdded = batch.addedNodes.filter(
+      (n): n is Element | Text =>
+        n.isConnected && (n.nodeType === Node.ELEMENT_NODE || n.nodeType === Node.TEXT_NODE)
+    );
+    for (const node of connectedAdded) {
+      appendAndDetectNode(node, settings);
+    }
+
+    // Option (a) for characterData mutations: re-extract and re-detect connected
+    // mutated Text nodes not already covered by an added ancestor node in this batch.
+    const uniqueMutatedTextNodes = new Set(batch.mutatedTextNodes);
+    for (const textNode of uniqueMutatedTextNodes) {
+      if (!textNode.isConnected) continue;
+      const coveredByAdded = connectedAdded.some(
+        (added) => added === textNode || (added.nodeType === Node.ELEMENT_NODE && added.contains(textNode))
+      );
+      if (coveredByAdded) continue;
+      appendAndDetectNode(textNode, settings);
+    }
+
     if (findings.some((f) => f.selected)) {
       recomputeOverlay(4);
+    } else {
+      overlay?.clear();
     }
+  }
+
+  function mergeMutationBatch(existing: MutationBatch | null, incoming: MutationBatch): MutationBatch {
+    if (!existing) return incoming;
+    const addedSet = new Set(existing.addedNodes);
+    for (const n of incoming.addedNodes) addedSet.add(n);
+    const removedSet = new Set(existing.removedNodes);
+    for (const n of incoming.removedNodes) removedSet.add(n);
+    const textSet = new Set(existing.mutatedTextNodes);
+    for (const t of incoming.mutatedTextNodes) textSet.add(t);
+    return {
+      addedNodes: Array.from(addedSet),
+      removedNodes: Array.from(removedSet),
+      mutatedTextNodes: Array.from(textSet),
+      timestamp: incoming.timestamp,
+    };
   }
 
   function startMutationObserver(): void {
@@ -1113,7 +1190,7 @@ if (g.__gwRedactionContentLoaded !== true) {
       const affectedCount = batch.addedNodes.length + batch.removedNodes.length + batch.mutatedTextNodes.length;
       if (affectedCount === 0) return;
 
-      pendingMutationBatch = batch;
+      pendingMutationBatch = mergeMutationBatch(pendingMutationBatch, batch);
 
       if (mutationDebounceTimer !== null) clearTimeout(mutationDebounceTimer);
       mutationDebounceTimer = setTimeout(() => {
@@ -1129,6 +1206,7 @@ if (g.__gwRedactionContentLoaded !== true) {
   function stopMutationObserver(): void {
     mutationObserver?.disconnect();
     mutationObserver = null;
+    pendingMutationBatch = null;
     if (mutationDebounceTimer !== null) {
       clearTimeout(mutationDebounceTimer);
       mutationDebounceTimer = null;

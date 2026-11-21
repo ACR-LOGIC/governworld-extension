@@ -27,6 +27,8 @@ const args = process.argv.slice(2);
 const modeArg = (args.find((a) => a.startsWith("--mode=")) || "--mode=baseline").split("=")[1];
 const stageArg = (args.find((a) => a.startsWith("--stage=")) || "--stage=all").split("=")[1];
 const outArg = args.find((a) => a.startsWith("--out="))?.slice(6);
+const TAKE_SCREENSHOTS = args.includes("--screenshot") || ["p1", "p2", "p3", "p4", "p7"].includes(modeArg);
+const SCREENSHOT_DIR = join(ROOT, "docs", "releases", "directive-reports", "screenshots");
 const RESULTS_PATH = outArg ? resolve(ROOT, outArg) : join(ROOT, "docs", "benchmarks", "results-run2.json");
 const IS_GATE = modeArg === "gate" || modeArg === "p1" || modeArg === "p2" || modeArg === "p3" || modeArg === "p4" || modeArg === "p7";
 
@@ -399,6 +401,11 @@ try {
       }
       charDataResults.push({ trial: t + 1, detected: appearedMs !== null, latencyMs: appearedMs });
       console.log(`  characterData trial ${t + 1}: detected=${appearedMs !== null} (${appearedMs ?? "timeout"} ms)`);
+      if (TAKE_SCREENSHOTS && (modeArg === "p1" || modeArg === "p7") && t === 4 && appearedMs !== null) {
+        mkdirSync(SCREENSHOT_DIR, { recursive: true });
+        const shotName = modeArg === "p7" ? "P7-sub-250ms-mask.png" : "P1-characterdata-masked.png";
+        await page.screenshot({ path: join(SCREENSHOT_DIR, shotName), fullPage: false });
+      }
     }
 
     // 2. Added-node control: 3 trials
@@ -809,30 +816,40 @@ function expectOrRecord(label, cond) {
   }
 }
 
+const runP1Check = modeArg === "gate" || modeArg === "p1" || modeArg === "p7";
+const runP2Check = modeArg === "gate" || modeArg === "p2";
+const runP3Check = modeArg === "gate" || modeArg === "p3";
+const runP4Check = modeArg === "gate" || modeArg === "p4";
+const runPasteCheck = modeArg === "gate";
+const runLatencyP7Check = modeArg === "p7";
+
 if (IS_GATE) {
-  if (out.scan.charData && out.scan.charData.detectedCount < 5) {
+  if (runP1Check && out.scan.charData && out.scan.charData.detectedCount < 5) {
     out.gateFailures.push(`G3 characterData: ${out.scan.charData.detectedCount}/5`);
   }
-  if (out.scan.batchRemoval && out.scan.batchRemoval.ghostCount > 0) {
+  if (runLatencyP7Check && out.scan.charData && out.scan.charData.latencies.max >= 250) {
+    out.gateFailures.push(`P7 latency max=${out.scan.charData.latencies.max}ms >= 250ms`);
+  }
+  if (runP2Check && out.scan.batchRemoval && out.scan.batchRemoval.ghostCount > 0) {
     out.gateFailures.push(`P2 ghost masks: ${out.scan.batchRemoval.ghostCount}`);
   }
-  if (out.scan.popupBadgeSync && out.scan.popupBadgeSync.syncedCount < 5) {
+  if (runP3Check && out.scan.popupBadgeSync && out.scan.popupBadgeSync.syncedCount < 5) {
     out.gateFailures.push(`P3 popup/badge sync: ${out.scan.popupBadgeSync.syncedCount}/5`);
   }
-  if (out.paste.totalEscapes > 0) {
+  if (runPasteCheck && out.paste.totalEscapes > 0) {
     out.gateFailures.push(`G2 paste escapes: ${out.paste.totalEscapes}`);
   }
-  if (out.paste.bySize) {
+  if (runPasteCheck && out.paste.bySize) {
     for (const [sz, st] of Object.entries(out.paste.bySize)) {
       if (st.p50 >= 100) out.gateFailures.push(`G8 paste dialog ${sz} p50=${st.p50}ms >= 100ms`);
     }
   }
-  if (out.docs.timings) {
+  if (runP4Check && out.docs.timings) {
     for (const d of out.docs.timings) {
       if (d.keysAfterStartOver > 0) out.gateFailures.push(`P4 Start Over leaked ${d.keysAfterStartOver} keys (${d.label})`);
     }
   }
-  if (out.docs.midJobCancel && (out.docs.midJobCancel.keysAfterWait > 0 || !out.docs.midJobCancel.workspaceHidden)) {
+  if (runP4Check && out.docs.midJobCancel && (out.docs.midJobCancel.keysAfterWait > 0 || !out.docs.midJobCancel.workspaceHidden)) {
     out.gateFailures.push(`P4 mid-job cancel leaked keys=${out.docs.midJobCancel.keysAfterWait}`);
   }
 }

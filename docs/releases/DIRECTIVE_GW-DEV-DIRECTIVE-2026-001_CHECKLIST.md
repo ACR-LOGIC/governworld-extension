@@ -15,7 +15,7 @@ Tick a box only when the task's Definition of Done (S9) is fully met and its S6 
 - [ ] **A3** Medical dictionary, separate toggle, lazy (D3) Ref: `docs/releases/directive-reports/A3.md`
 - [ ] **A4** Accent folding, lazy-load, measured trim only Ref: `docs/releases/directive-reports/A4.md`
 - [ ] **A5** Boost-only rule, never a detection gate Ref: `docs/releases/directive-reports/A5.md`
-- [ ] **P1** `characterData` blind spot fixed Ref: `docs/releases/directive-reports/P1.md`
+- [x] **P1** `characterData` blind spot fixed Ref: `docs/releases/directive-reports/P1.md` (branch `task/P1-characterdata-blind-spot`)
 - [ ] **P2** Unique segment IDs, no ghost masks Ref: `docs/releases/directive-reports/P2.md`
 - [ ] **P3** Popup / badge counts current Ref: `docs/releases/directive-reports/P3.md`
 - [ ] **P4** Staged bytes cleared; Cancel stops OCR Ref: `docs/releases/directive-reports/P4.md`

@@ -109,7 +109,7 @@ const NON_TEXT_INPUT_TYPES = new Set([
  * Truncates oversized nodes and stops at maxVisibleChars (graceful, reported).
  */
 export function extractVisibleText(
-  root: Document | Element | ShadowRoot,
+  root: Document | Element | ShadowRoot | Text,
   maxVisibleChars: number,
   maxNodeChars: number,
   nodeIds: Map<string, Node>
