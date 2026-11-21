@@ -27,10 +27,10 @@ const args = process.argv.slice(2);
 const modeArg = (args.find((a) => a.startsWith("--mode=")) || "--mode=baseline").split("=")[1];
 const stageArg = (args.find((a) => a.startsWith("--stage=")) || "--stage=all").split("=")[1];
 const outArg = args.find((a) => a.startsWith("--out="))?.slice(6);
-const TAKE_SCREENSHOTS = args.includes("--screenshot") || ["p1", "p2", "p3", "p4", "p7"].includes(modeArg);
+const TAKE_SCREENSHOTS = args.includes("--screenshot") || ["p1", "p2", "p3", "p4", "p5", "p7"].includes(modeArg);
 const SCREENSHOT_DIR = join(ROOT, "docs", "releases", "directive-reports", "screenshots");
 const RESULTS_PATH = outArg ? resolve(ROOT, outArg) : join(ROOT, "docs", "benchmarks", "results-run2.json");
-const IS_GATE = modeArg === "gate" || modeArg === "p1" || modeArg === "p2" || modeArg === "p3" || modeArg === "p4" || modeArg === "p7";
+const IS_GATE = ["gate", "p1", "p2", "p3", "p4", "p5", "p7"].includes(modeArg);
 
 const executablePath = (process.env.GW_BROWSER_EXECUTABLE || "").trim() || chromium.executablePath();
 
@@ -552,6 +552,49 @@ try {
   }
 
   // -------------------------------------------------------------------------
+  // STAGE: P5 (Unicode email exact-span detection & overlay mask in Chrome)
+  // -------------------------------------------------------------------------
+  if (shouldRun("p5")) {
+    console.log("\n[Run 2 - P5 Unicode Email Stage]");
+    await page.goto(fixtureUrl, { waitUntil: "load" });
+    const sampleText = "Direct care notice to josé.maría@example.test and élise.müller@klinik.example.de today.";
+    await page.evaluate((text) => {
+      document.getElementById("stage").innerHTML = `<p id="unicode-email" style="font-size:20px;padding:16px">${text}</p>`;
+      document.getElementById("batch-container").innerHTML = "";
+    }, sampleText);
+    const st = await injectAndScan();
+    await applyMasks((st.findings || []).map((f) => f.id));
+    await page.waitForTimeout(150);
+    const overlayMasks = await readOverlayMasksViaCdp(cdp);
+    const popupCount = await popup.evaluate(() => document.querySelectorAll("#findings-list li").length);
+    const emailFindings = (st.findings || []).filter((f) => f.category === "email");
+    const prefixLen = "Synthetic Live Test Page\n".length;
+    const expected = [
+      { value: "josé.maría@example.test", preview: "j***@example.test" },
+      { value: "élise.müller@klinik.example.de", preview: "é***@klinik.example.de" },
+    ].map((item) => {
+      const start = prefixLen + sampleText.indexOf(item.value);
+      const end = start + item.value.length;
+      const hit = emailFindings.find((f) => f.startOffset === start && f.endOffset === end && f.preview === item.preview);
+      return { value: item.value, expectedStart: start, expectedEnd: end, matched: Boolean(hit), got: hit ?? null };
+    });
+    out.scan.unicodeEmailP5 = {
+      exactMatched: expected.filter((e) => e.matched).length,
+      total: expected.length,
+      overlayEmailMasks: overlayMasks.filter((m) => m.label.startsWith("email:")).length,
+      popupCount,
+      details: expected,
+    };
+    console.log(
+      `  P5 unicode email: exact=${out.scan.unicodeEmailP5.exactMatched}/${out.scan.unicodeEmailP5.total} masks=${out.scan.unicodeEmailP5.overlayEmailMasks} popup=${popupCount}`
+    );
+    if (TAKE_SCREENSHOTS) {
+      mkdirSync(SCREENSHOT_DIR, { recursive: true });
+      await page.screenshot({ path: join(SCREENSHOT_DIR, "P5-unicode-email-span.png"), fullPage: false });
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // STAGE: PASTE (Real clipboard Ctrl+V, 15 trials, dialog latency + 0 escapes)
   // -------------------------------------------------------------------------
   if (shouldRun("paste")) {
@@ -848,10 +891,17 @@ const runP1Check = modeArg === "gate" || modeArg === "p1" || modeArg === "p7";
 const runP2Check = modeArg === "gate" || modeArg === "p2";
 const runP3Check = modeArg === "gate" || modeArg === "p3";
 const runP4Check = modeArg === "gate" || modeArg === "p4";
+const runP5Check = modeArg === "p5";
 const runPasteCheck = modeArg === "gate";
 const runLatencyP7Check = modeArg === "p7";
 
 if (IS_GATE) {
+  if (runP5Check) {
+    const p5 = out.scan.unicodeEmailP5;
+    if (!p5 || p5.exactMatched < p5.total || p5.overlayEmailMasks < p5.total || p5.popupCount < p5.total) {
+      out.gateFailures.push(`P5 unicode email check failed: ${JSON.stringify(p5)}`);
+    }
+  }
   if (runP1Check && out.scan.charData && out.scan.charData.detectedCount < 5) {
     out.gateFailures.push(`G3 characterData: ${out.scan.charData.detectedCount}/5`);
   }

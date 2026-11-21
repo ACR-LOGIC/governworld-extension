@@ -366,4 +366,18 @@ describe("validateMessage", () => {
     expect(validateMessage({ type: "POPUP_ACCOUNT_PURCHASE_URL", requestId: "r", url: "https://checkout.stripe.com/c/pay/abc" }).ok).toBe(true);
     expect(validateMessage({ type: "POPUP_ACCOUNT_PURCHASE_URL", requestId: "r", url: "" }).ok).toBe(false);
   });
+
+  it("accepts SCAN_RESULT with accented Unicode email masked preview (P5)", () => {
+    const result = validateMessage({
+      type: "SCAN_RESULT",
+      requestId: "req-p5",
+      sessionId: "sess-p5",
+      findings: [
+        sampleFinding({ preview: "é***@klinik.example.de", endOffset: 30 }),
+        sampleFinding({ id: "f2", preview: "ñ***@salud.example.es", endOffset: 24 }),
+      ],
+      stats: { visibleChars: 80, truncated: false },
+    });
+    expect(result.ok).toBe(true);
+  });
 });

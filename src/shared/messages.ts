@@ -107,7 +107,7 @@ function isMaskedPreview(category: FindingCategory, preview: string): boolean {
   if (preview.length === 0 || preview.length > 256) return false;
   switch (category) {
     case "email":
-      return /^(?:[A-Za-z0-9._%+-]{0,2}\*{3,}@[A-Za-z0-9.-]{1,190}|[\s*]+)$/.test(preview);
+      return /^(?:[\p{L}\p{N}._%+-]{0,2}\*{3,}@[\p{L}\p{N}.-]{1,190}|[\s*]+)$/u.test(preview);
     case "phone":
       return /^(?:\*{3}-\*{3}-\d{4}|[\s*]+)$/.test(preview);
     case "ssn":

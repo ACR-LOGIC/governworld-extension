@@ -193,6 +193,8 @@ describe("detect", () => {
 describe("maskValue", () => {
   it("never reveals the full email value", () => {
     expect(maskValue("email", "jane.doe@example.com")).toBe("j***@example.com");
+    expect(maskValue("email", "josé.maría@example.test")).toBe("j***@example.test");
+    expect(maskValue("email", "élise.müller@klinik.example.de")).toBe("é***@klinik.example.de");
   });
   it("masks phone digits except the last four", () => {
     expect(maskValue("phone", "(415) 555-1234")).toMatch(/^\*\*\*-\*\*\*-1234$/);
@@ -419,5 +421,38 @@ describe("name parsedName enrichment", () => {
     for (const m of after) {
       if (m.category === "possible_name") expect(m.parsedName).toBeDefined();
     }
+  });
+});
+
+describe("Unicode email exact-span detection (P5)", () => {
+  it("matches full Unicode accented local parts and domains at exact offsets without stripping accents", () => {
+    const samples = [
+      {
+        text: "Direct care notice to josé.maría@example.test today.",
+        expected: "josé.maría@example.test",
+      },
+      {
+        text: "Klinikbericht an élise.müller@klinik.example.de gesendet.",
+        expected: "élise.müller@klinik.example.de",
+      },
+      {
+        text: "Correo paciente: ñ.garcía+urgencias@salud.example.es.",
+        expected: "ñ.garcía+urgencias@salud.example.es",
+      },
+    ];
+    for (const sample of samples) {
+      const matches = detect(sample.text, ["email"]);
+      const expectedStart = sample.text.indexOf(sample.expected);
+      const expectedEnd = expectedStart + sample.expected.length;
+      expect(matches).toHaveLength(1);
+      expect(matches[0]!.value).toBe(sample.expected);
+      expect(matches[0]!.start).toBe(expectedStart);
+      expect(matches[0]!.end).toBe(expectedEnd);
+      expect(sample.text.slice(matches[0]!.start, matches[0]!.end)).toBe(sample.expected);
+    }
+  });
+
+  it("rejects non-letter/dotless @ tokens even with Unicode lookbehind", () => {
+    expect(detect("1234@5678 and user@localhost", ["email"])).toEqual([]);
   });
 });

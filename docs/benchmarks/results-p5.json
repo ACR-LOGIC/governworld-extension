@@ -1,0 +1,75 @@
+{
+  "generatedAt": "2026-11-21T22:19:44.864Z",
+  "mode": "p5",
+  "stage": "p5",
+  "executablePath": "C:\\Users\\omg\\AppData\\Local\\ms-playwright\\chromium-1255\\chrome-win64\\chrome.exe",
+  "browserVersion": "Chrome/159.0.8154.6",
+  "nodeVersion": "v22.22.2",
+  "scan": {
+    "unicodeEmailP5": {
+      "exactMatched": 2,
+      "total": 2,
+      "overlayEmailMasks": 2,
+      "popupCount": 2,
+      "details": [
+        {
+          "value": "josé.maría@example.test",
+          "expectedStart": 47,
+          "expectedEnd": 70,
+          "matched": true,
+          "got": {
+            "category": "email",
+            "confidence": 0.92,
+            "contextPreview": "* * * * * * * * * * * * *",
+            "endOffset": 70,
+            "id": "email_47_70_0",
+            "nodeId": "seg_1",
+            "preview": "j***@example.test",
+            "rects": [
+              {
+                "height": 22.524269104003906,
+                "width": 204.2718505859375,
+                "x": 195.64321899414062,
+                "y": 96.91748046875
+              }
+            ],
+            "selected": true,
+            "source": "local-rules",
+            "startOffset": 47
+          }
+        },
+        {
+          "value": "élise.müller@klinik.example.de",
+          "expectedStart": 75,
+          "expectedEnd": 105,
+          "matched": true,
+          "got": {
+            "category": "email",
+            "confidence": 0.92,
+            "contextPreview": "* * * * * * * * * * * * *",
+            "endOffset": 105,
+            "id": "email_75_105_1",
+            "nodeId": "seg_1",
+            "preview": "é***@klinik.example.de",
+            "rects": [
+              {
+                "height": 22.524269104003906,
+                "width": 253.9805908203125,
+                "x": 440.30340576171875,
+                "y": 96.91748046875
+              }
+            ],
+            "selected": true,
+            "source": "local-rules",
+            "startOffset": 75
+          }
+        }
+      ]
+    }
+  },
+  "paste": {},
+  "docs": {},
+  "ocrNode": {},
+  "network": {},
+  "gateFailures": []
+}

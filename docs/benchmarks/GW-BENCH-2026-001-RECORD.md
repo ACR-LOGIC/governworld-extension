@@ -15,12 +15,12 @@
 
 | Gate | Requirement (`GW-DEV-DIRECTIVE-2026-001` §4) | `GW-BENCH-2026-001 v1.0` Reference | Phase 0 Baseline (`da2024e`) | Status | Target Task |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| **G1** | Exact-span recall = 100% on strict corpus (22 cases, 16 categories) | 95.5% (21/22; miss `josé.maría@example.test`) | **95.5% (21/22)**; miss `josé.maría@example.test` -> `a@example.test` | FAIL | `P5`, `P12`, `C1` |
+| **G1** | Exact-span recall = 100% on strict corpus (22 cases, 16 categories) | 95.5% (21/22; miss `josé.maría@example.test`) | **Baseline:** 95.5% (21/22) → **After P5 (`2026-11-21T22:20:07Z`, `results-run1.json` strict):** **`100% (22/22)`**, `0` misses, `4/4` multi-entity | PASS (post-P5 strict; CI gate under C1) | `P5` (Fixed), `P12`, `C1` |
 | **G2** | Zero escapes in input guard | 0 escapes: 5 cases (Run 1); 15 trials (Run 2) | **0 escapes**: 5 cases (Run 1); 15 trials (Run 2) | PASS (paste path; submit unmeasured until `M2`) | `C1`, `C8`, `M2` |
 | **G3** | No missed changed text (live `characterData`, mask <= ~2s, 5/5) | 0/5 edits in 12s (control 3/3 in 829–859 ms, p50 841 ms) | **Baseline:** 0/5 edits in 5s (control 3/3 in 670.7–684.6 ms, p50 683.6 ms) → **After P1 (`results-p1.json`):** **5/5 detected & masked** in `669.2–694.1 ms` (**p50 `679.2 ms`**) | PASS (live, post-P1; CI gate G3 under C1) | `P1`, `P12`, `C1` |
 | **G4** | Redaction results identical | Exact match | `tests/redaction-output.test.ts` 17/17 pass | PASS | `C1` |
 | **G5** | No recoverable test secrets in export | 0 `/Font` dicts; 0 secrets in raw bytes | **0 `/Font` dicts**; `0` secrets in raw 5p PDF (`39.62 ms`); re-decode+OCR pending | PASS (tested path; OCR re-decode under `P9`) | `P9`, `C1`, `C5` |
-| **G6** | Detection of 1 MB text < 200 ms p50 | 125.6 ms p50 (variance re-run 116.6 ms) | **128.145 ms p50** (`p95 137.767 ms`) | PASS | `C1`, `C10` |
+| **G6** | Detection of 1 MB text < 200 ms p50 | 125.6 ms p50 (variance re-run 116.6 ms) | **Baseline:** 128.145 ms p50 (`p95 137.767 ms`) → **Post-P5 (`results-run1.json`):** **`112.104 ms p50`** (`p95 115.813 ms`) | PASS | `C1`, `C10` |
 | **G7** | 1,000-node page scan < 75 ms p50 | 40.7 ms p50 (variance re-run 42.6 ms) | **30.413 ms p50** (`p95 38.332 ms`) | PASS | `C1`, `C10` |
 | **G8** | Paste dialog < 100 ms p50 | 47–59 ms p50 across 3 sizes | **17.65–33.26 ms p50** across 3 sizes | PASS | `C1`, `C10` |
 | **G9** | Performance regression > 20% fails CI | Baseline tracking required | Baseline recorded below; automated CI failure pending | Pending | `C1`, `C10` |
