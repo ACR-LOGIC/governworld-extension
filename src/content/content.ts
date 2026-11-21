@@ -15,7 +15,16 @@ import type { Finding, FindingCategory, IncompleteWindowInfo, Rect, WorkerMessag
 import { ALL_CATEGORIES } from "../shared/settings.js";
 import type { CustomPattern } from "../shared/customPatterns.js";
 import { buildCanonicalDocumentWindows } from "./normalization/canonical.js";
-import { observeMutations, getAffectedNodeIds, type MutationObserverHandle, type MutationBatch } from "./normalization/mutation.js";
+import {
+  observeMutations,
+  getAffectedNodeIds,
+  SMALL_BATCH_NODE_THRESHOLD,
+  type MutationObserverHandle,
+  type MutationBatch,
+} from "./normalization/mutation.js";
+
+const SMALL_BATCH_RESCAN_DELAY_MS = 20;
+const BURST_RESCAN_DELAY_MS = 500;
 import { setDynamicContentMonitored, updateCoverageWithBoundaries } from "./normalization/coverage.js";
 import { traverseIframes } from "./normalization/iframe.js";
 import { extractTableStructures, annotateSegmentsWithTableStructure } from "./normalization/table.js";
@@ -1297,15 +1306,40 @@ if (g.__gwRedactionContentLoaded !== true) {
     };
   }
 
+  function isInternalUiNode(node: Node): boolean {
+    if (node.nodeType !== Node.ELEMENT_NODE) return false;
+    const el = node as Element;
+    return Boolean(
+      el.hasAttribute?.("data-gw-scan-overlay") ||
+      el.hasAttribute?.("data-gw-toast-host") ||
+      el.id?.startsWith?.("__governworld-") ||
+      el.closest?.("[data-gw-scan-overlay], [data-gw-toast-host], [id^='__governworld-']")
+    );
+  }
+
   function startMutationObserver(): void {
     if (mutationObserver) return;
     mutationObserver = observeMutations(document, (batch) => {
       if (!sessionId) return;
 
-      const affectedCount = batch.addedNodes.length + batch.removedNodes.length + batch.mutatedTextNodes.length;
+      const filteredBatch: MutationBatch = {
+        addedNodes: batch.addedNodes.filter((n) => !isInternalUiNode(n)),
+        removedNodes: batch.removedNodes.filter((n) => !isInternalUiNode(n)),
+        mutatedTextNodes: batch.mutatedTextNodes,
+        timestamp: batch.timestamp,
+      };
+      const affectedCount =
+        filteredBatch.addedNodes.length +
+        filteredBatch.removedNodes.length +
+        filteredBatch.mutatedTextNodes.length;
       if (affectedCount === 0) return;
 
-      pendingMutationBatch = mergeMutationBatch(pendingMutationBatch, batch);
+      pendingMutationBatch = mergeMutationBatch(pendingMutationBatch, filteredBatch);
+      const pendingSize =
+        pendingMutationBatch.addedNodes.length +
+        pendingMutationBatch.removedNodes.length +
+        pendingMutationBatch.mutatedTextNodes.length;
+      const rescanDelayMs = pendingSize <= SMALL_BATCH_NODE_THRESHOLD ? SMALL_BATCH_RESCAN_DELAY_MS : BURST_RESCAN_DELAY_MS;
 
       if (mutationDebounceTimer !== null) clearTimeout(mutationDebounceTimer);
       mutationDebounceTimer = setTimeout(() => {
@@ -1314,7 +1348,7 @@ if (g.__gwRedactionContentLoaded !== true) {
           rescanAffectedRegions(pendingMutationBatch);
           pendingMutationBatch = null;
         }
-      }, 500);
+      }, rescanDelayMs);
     });
   }
 

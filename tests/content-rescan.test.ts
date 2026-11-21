@@ -18,6 +18,14 @@ function setupContentEnvironment(): RecordedRuntime {
   const listeners: RecordedRuntime["listeners"] = [];
   const sentMessages: WorkerMessage[] = [];
   const capturedShadows = new Map<Element, ShadowRoot>();
+  const createdObservers: MutationObserver[] = [];
+  const OrigMutationObserver = globalThis.MutationObserver;
+  globalThis.MutationObserver = class TrackedMutationObserver extends OrigMutationObserver {
+    constructor(cb: MutationCallback) {
+      super(cb);
+      createdObservers.push(this);
+    }
+  } as typeof MutationObserver;
 
   const origAttachShadow = Element.prototype.attachShadow;
   Element.prototype.attachShadow = function (init: ShadowRootInit): ShadowRoot {
@@ -75,6 +83,8 @@ function setupContentEnvironment(): RecordedRuntime {
     sentMessages,
     capturedShadows,
     restore() {
+      for (const obs of createdObservers) obs.disconnect();
+      globalThis.MutationObserver = OrigMutationObserver;
       Element.prototype.attachShadow = origAttachShadow;
       Range.prototype.getClientRects = origGetClientRects;
       (globalThis as Record<string, unknown>).chrome = prevChrome;
@@ -355,5 +365,49 @@ describe("Content Script Live Incremental Rescan (P1 / P2 / P3)", () => {
     expect(latestAfterChar.sessionId).toBe("sess-p3-1");
     expect(latestAfterChar.requestId.startsWith("rescan_")).toBe(true);
     expect(latestAfterChar.findings.map((f) => f.category).sort()).toEqual(["email", "ssn"]);
+  });
+
+  it("uses adaptive debounce: fast path (< 150ms) for 1-node edit while coalescing 25-node bursts over 500ms (P7)", async () => {
+    document.body.innerHTML = '<div id="p7-host"><p id="p7-single">Clean editable text.</p></div>';
+    env = setupContentEnvironment();
+    await import("../src/content/content.js");
+
+    await env.dispatchMessage({
+      type: "SCAN_PAGE",
+      requestId: "req-p7-init",
+      sessionId: "sess-p7-1",
+      mode: "local",
+      settings: defaultSettings(),
+    });
+    expect(getOverlayMaskLabels(env)).toHaveLength(0);
+
+    // 1. Small single-node characterData edit -> masked fast (< 160ms)
+    env.sentMessages.length = 0;
+    const textNode = document.getElementById("p7-single")!.firstChild as Text;
+    textNode.data = "Updated SSN: 219-09-9999";
+
+    await new Promise((r) => setTimeout(r, 160));
+    const afterSmallLabels = getOverlayMaskLabels(env);
+    expect(afterSmallLabels.some((l) => l.startsWith("ssn:"))).toBe(true);
+
+    // 2. Large burst (> 10 nodes) must NOT fire early during the burst debounce window
+    env.sentMessages.length = 0;
+    const host = document.getElementById("p7-host")!;
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < 25; i++) {
+      const p = document.createElement("p");
+      p.textContent = i === 12 ? "Burst SSN: 219-09-9997" : `Routine burst entry ${i}`;
+      frag.appendChild(p);
+    }
+    host.appendChild(frag);
+
+    await new Promise((r) => setTimeout(r, 250));
+    // Still inside 150ms + 500ms burst window: no extra burst SCAN_RESULT emitted yet
+    expect(env.sentMessages.filter((m) => m.type === "SCAN_RESULT")).toHaveLength(0);
+
+    await new Promise((r) => setTimeout(r, 600));
+    const burstResults = env.sentMessages.filter((m) => m.type === "SCAN_RESULT");
+    expect(burstResults).toHaveLength(1);
+    expect(getOverlayMaskLabels(env).filter((l) => l.startsWith("ssn:")).length).toBe(2);
   });
 });

@@ -1066,7 +1066,10 @@ if (IS_GATE) {
     out.gateFailures.push(`G3 characterData: ${out.scan.charData.detectedCount}/5`);
   }
   if (runLatencyP7Check && out.scan.charData && out.scan.charData.latencies.max >= 250) {
-    out.gateFailures.push(`P7 latency max=${out.scan.charData.latencies.max}ms >= 250ms`);
+    out.gateFailures.push(`P7 charData latency max=${out.scan.charData.latencies.max}ms >= 250ms`);
+  }
+  if (runLatencyP7Check && out.scan.addedNodeControl && out.scan.addedNodeControl.latencies.max >= 250) {
+    out.gateFailures.push(`P7 added-node latency max=${out.scan.addedNodeControl.latencies.max}ms >= 250ms`);
   }
   if (
     runP2Check &&
