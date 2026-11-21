@@ -201,7 +201,7 @@ GovernWorld allows enterprises to restrict page-derived network fetches (for ima
 
 ---
 
-## 5. GovernWorld Office Manager Dynamic Policy Synchronization (MANAGE Mode)
+## 7. GovernWorld Office Manager Dynamic Policy Synchronization (MANAGE Mode)
 
 In addition to OS-level `chrome.storage.managed` (GPO / MDM), GovernWorld Extension v0.4.0 supports dynamic policy orchestration via the **GovernWorld Office Manager**:
 
@@ -224,7 +224,7 @@ In addition to OS-level `chrome.storage.managed` (GPO / MDM), GovernWorld Extens
    - Immediately upon pairing, the extension pulls the signed organizational rules and enforces them locally in the browser DOM and paste-shield runtime.
 4. **Policy Lockdown vs. Employee Usability:**
    - **Locked by Admin 🔒:** Protection modes (PasteGuard / Always-on), required detection categories (SSN, MRN, Payment Cards, etc.), confidence thresholds, network destination boundaries, and custom rule overrides are locked against modification or downgrading.
-   - **Unlocked for Employees 🔓:** Personal accessibility accommodations (font sizing, high contrast, OpenDyslexic font, reduced motion, speech synthesis/announcements) and visual mask colors remain fully configurable by the employee.
+   - **Unlocked for Employees 🔓:** Personal accessibility accommodations (font sizing, high contrast, dyslexia-friendly text spacing, reduced motion, speech synthesis/announcements) and visual mask colors remain fully configurable by the employee.
 5. **Periodic Lightweight Heartbeat Verification:**
    - Heartbeats **never run prior to pairing**.
    - Once paired, the extension uses `chrome.alarms` (15-minute intervals) to send a lightweight compliance health check to `/api/v1/management/heartbeat`.

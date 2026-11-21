@@ -47,11 +47,11 @@ header lines ("Draft listing copy…" and "Review before submission…"). That i
 All images are generated from synthetic fixtures by `npm run capture:store` and
 `npm run capture:promo`. No real PII, no browser chrome, no user data.
 
-> **Before resubmitting: regenerate.** `04-document-studio.png` was captured
-> while the popup still had the decorative "Protection Active" banner, which
-> 0.1.1 removes. Run `npm run capture:store`, then `npm run verify:digests`.
-> Consider capturing the new full-screen review page instead or as well — it is
-> now the surface where redaction actually happens.
+> **v0.4.0 assets regenerated.** All five 1280×800 screenshots (covering the
+> redesigned `v0.4.0` UI, full-screen Document Review, and Settings → About) and
+> the 440×280 small promo tile were regenerated via `npm run capture:store` and
+> `npm run capture:promo` with matching SHA-256 digests recorded in
+> `RELEASE_EVIDENCE.md`.
 
 ## 4. Privacy practices questionnaire
 
@@ -62,9 +62,9 @@ and a bad look.
 | Question | Answer | Why |
 |---|---|---|
 | Single purpose | Detect and redact sensitive data in a page or document the user explicitly opens | No other purpose exists in the code |
-| Collect user data? | **No** | Nothing is collected. `PRIVACY.md` describes local-only processing |
+| Collect user data? | **No (standalone `LOCAL` mode); device/policy metadata only in opt-in `MANAGE` mode** | Standalone `LOCAL` mode makes zero network requests and collects nothing. Optional `MANAGE` pairing transmits only device/policy health metadata (`device_id`, `organization_id`, `employee_id`, `browser_info`, `extension_version`, `policy_version`, `policy_status`, `timestamp`, `status`) — never browsing history, URLs, page text, or documents |
 | Remote code? | **No** | All OCR/PDF/worker assets are vendored into the package; nothing is fetched or evaluated at runtime |
-| Data collection disclosure | Complete the questionnaire as "no data collected" | Consistent with the above |
+| Data collection disclosure | Disclose standalone zero-collection default vs. optional `MANAGE` / account metadata | Consistent with `PRIVACY.md` (§7 & §18) and Chrome Web Store Limited Use |
 | Privacy policy URL | `https://governworld.acrlogic.com/chrome-extension-privacy` | Verified HTTP 200 |
 
 ## 5. Single-purpose justification

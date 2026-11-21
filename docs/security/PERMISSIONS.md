@@ -43,7 +43,7 @@ uses it, and lists permissions the extension deliberately does **not** request.
 ## Data handling in LOCAL vs. MANAGE Modes
 
 - **Zero Sensitive Data Transmission:** In both LOCAL and MANAGE modes, no raw scanned text, document contents, page snapshots, clipboard data, OCR text, or PHI/PII are ever transmitted over the network.
-- **MANAGE Mode Policy Synchronization:** In MANAGE mode, network communication is strictly limited to extension-initiated policy retrieval from the management coordination infrastructure. Payloads consist exclusively of signed policy JSON envelopes, and acknowledgments contain only minimal status metadata (`policy_id`, `policy_version`, applied timestamp, status code).
+- **MANAGE Mode Policy Synchronization & Heartbeat:** When explicitly paired in `MANAGE` mode (or OS-managed via `chrome.storage.managed`), network communication is strictly limited to extension-initiated Ed25519-signed policy retrieval (`schema/policy.json`) and periodic 15-minute `alarms` lightweight status checks carrying metadata only (`device_id`, `organization_id`, `employee_id`, `browser_info`, `extension_version`, `policy_version`, `policy_status`, `timestamp`, `status`). Admin-mandated compliance baselines are locked while employee accessibility controls stay unlocked, and browsing history, visited URLs, search queries, page text, credentials, chats, or personal files are never transmitted.
 
 
 - No raw scanned text or page snapshots are persisted to storage, logs, telemetry, analytics, or error reporting.

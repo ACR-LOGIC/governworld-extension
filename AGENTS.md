@@ -155,7 +155,7 @@ The extension includes 24 detection categories:
 ### Operating Modes
 
 #### LOCAL Mode (Standalone)
-- Initial state upon installation: autonomous, 100% on-device processing
+- Initial state upon installation: autonomous, on-device processing
 - Zero network egress, zero connection attempts, zero background heartbeats
 - User controls all detection rules, presets, thresholds, and cosmetic preferences
 - No mandatory account, registration, or subscription

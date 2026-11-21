@@ -12,7 +12,16 @@
     "type": "git",
     "url": "https://github.com/ACR-LOGIC/governworld-extension.git"
   },
-  "funding": "https://buymeacoffee.com/governworld",
+  "funding": [
+    {
+      "type": "github",
+      "url": "https://github.com/sponsors/ACR-LOGIC"
+    },
+    {
+      "type": "individual",
+      "url": "https://buymeacoffee.com/governworld"
+    }
+  ],
   "scripts": {
     "build": "node build.mjs",
     "build:firefox": "node scripts/build-firefox.mjs",

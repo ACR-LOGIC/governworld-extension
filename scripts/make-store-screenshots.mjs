@@ -17,7 +17,7 @@
 //
 // Output: release/screenshots/*.png
 import { chromium } from "@playwright/test";
-import { browserChannelArgs, browserProfileDir } from "./browser-launch.mjs";
+import { browserChannelArgs, browserProfileDir, waitForPopupReady } from "./browser-launch.mjs";
 import { createServer } from "node:http";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
@@ -111,7 +111,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 try {
   const worker = context.serviceWorkers()[0] ?? (await context.waitForEvent("serviceworker", { timeout: 30_000 }));
   const extensionId = new URL(worker.url()).host;
-  const popupUrl = `chrome-extension://${extensionId}/popup.html`;
+  const sidepanelUrl = `chrome-extension://${extensionId}/sidepanel.html`;
   console.log(`extension id: ${extensionId}\nfixture: ${FIXTURE}\noutput: ${OUT}\n`);
 
   // The fixture must be the focused tab: POPUP_SCAN resolves the browser's active
@@ -136,13 +136,12 @@ try {
   });
   if (!injection?.ok) throw new Error(`content script injection failed: ${injection?.error}`);
 
-  // The popup is driven through its own DOM so the click never moves focus off
-  // the fixture, which would make the worker's tab resolver pick the popup.
+  // Open sidepanel.html so the fluid responsive layout fills 1280x800 cleanly
+  // without trapping #doc-file-input into chrome.sidePanel.open().
   const popup = await context.newPage();
-  await popup.goto(popupUrl, { waitUntil: "load" });
-  // The worker purges staged files on chrome.runtime.onInstalled, which races the
-  // first write in a fresh profile. Let it settle before shooting.
-  await sleep(3000);
+  await popup.goto(sidepanelUrl, { waitUntil: "load" });
+  await waitForPopupReady(popup);
+  await sleep(500);
 
   const click = (sel) =>
     popup.$eval(sel, (el) => {
@@ -168,42 +167,58 @@ try {
     }
   };
 
-  // 1. Landing surface: the extension idle, before any scan.
+  // 1. Landing surface: the redesigned Protection tab in standalone LOCAL mode.
   await fixture.bringToFront();
   await sleep(250);
-  await shoot(popup, "01-protection-idle", "Idle state before scanning: local mode, categories, threshold");
+  await shoot(popup, "01-protection-idle", "Redesigned Protection surface: standalone LOCAL mode, live status strip, Scan & Document Studio");
 
-  // 2. Page scan -> findings with masked previews.
+  // 2. Page scan -> Compliance Risk Scorecard & findings with masked previews (unobstructed).
   if (!(await click("#scan-btn"))) throw new Error("#scan-btn missing or disabled");
   for (let i = 0; i < 120 && (await popup.evaluate(() => document.querySelectorAll("#findings-list .finding").length)) === 0; i++) {
     await sleep(500);
   }
   await sleep(900);
+  await clearModals();
   const rows = await popup.evaluate(() => document.querySelectorAll("#findings-list .finding").length);
   if (rows === 0) throw new Error("no findings rendered; cannot build a findings screenshot");
-  await shoot(popup, "02-findings-masked", `${rows} findings with masked previews, before any mask is applied`);
+  await popup.evaluate(() => {
+    document.getElementById("results-section")?.scrollIntoView({ block: "start" });
+  });
+  await sleep(400);
+  await shoot(popup, "02-findings-masked", `${rows} findings with Compliance Risk Scorecard and masked previews before applying masks`);
 
   // 3. Masks applied to the page itself.
-  await click("#apply-masks-btn");
-  await sleep(1500);
   await fixture.bringToFront();
+  await sleep(250);
+  await click("#apply-masks-btn");
   await sleep(800);
-  // Masks render inside the content script's shadow root, so a light-DOM query
-  // only ever sees the host element. Count through the shadow root.
-  const overlay = await fixture.evaluate(() => {
-    const host = document.querySelector("div[data-gw-scan-overlay]");
-    return {
-      host: Boolean(host),
-      masks: host?.shadowRoot ? host.shadowRoot.querySelectorAll('[data-kind="mask"]').length : 0,
-    };
-  });
-  if (!overlay.host) throw new Error("scan overlay host is absent from the page");
-  if (overlay.masks === 0) throw new Error("no mask elements were rendered into the page");
-  await shoot(fixture, "03-page-masks-applied", `${overlay.masks} overlay masks drawn on the page (source page unmodified)`);
+  await fixture.bringToFront();
+  // The scan overlay lives inside a closed shadow root (mode: "closed") so page
+  // JS cannot enumerate masked coordinates. Verify the light-DOM host exists and
+  // confirm the worker recorded applied masks in the tab's session maskHistory.
+  const hasOverlayHost = await fixture.evaluate(() => Boolean(document.querySelector("div[data-gw-scan-overlay]")));
+  if (!hasOverlayHost) throw new Error("scan overlay host is absent from the page");
+  let appliedMasks = 0;
+  for (let i = 0; i < 20; i++) {
+    appliedMasks = await worker.evaluate(async () => {
+      const all = await chrome.storage.session.get(null);
+      for (const value of Object.values(all)) {
+        const history = value?.maskHistory;
+        if (Array.isArray(history) && history.length > 0) {
+          const latest = history[history.length - 1];
+          if (Array.isArray(latest) && latest.length > 0) return latest.length;
+        }
+      }
+      return 0;
+    });
+    if (appliedMasks > 0) break;
+    await sleep(250);
+  }
+  if (appliedMasks === 0) throw new Error("no mask elements were recorded in session maskHistory");
+  await sleep(500);
+  await shoot(fixture, "03-page-masks-applied", `${appliedMasks} overlay masks drawn on the page (closed shadow DOM; source page unmodified)`);
 
-  // 4. Document studio with detected regions on an image.
-  //    doc-workspace lives inside #tab-protection, not #tab-review, so the file
-  //    input has to be driven from that tab.
+  // 4. Document studio + full-screen Document Review on an image.
   await clearModals();
   await popup.bringToFront();
   await sleep(400);
@@ -242,28 +257,69 @@ try {
     .then(() => popup.evaluate(() => document.getElementById("doc-findings-count")?.textContent?.trim() ?? ""))
     .catch(() => "");
   if (!docCount) throw new Error("document studio opened but detected no findings");
-  await sleep(1500);
-  // Bring the workspace itself into view. Resetting the panel's scrollTop to 0
-  // puts the header back in frame and hides the document entirely.
-  await popup.evaluate(() => {
-    const w = document.getElementById("doc-workspace");
-    w?.scrollIntoView({ block: "start" });
-  });
-  await sleep(600);
-  await shoot(popup, "04-document-studio", `Document review: local OCR found ${docCount} on an image`);
+  await sleep(1200);
 
-  // 5. Settings / About: local-first architecture and dependency credits.
+  // Open full-screen review page (review.html) to showcase full-resolution document review.
+  let reviewPage = null;
+  try {
+    const pagePromise = context.waitForEvent("page", { timeout: 15_000 });
+    await click("#doc-open-review-btn");
+    const candidate = await pagePromise;
+    await candidate.waitForLoadState("load");
+    if (candidate.url().includes("review.html")) {
+      await candidate.waitForFunction(
+        () =>
+          document.querySelectorAll("#pages canvas").length > 0 &&
+          document.querySelectorAll("#findings li").length > 0,
+        null,
+        { timeout: 30_000 },
+      );
+      await candidate.bringToFront();
+      await sleep(1200);
+      reviewPage = candidate;
+    }
+  } catch {
+    reviewPage = null;
+  }
+
+  if (reviewPage) {
+    await shoot(
+      reviewPage,
+      "04-document-studio",
+      `Full-screen Document Review: local OCR (${docCount}) on a synthetic medical image`,
+    );
+    await reviewPage.close().catch(() => {});
+  } else {
+    await popup.evaluate(() => {
+      const w = document.getElementById("doc-workspace");
+      w?.scrollIntoView({ block: "start" });
+    });
+    await sleep(600);
+    await shoot(popup, "04-document-studio", `Document review: local OCR found ${docCount} on an image`);
+  }
+
+  // 5. Settings / About: responsive 2-column layout, BSL 1.1 licence credits & sponsorship card.
+  await popup.bringToFront();
   await clearModals();
   await popup.click("#tab-btn-settings");
   await sleep(500);
   await popup.click('[data-settings-page="about"]');
-  await sleep(800);
+  await sleep(500);
   await popup.evaluate(() => {
-    const page = document.querySelector("#settings-page-about");
-    if (page) page.scrollTop = 0;
+    const credits = document.getElementById("about-credits-details");
+    const contrib = document.getElementById("contributions-details");
+    const guides = document.getElementById("about-guides-details");
+    if (credits) credits.setAttribute("open", "");
+    if (contrib) contrib.setAttribute("open", "");
+    if (guides) guides.removeAttribute("open");
+    if (contrib) {
+      const rect = contrib.getBoundingClientRect();
+      const targetBottom = rect.bottom + window.scrollY + 18;
+      window.scrollTo(0, Math.max(0, targetBottom - window.innerHeight));
+    }
   });
-  await sleep(300);
-  await shoot(popup, "05-settings-about", "Settings / About: local-first architecture and open-source credits");
+  await sleep(500);
+  await shoot(popup, "05-settings-about", "Settings / About: diagnostics, legal links, BSL 1.1 credits & sponsorship support");
 
   if (emitted.length > MAX_SHOTS) {
     throw new Error(`${emitted.length} screenshots emitted; the store accepts at most ${MAX_SHOTS}`);

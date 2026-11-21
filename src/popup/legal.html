@@ -360,9 +360,9 @@
         <div class="hero__eyebrow">ACR LOGIC · GovernWorld Chrome Extension</div>
         <h1 class="hero__title">Terms &amp; Conditions</h1>
         <div class="hero__dates">
-          <span class="hero__date-item"><strong>Effective:</strong> September 29, 2026</span>
-          <span class="hero__date-item"><strong>Version:</strong> 1.0.0</span>
-          <span class="hero__date-item"><strong>Price:</strong> Free</span>
+          <span class="hero__date-item"><strong>Effective:</strong> November 19, 2026</span>
+          <span class="hero__date-item"><strong>Version:</strong> 2.0.0</span>
+          <span class="hero__date-item"><strong>Price:</strong> Free (non-commercial)</span>
         </div>
       </div>
 
@@ -423,18 +423,23 @@
         <h2 class="section__title" id="s2-title">The Extension is provided free of charge</h2>
         <div class="section__body">
           <div class="highlight highlight--local">
-            <strong>No paid tier exists today.</strong>
+            <strong>No paid tier is required for standalone non-commercial use.</strong>
             <span>
-              Every feature in the current version is available at no cost. We do not sell access, and we do
-              not gate detection or redaction behind a subscription. Optional cloud analysis features are
-              disabled and locked by default; they would require explicit configuration if ever enabled.
+              Standalone non-commercial use — including personal, educational, academic, government, and internal
+              company use permitted under Business Source License 1.1 (BSL 1.1) — is provided free of charge. Every
+              core detection and redaction feature is available at no cost with no subscription or paywall. Commercial
+              hosting, resale, or competing offerings require a separate commercial licence (see Section 11). Optional
+              cloud analysis features are disabled and locked off by default.
             </span>
           </div>
           <p>
-            Optional financial support exists on a voluntary basis (for example a "Buy Me a Coffee" link in
-            Settings). Paying nothing does not reduce any feature, and paying something confers no additional
-            rights, no priority support, and no influence over the project's direction. Support is a
-            contribution, not a purchase, and never a requirement.
+            Optional financial support exists on a voluntary basis via
+            <a href="https://github.com/sponsors/ACR-LOGIC" target="_blank" rel="noopener noreferrer">GitHub Sponsors</a>
+            and
+            <a href="https://buymeacoffee.com/governworld" target="_blank" rel="noopener noreferrer">Buy Me a Coffee</a>.
+            Paying nothing does not reduce any feature, and contributing confers no additional rights, no priority
+            support, and no influence over the project's direction. Support is a voluntary contribution, not a purchase,
+            and never a requirement.
           </p>
         </div>
       </section>
@@ -598,12 +603,13 @@
         <h2 class="section__title" id="s7-title">Your data stays on your device</h2>
         <div class="section__body">
           <div class="highlight highlight--ok">
-            <strong>All detection and redaction happens locally, inside your browser.</strong>
+            <strong>Detection and redaction happens locally, inside your browser.</strong>
             <span>
-              GovernWorld ships with no host permissions and no remote endpoint for content. Your page text,
-              documents, and images are processed on your own machine and are not transmitted to us or to any
-              third party. No AI model, and no third-party service, receives your content in order for the
-              Extension to work.
+              GovernWorld ships with <strong>no install-time host permissions</strong> and no remote endpoint for
+              content. Optional runtime <code>http://*/*</code> and <code>https://*/*</code> site access applies only if
+              you enable Always-on Paste Shield and can be revoked anytime. Your page text, documents, and images are
+              processed on your own machine and are not transmitted to us or to any third party. No AI model, and no
+              third-party service, receives your content in order for the Extension to work.
             </span>
           </div>
           <p>
@@ -611,8 +617,19 @@
             record, a client contract, or a credential. Other products in this category work by uploading what
             you scan to their own servers so that a hosted model can read it; that means your sensitive data is
             in transit and on someone else's infrastructure, where it can be logged, retained, subpoenaed, or
-            breached. GovernWorld does not do that, which is also why it can work with no network connection
-            and no account.
+            breached. GovernWorld does not do that, which is also why standalone <code>LOCAL</code> mode can work with
+            no network connection and no account.
+          </p>
+          <p>
+            <strong>Standalone LOCAL Mode vs. Optional Organizational MANAGE Mode:</strong> Upon installation, the
+            Extension runs in standalone <code>LOCAL</code> mode with zero network requests, zero background alarms,
+            and zero heartbeats. Only if you explicitly pair with an organization using a 6-digit pairing code (or deploy
+            via OS-managed <code>chrome.storage.managed</code>) does the Extension enter <code>MANAGE</code> mode, in
+            which it pulls Ed25519-signed policies, locks administrator-mandated security baselines (while keeping
+            employee accessibility controls unlocked), and schedules periodic lightweight compliance status checks via
+            <code>chrome.alarms</code> every 15 minutes carrying only device UUID, browser metadata, extension/policy
+            versions, timestamp, and health status — never browsing history, visited URLs, search queries, page text,
+            form inputs, keystrokes, credentials, chats, or documents.
           </p>
           <p>
             The consequences are worth being explicit about: local detection cannot be silently improved by a
@@ -622,9 +639,10 @@
             needed to touch.
           </p>
           <p>
-            Optional account, cloud-analysis, and community-features exist for your convenience. Cloud analysis
+            Optional account, cloud-analysis, and community features exist for your convenience. Cloud analysis
             is <strong>disabled and locked off by default</strong>. Reading the Privacy Policy is the best way
-            to establish exactly what leaves your device, if anything.
+            to establish what limited non-content metadata is transmitted when optional management or account-linking
+            features are enabled.
           </p>
         </div>
       </section>
@@ -708,11 +726,16 @@
         <h2 class="section__title" id="s11-title">Open-source components and licence</h2>
         <div class="section__body">
           <p>
-            GovernWorld is built on the work of others and is released under the
-            <strong>GovernWorld Source-Available Community License</strong>. That licence is a
-            <strong>source-available</strong> licence, not an OSI-approved open-source licence; the third-party
-            components it builds on are open source under their own permissive licences. The About page in the
-            Extension lists every component, what it does, and the licence it is used under.
+            GovernWorld is built on the work of others and is released under
+            <strong>Business Source License 1.1 (BSL 1.1)</strong>. That licence is a
+            <strong>source-available</strong> licence, not an OSI-approved open-source licence: it grants free
+            permission for personal, educational, academic, government, and internal non-commercial company use,
+            prohibits commercial hosting, resale, redistribution, or competing products without a separate commercial
+            licence (contact <a href="mailto:andres@acr-logic.com">andres@acr-logic.com</a>), and transitions to Apache
+            License 2.0 after November 13, 2030. The third-party open-source components it builds on (such as
+            <code>pdf.js</code>, Tesseract / <code>tesseract.js</code>, <code>pdf-lib</code>, and <code>mammoth</code>)
+            are licensed separately under their own permissive licences. The About page in the Extension lists every
+            component, what it does, and the licence it is used under.
           </p>
           <p>
             We ask that you do not strip the credits from the About page. They are the reason the people whose
@@ -742,6 +765,7 @@
             <strong>ACR LOGIC</strong><br>
             Terms contact: <a href="mailto:legal@acrlogic.com">legal@acrlogic.com</a><br>
             Privacy contact: <a href="mailto:privacy@acrlogic.com">privacy@acrlogic.com</a><br>
+            Commercial licensing: <a href="mailto:andres@acr-logic.com">andres@acr-logic.com</a><br>
             Support: <a href="https://github.com/ACR-LOGIC/governworld-extension/issues" target="_blank" rel="noopener noreferrer">github.com/ACR-LOGIC/governworld-extension/issues</a>
           </p>
           <p>
@@ -757,9 +781,10 @@
           <a href="legal.html">Terms &amp; Conditions</a>
           <a href="privacy.html">Privacy Policy</a>
           <a href="https://github.com/ACR-LOGIC/governworld-extension" target="_blank" rel="noopener noreferrer">Source</a>
+          <a href="https://github.com/sponsors/ACR-LOGIC" target="_blank" rel="noopener noreferrer">Sponsor</a>
           <a href="https://github.com/ACR-LOGIC/governworld-extension/issues" target="_blank" rel="noopener noreferrer">Support</a>
         </div>
-        <p class="footer__copy">© 2026 ACR LOGIC. GovernWorld Chrome Extension — Terms &amp; Conditions v1.0.0 · Effective September 29, 2026</p>
+        <p class="footer__copy">© 2026 ACR LOGIC. GovernWorld Chrome Extension — Terms &amp; Conditions v2.0.0 · Effective November 19, 2026</p>
       </footer>
 
     </main>

@@ -479,15 +479,15 @@
         <div class="hero__eyebrow">ACR LOGIC · GovernWorld Chrome Extension</div>
         <h1 class="hero__title">Privacy Policy</h1>
         <div class="hero__dates">
-          <span class="hero__date-item"><strong>Effective:</strong> September 24, 2026</span>
-          <span class="hero__date-item"><strong>Last updated:</strong> September 24, 2026</span>
-          <span class="hero__date-item"><strong>Version:</strong> 2.0.0</span>
+          <span class="hero__date-item"><strong>Effective:</strong> November 19, 2026</span>
+          <span class="hero__date-item"><strong>Last updated:</strong> November 19, 2026</span>
+          <span class="hero__date-item"><strong>Version:</strong> 2.1.0 (Extension v0.4.0)</span>
         </div>
       </div>
 
-      <!-- Legal notice -->
+      <!-- Policy notice -->
       <div class="notice" role="note">
-        <strong>Legal Notice:</strong> This document is a formal privacy-policy structure prepared for GovernWorld. It should be reviewed by qualified privacy counsel before being adopted as the company's legally operative policy. The final policy must accurately match the Extension's shipped permissions, APIs, telemetry, authentication, storage, network requests, update mechanism, and Chrome Web Store disclosures.
+        <strong>Policy Notice:</strong> This Privacy Policy describes how the shipped GovernWorld Chrome Extension (<code>v0.4.0</code>) handles information in both its standalone <code>LOCAL</code> zero-egress default mode and optional organizational <code>MANAGE</code> mode, aligned with its manifest permissions, local storage lifecycle, and Chrome Web Store disclosures. Read it alongside our <a href="legal.html" style="color:var(--accent)">Terms &amp; Conditions</a> and <code>LICENSE</code> (BSL 1.1).
       </div>
 
       <!-- Table of contents -->
@@ -809,11 +809,21 @@
       <!-- Section 18 -->
       <section class="section" id="s18" aria-labelledby="s18-title">
         <div class="section__num">§ 18</div>
-        <h2 class="section__title" id="s18-title">Paid Services and Organizational Deployments</h2>
+        <h2 class="section__title" id="s18-title">Paid Services and Organizational Deployments (MANAGE Mode)</h2>
         <div class="section__body">
-          <p>GovernWorld may offer paid services, organizational deployments, enterprise capabilities, APIs, runtime governance, policy enforcement, monitoring, audit, integrations, or other connected services. These services may require transmission of information to GovernWorld or its service providers.</p>
+          <p>GovernWorld may offer paid services, organizational deployments, enterprise capabilities, APIs, runtime governance, policy enforcement, monitoring, audit, integrations, or other connected services. These services may require transmission of information to GovernWorld or its configured coordinator endpoints.</p>
+          <p><strong>Enterprise Management Coordination (MANAGE Mode vs. Standalone LOCAL Mode):</strong></p>
+          <ul>
+            <li><strong>Standalone LOCAL Mode (Initial State):</strong> Upon installation, the Extension operates in standalone mode. It makes zero network connections, runs zero background alarms, sends zero heartbeats, and operates strictly on-device.</li>
+            <li><strong>Pairing and Enrollment:</strong> Heartbeats and policy synchronization activate <strong>only</strong> after an employee explicitly pairs the Extension using a valid 6-digit pairing code or deploys an OS-managed policy via <code>chrome.storage.managed</code>.</li>
+            <li><strong>Purpose of Management Communication:</strong> After pairing, the Extension retrieves administrator-approved security policies (mandated detection categories, locked protection modes, confidence thresholds, and restricted domain lists) while leaving personal employee accessibility accommodations unlocked.</li>
+            <li><strong>Cryptographic Validation:</strong> All received policies are signed with an Ed25519 private key by the organization administrator and verified locally against a pinned public key before application.</li>
+            <li><strong>Periodic Lightweight Status Checks (Heartbeats):</strong> Once paired in <code>MANAGE</code> mode, the Extension uses <code>chrome.alarms</code> (every 15 minutes) to send lightweight health metadata only: device installation UUID (<code>device_id</code>), <code>organization_id</code>, <code>employee_id</code>, browser metadata (<code>browser_info</code>), <code>extension_version</code>, <code>policy_version</code>, <code>policy_status</code>, <code>timestamp</code>, and health <code>status</code>.</li>
+            <li><strong>Offline Continuity &amp; Safe Unpairing:</strong> If communication with the management coordinator is interrupted, the Extension continues enforcing the last valid policy locally without failing open. Unpairing clears enrollment credentials, cancels the heartbeat alarm, and returns immediately to standalone <code>LOCAL</code> mode.</li>
+          </ul>
+          <p><strong>What is NEVER sent to management infrastructure or administrators:</strong> web browsing history, visited URLs, search queries, or tab titles; page text, DOM structures, or web form inputs; keystrokes, chat messages, prompts, or emails; clipboard contents; uploaded documents (PDF, DOCX, images) or redacted copies; personal files, credentials, passwords, or tokens; extracted OCR text or detected sensitive values; or remote surveillance commands.</p>
           <div class="highlight highlight--warn">
-            <strong>Organizational deployments:</strong> The privacy characteristics of an organizational deployment are not necessarily identical to those of the standalone free local Extension. Consult your Organization administrator regarding what information is monitored, collected, transmitted, and retained.
+            <strong>Organizational deployments:</strong> The privacy characteristics of an organizational deployment are not necessarily identical to those of the standalone free local Extension. Consult your Organization administrator regarding what information is governed under your organization's deployment.
           </div>
         </div>
       </section>
@@ -1069,11 +1079,13 @@
       <!-- Footer -->
       <footer class="footer">
         <div class="footer__contact">
+          <a href="legal.html">Terms &amp; Conditions</a>
           <a href="mailto:privacy@acrlogic.com">privacy@acrlogic.com</a>
           <a href="https://governworld.acrlogic.com/chrome-extension-privacy" target="_blank" rel="noopener noreferrer">Extension Privacy Policy</a>
+          <a href="https://github.com/sponsors/ACR-LOGIC" target="_blank" rel="noopener noreferrer">Sponsor</a>
           <a href="https://github.com/ACR-LOGIC/governworld-extension/issues" target="_blank" rel="noopener noreferrer">Support</a>
         </div>
-        <p class="footer__copy">© 2026 ACR LOGIC. GovernWorld Chrome Extension — Privacy Policy v2.0.0 · Effective September 24, 2026</p>
+        <p class="footer__copy">© 2026 ACR LOGIC. GovernWorld Chrome Extension — Privacy Policy v2.1.0 · Effective November 19, 2026</p>
       </footer>
 
     </main>

@@ -14,9 +14,9 @@ PII/PHI appears in screenshots, listing copy, or disclosures.
 - **Full description:** See `STORE_DESCRIPTION.md`.
 - **Category:** Productivity
 - **Primary language:** English
-- **Privacy policy URL:** packaged as `PRIVACY.md`; must be hosted at a
-  public URL (repo `docs/extensions/` path or company site) before store
-  submission.
+- **Privacy policy URL:** `https://governworld.acrlogic.com/chrome-extension-privacy`
+  (packaged in the extension as `privacy.html` and in the repo as
+  `docs/security/PRIVACY.md`).
 - **Single purpose:** Find and redact sensitive values in content the user
   explicitly chooses to scan. The extension has one purpose and does not
   change behavior based on the site visited.
@@ -40,35 +40,35 @@ PII/PHI appears in screenshots, listing copy, or disclosures.
 
 The popup settings section includes:
 
-- **Privacy policy** link → packaged `PRIVACY.md` (opens via
-  `chrome.runtime.getURL`); must also be hosted at the canonical public URL
-  before submission.
+- **Privacy policy** link → packaged `privacy.html` (alongside `legal.html`
+  Terms & Conditions, opening via `chrome.runtime.getURL`), matching the
+  canonical hosted URL `https://governworld.acrlogic.com/chrome-extension-privacy`.
 - **Support** link → `https://github.com/ACR-LOGIC/governworld-extension/issues`
 - **Export audit log** → signed, metadata-only audit export.
 
 The links are implemented in `src/popup/index.html`; only the canonical
 hosted URL remains external (see checklist).
 
-## Screenshots (to capture before submission)
+## Screenshots (captured for store submission)
 
-Capture on a **local fixture page** with synthetic data only (the spec's
-fixture page, `scripts/make-fixture.mjs` output, or the corpus generator).
-Never capture real customer content.
+Generated at **1280×800** on a **local fixture page** (`tests/fixtures/`) with
+synthetic data only via `npm run capture:store`. Never capture real customer
+content.
 
-1. Popup closed / extension icon state (1280px or common laptop resolution).
-2. Popup open showing the disclosure, mode picker (Local only selected), and
-   "Scan this page" button.
-3. Findings list with **masked** previews (e.g. `phone: ***-***-1234`), Apply
-   masks / Remove masks / Copy redacted text controls.
-4. A page with overlay masks applied, showing the footnote that masks are
-   temporary.
-5. Document review step: a synthetic PDF with detected boxes and the
-   "Redact selected & download" button.
-6. Download confirmation dialog for the flattened copy.
+1. `01-protection-idle.png` — Redesigned Protection surface in standalone
+   `LOCAL` mode with live status pills, Scan trigger, and Document dropzone.
+2. `02-findings-masked.png` — Page scan Compliance Risk Scorecard and findings
+   list with masked previews before applying overlays.
+3. `03-page-masks-applied.png` — Synthetic fixture webpage with isolated Shadow
+   DOM overlay masks applied.
+4. `04-document-studio.png` — Document Review surface with detected synthetic
+   PII/PHI bounding boxes, zoom controls, and Blackout/Whiteout/Stamp options.
+5. `05-settings-about.png` — Settings → About & Diagnostics showing local-first
+   engine status, legal links, BSL 1.1 licence credits, and sponsorship links.
 
 Requirements for each: no real PII/PHI, no addresses, no URLs with query
 parameters visible, no browser chrome identifying real user data, English
-text, at least 640x400, PNG or JPEG.
+text, exactly 1280x800 PNG (`npm run capture:store` validates PNG IHDR).
 
 ## Store submission checklist
 
@@ -77,8 +77,10 @@ text, at least 640x400, PNG or JPEG.
       `contextMenus`, `alarms`; no `<all_urls>`, no `tabs`). Every declared permission
       is justified in `PERMISSIONS.md` and named in `STORE_DESCRIPTION.md`.
 - [x] Single-purpose description aligned with actual behavior.
-- [x] Privacy policy updated (`PRIVACY.md`, versioned v2.0.0) with support
-      contact and published at the canonical URL.
+- [x] Privacy policy updated (`PRIVACY.md` & `privacy.html`, versioned v2.1.0)
+      alongside `legal.html` Terms & Conditions (v2.0.0) reflecting `LOCAL` vs.
+      `MANAGE` modes and BSL 1.1 source-available licensing, with support contact
+      and published at the canonical URL.
 - [x] Permission justification drafted (`PERMISSIONS.md`).
 - [x] Listing description finalized in `STORE_DESCRIPTION.md` to match the
       enforced local-only behavior and current permissions.

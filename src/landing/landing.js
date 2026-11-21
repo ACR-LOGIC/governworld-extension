@@ -25,12 +25,30 @@ function initScrollCtas() {
   });
 }
 
+/** Mount the GitHub Sponsors iframe only on http(s) origins where GitHub frame-ancestors allows it. */
+function initSponsorButton() {
+  const slot = document.getElementById("github-sponsor-slot");
+  if (!slot) return;
+  const proto = window.location.protocol;
+  if (proto !== "http:" && proto !== "https:") return;
+  const frame = document.createElement("iframe");
+  frame.src = "https://github.com/sponsors/ACR-LOGIC/button";
+  frame.title = "Sponsor ACR-LOGIC";
+  frame.height = "32";
+  frame.width = "114";
+  frame.style.border = "0";
+  frame.style.borderRadius = "6px";
+  slot.replaceChildren(frame);
+}
+
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
     initTabs();
     initScrollCtas();
+    initSponsorButton();
   });
 } else {
   initTabs();
   initScrollCtas();
+  initSponsorButton();
 }

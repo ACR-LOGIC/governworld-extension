@@ -4,16 +4,17 @@ Thank you for your interest in contributing to the GovernWorld Chrome Extension!
 
 ---
 
-## 💛 100% Free, Local-First & Community Supported
+## 💛 Free for Non-Commercial Use, Local-First & Community Supported
 
-GovernWorld is built on an uncompromising commitment to privacy:
+GovernWorld is built on an uncompromising commitment to privacy and **Business Source License 1.1 (BSL 1.1)** source-available licensing (free for personal, educational, academic, government, and internal non-commercial use; transitions to Apache License 2.0 on November 13, 2030):
 * **Local processing by default:** All scanning, OCR, pattern matching, and document flattening happen on your local device, and protected content never leaves it during local scanning and redaction.
 * **Zero Data Monetization:** We never sell, track, monetize, or transmit user data or document contents.
-* **Completely Free:** Every core protection capability is free for everyone.
+* **Free Non-Commercial Access:** Every core protection capability is free for non-commercial use without paywalls (commercial hosting/resale requires a commercial license from `andres@acr-logic.com`).
 
 ### Sponsoring Development
-If GovernWorld helps protect your privacy or workflow, you can support ongoing maintenance, offline OCR models, and validator improvements by sponsoring via Buy Me a Coffee:
+If GovernWorld helps protect your privacy or workflow, you can support ongoing maintenance, offline OCR models, and validator improvements via GitHub Sponsors or Buy Me a Coffee:
 
+💖 **[Sponsor ACR-LOGIC on GitHub](https://github.com/sponsors/ACR-LOGIC)** (`https://github.com/sponsors/ACR-LOGIC`)
 ☕ **[Support GovernWorld on Buy Me a Coffee](https://buymeacoffee.com/governworld)** (`https://buymeacoffee.com/governworld`)
 
 ---
@@ -30,7 +31,7 @@ If GovernWorld helps protect your privacy or workflow, you can support ongoing m
 4. **Report Bugs & Suggest Features:**
    - Open an issue on our [GitHub Issue Tracker](https://github.com/ACR-LOGIC/governworld-extension/issues).
 5. **Financial Sponsorship:**
-   - Support development at [buymeacoffee.com/governworld](https://buymeacoffee.com/governworld).
+   - Sponsor on GitHub at [github.com/sponsors/ACR-LOGIC](https://github.com/sponsors/ACR-LOGIC) or support development at [buymeacoffee.com/governworld](https://buymeacoffee.com/governworld).
 
 ---
 

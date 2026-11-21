@@ -20,10 +20,10 @@
 **GovernWorld Redaction** finds sensitive values in the visible text of the page you are viewing and in the PDF, image, and Word files you open, then lets you redact or mask them directly on your device:
 
 - **Scan on demand.** Nothing scans automatically. Open the popup or side panel and press **Scan this page** to analyze the visible text of the current tab.
-- **Local only — enforced.** Scanning, detection, OCR, and redaction all run on your device. Your page text and documents never leave your device, and the local pipeline has no network path at all. The optional account-linking feature contacts GovernWorld for billing metadata only; it is off until enabled and never carries scan content.
+- **Local only — enforced.** Scanning, detection, OCR, and redaction all run on your device in default standalone `LOCAL` mode with zero network requests. Your page text and documents never leave your device, and the local pipeline has no network path at all. Optional organizational pairing (`MANAGE` mode via 6-digit code or OS policy) synchronizes Ed25519-signed policies and lightweight health metadata only (never scan content), and optional account linking contacts GovernWorld for billing metadata only.
 - **Review, then act.** Findings are listed with masked previews (for example, `phone: ***-***-1234`). Choose what to cover.
 - **Temporary page masks.** Masks are an on-screen overlay only. They do not change or store anything on the website you are viewing.
-- **Preset policies.** HIPAA, PCI DSS, GDPR, and Developer (API keys & secrets) presets auto-select the categories they cover.
+- **Preset policies.** 10 compliance presets — Custom, HIPAA, PCI DSS, GDPR, PIPEDA, UK GDPR / NHS, India DPDP, Australia Privacy, Brazil LGPD, and Developer (API keys & secrets) — auto-select the categories they cover across 24 detection categories.
 - **Custom Redaction Wizard.** Step-by-step wizard to define custom regex, test against live sample text, and activate custom detection rules locally.
 - **Document Processing.** Open a PDF, image, or Word document, review detected values, and download a flattened, securely redacted copy.
 - **Dedicated Instructions & Deep Links.** Comprehensive documentation with contextual in-app guidance jumping straight to relevant instruction cards.
@@ -103,9 +103,11 @@ In accordance with Chrome Web Store Developer Program Policies (Limited Use and 
   suite with deep linking, zero host permissions, and locked API-ready cloud
   integration boundary.
 
-  GovernWorld is released under the **GovernWorld Source-Available Community
-  License**. It is source-available and is *not* an OSI-approved open-source
-  licence, so this listing describes it as free rather than as open source. The
-  third-party libraries it builds on (pdf.js, Tesseract, tesseract.js, pdf-lib,
-  and mammoth) are separately licensed under Apache-2.0, MIT, and BSD-2-Clause
-  and are credited in the extension's About page.
+  GovernWorld is released under **Business Source License 1.1 (BSL 1.1)**
+  (transitions to Apache License 2.0 on November 13, 2030). It is
+  source-available and is *not* an OSI-approved open-source licence, so this
+  listing describes it as free for non-commercial use rather than as open
+  source. The third-party libraries it builds on (pdf.js, Tesseract,
+  tesseract.js, pdf-lib, and mammoth) are separately licensed under
+  Apache-2.0, MIT, and BSD-2-Clause and are credited in the extension's About
+  page.

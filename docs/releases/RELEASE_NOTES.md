@@ -66,7 +66,7 @@ GovernWorld Extension v0.3.0 introduces enterprise policy governance through the
 
 ### Detection Engine & Redaction Audit
 
-- **Comprehensive Detection Audit:** Validated across 23 detection categories using synthetic data only:
+- **Comprehensive Detection Audit:** Validated across 24 detection categories (23 built-in plus custom rules) using synthetic data only:
   - Personal Identifiers (US SSN/ITIN, Canadian SIN, UK NHS, Australian TFN, Brazilian CPF, Indian Aadhaar/PAN, DOB, Names, Addresses, Phones, Emails).
   - Financial Data (Payment cards with Luhn checksum, ABA routing, IBAN with Mod-97 checksum, salary amounts).
   - Healthcare & Clinical PHI (NPI with checksum, DEA numbers, CMS MBI, MRN, clinical signatures, medications, ICD-10, CPT codes).

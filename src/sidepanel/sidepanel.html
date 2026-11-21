@@ -933,6 +933,9 @@
             <li><strong>storage:</strong> <span data-i18n="perm_storage">Save settings and signed audit logs.</span></li>
             <li><strong>downloads:</strong> <span data-i18n="perm_downloads">Save redacted files to your device.</span></li>
             <li><strong>offscreen:</strong> <span data-i18n="perm_offscreen">Run OCR and PDF processing.</span></li>
+            <li><strong>sidePanel:</strong> <span data-i18n="perm_sidepanel">Show the persistent side panel workspace.</span></li>
+            <li><strong>contextMenus:</strong> <span data-i18n="perm_context_menus">Provide right-click scan and masking actions.</span></li>
+            <li><strong>alarms:</strong> <span data-i18n="perm_alarms">Run periodic status checks only when paired in MANAGE mode.</span></li>
           </ul>
           <div class="help-link-row">
             <button type="button" class="help-link help-link--sm" data-guide="guide-privacy" data-i18n="info_btn" data-i18n-aria-label="guide-privacy">Info ↗</button>
@@ -1094,7 +1097,7 @@
                 </li>
               </ul>
               <p class="footnote">
-                GovernWorld is released under the GovernWorld Source-Available Community License (BSL 1.1).
+                GovernWorld is released under the <strong>Business Source License 1.1 (BSL 1.1)</strong> — source-available and free for personal, educational, academic, government, and internal non-commercial use (transitions to Apache 2.0 on Nov 13, 2030). Commercial inquiries: <a href="mailto:andres@acr-logic.com">andres@acr-logic.com</a>.
               </p>
             </div>
           </details>
@@ -1115,6 +1118,12 @@
               <p class="footnote">
                 Your voluntary support helps fund ongoing maintenance, model updates, and offline validator improvements.
               </p>
+              <a href="https://github.com/sponsors/ACR-LOGIC" target="_blank" rel="noopener noreferrer" class="btn btn--sponsor btn--block" id="github-sponsors-link">
+                <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                  <path d="M4.25 2.5c-1.336 0-2.75 1.164-2.75 3 0 2.15 1.58 4.144 3.365 5.682A20.565 20.565 0 008 13.393a20.561 20.561 0 003.135-2.211C12.92 9.644 14.5 7.65 14.5 5.5c0-1.836-1.414-3-2.75-3-1.373 0-2.609.986-3.029 2.456a.75.75 0 01-1.442 0C6.859 3.486 5.623 2.5 4.25 2.5zM8 14.25l-.345.666-.002-.001-.006-.003-.018-.01a7.643 7.643 0 01-.31-.17 22.075 22.075 0 01-3.434-2.414C2.045 10.731 0 8.35 0 5.5 0 2.836 2.086 1 4.25 1 5.797 1 7.153 1.802 8 3.02 8.847 1.802 10.203 1 11.75 1 13.914 1 16 2.836 16 5.5c0 2.85-2.045 5.231-3.885 6.818a22.08 22.08 0 01-3.744 2.584l-.018.01-.006.003h-.002L8 14.25z" />
+                </svg>
+                <span>Sponsor ACR-LOGIC on GitHub</span>
+              </a>
               <a href="https://buymeacoffee.com/governworld" target="_blank" rel="noopener noreferrer" class="btn btn--coffee btn--block" id="buymeacoffee-link">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
                   <path d="M20 3H4v10c0 2.21 1.79 4 4 4h6c2.21 0 4-1.79 4-4v-3h2c1.11 0 2-.9 2-2V5c0-1.11-.89-2-2-2zm0 5h-2V5h2v3zM2 21h18v-2H2v2z" />
@@ -1138,7 +1147,7 @@
               </div>
               <div id="guide-local-mode" class="guide-card">
                 <h4 data-i18n="guide-local-mode">Local Mode</h4>
-                <p class="footnote">All scanning and redaction runs on your device by default with no account required. Page text and documents stay on this device. In MANAGE mode, your organization administrator enforces locked compliance policies.</p>
+                <p class="footnote">Fresh installs boot in standalone <code>LOCAL</code> mode with zero network connections, zero alarms, and zero heartbeats. Page text and documents stay on this device. Only if you opt into organizational <code>MANAGE</code> pairing (via 6-digit code or OS policy) does the extension pull signed policies, lock admin security baselines while leaving accessibility settings editable, and run 15-minute metadata-only health checks.</p>
               </div>
               <div id="guide-page-scan" class="guide-card">
                 <h4 data-i18n="guide-page-scan">Page Scan — How to Scan a Webpage</h4>
@@ -1241,7 +1250,7 @@
               </div>
               <div id="guide-cloud" class="guide-card">
                 <h4 data-i18n="guide-cloud">Cloud &amp; Enterprise Coordination</h4>
-                <p class="footnote">Cloud analysis is disabled by default so all page and document scanning runs locally on your device. Optional Organization Gateway, OAuth, and Local Office Manager pairing in <strong>Settings → Profile &amp; Account</strong> synchronize compliance policies without sending raw page or document text.</p>
+                <p class="footnote">Cloud analysis is disabled by default so all page and document scanning runs locally on your device. Optional Organization Gateway, OAuth, and Office Manager pairing in <strong>Settings → Profile &amp; Account</strong> pull Ed25519-signed compliance policies and emit 15-minute metadata-only status checks (device UUID, browser info, extension/policy versions) while keeping accessibility controls unlocked and transmitting zero browsing history, URLs, page text, or documents.</p>
               </div>
               <div id="guide-privacy" class="guide-card">
                 <h4 data-i18n="guide-privacy">Privacy &amp; Zero-Egress Guarantee</h4>
@@ -1249,7 +1258,7 @@
               </div>
               <div id="guide-contributions" class="guide-card">
                 <h4 data-i18n="guide-contributions">Contributions</h4>
-                <p class="footnote">Community rule packs are <strong>not active in this release</strong>. Nothing you write leaves your device: rule sharing is disabled and there is no server to send it to. Your local logic stays local and works exactly as it does now.</p>
+                <p class="footnote">Community rule packs are <strong>not active in this release</strong>. Nothing you write leaves your device: rule sharing is disabled and there is no server to send it to. Your local logic stays local and works exactly as it does now. Voluntary project sponsorship is available via <a href="https://github.com/sponsors/ACR-LOGIC" target="_blank" rel="noopener noreferrer">GitHub Sponsors</a> and <a href="https://buymeacoffee.com/governworld" target="_blank" rel="noopener noreferrer">Buy Me a Coffee</a>.</p>
               </div>
             </div>
           </details>

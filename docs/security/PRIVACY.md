@@ -1,8 +1,8 @@
 # GovernWorld Chrome Extension — Privacy Policy
 
-- **Version:** 2.0.0
+- **Version:** 2.1.0
 - **Applies to Extension Version:** 0.4.0
-- **Effective date:** September 24, 2026
+- **Effective date:** November 19, 2026
 - **Last updated:** November 19, 2026
 - **Product:** GovernWorld Chrome Extension
 - **Developer:** ACR LOGIC
@@ -11,7 +11,7 @@
 - **Canonical URL:** `https://governworld.acrlogic.com/chrome-extension-privacy`
 - **Support:** `https://github.com/ACR-LOGIC/governworld-extension/issues`
 
-> **Legal notice:** This policy should be reviewed by qualified privacy counsel before being adopted as the company's legally operative policy. The final policy must accurately match the Extension's shipped permissions, APIs, telemetry, authentication, storage, network requests, update mechanism, and Chrome Web Store disclosures.
+> **Policy notice:** This Privacy Policy describes the data handling of the shipped GovernWorld Chrome Extension (`v0.4.0`) across standalone `LOCAL` zero-egress mode and optional organizational `MANAGE` pairing, matching its manifest permissions, local storage lifecycle, and Chrome Web Store disclosures. Read it alongside [`src/popup/legal.html`](../../src/popup/legal.html) and [`LICENSE`](../../LICENSE) (BSL 1.1).
 
 ---
 
@@ -97,7 +97,7 @@ The Extension also stores only the following non-content data:
 
 **Optional account linking.** The side panel can link the Extension to an existing GovernWorld workspace by storing the approved gateway origin locally and holding the `gw_` API key only in browser session storage after you paste it. The key is used only to request billing metadata and open the Stripe checkout. It is never used to transmit scan content, document bytes, or masked values. No account is created by the Extension — linking reuses the tenant the key already belongs to. Clearing the account removes the origin and session credential.
 
-**Optional community features.** When you explicitly choose to fetch community rules, the Extension requests eligible rule metadata from `community.governworld.acrlogic.com`. When you explicitly submit a contribution, it sends the rule name, category, pattern, flags, capture setting, confidence, optional context cues, and optional length bounds to that same service for review. These requests do not include source examples, page text, document bytes, page images, or account gateway credentials. A contribution is not active until accepted by the community review process.
+**Community actions are disabled in this build.** The Extension does not currently create a local community account, fetch community rules from `community.governworld.acrlogic.com`, or submit rule contributions (`POPUP_COMMUNITY_CONTRIBUTE` and `POPUP_COMMUNITY_FETCH_COMMUNITY_RULES` return an explicit disabled error). A future enabled contribution flow would transmit only the rule specification and metadata — never source examples, page text, document bytes, page images, or account gateway credentials — and would require server authorization and recorded consent.
 
 ## 8. Local Storage
 
@@ -203,20 +203,21 @@ This statement does not prohibit collection that is independently initiated by y
 
 ## 18. Paid Services and Organizational Deployments (MANAGE Mode)
 
-GovernWorld may offer paid services, organizational deployments, enterprise capabilities, APIs, runtime governance, policy enforcement, monitoring, audit, integrations, or other connected services.
+GovernWorld may offer paid services, organizational deployments, enterprise capabilities, APIs, runtime governance, policy enforcement, monitoring, audit, integrations, or other connected services. These services may require transmission of information to GovernWorld or its service providers.
 
 ### Enterprise Management Coordination (MANAGE Mode vs. Standalone LOCAL Mode)
 
-- **Standalone LOCAL Mode (Initial State):** Upon installation, the Extension operates in standalone mode. It makes **zero network connections, sends zero heartbeats, and operates 100% on-device**.
-- **Pairing and Enrollment:** Heartbeats and policy synchronization activate **only** after an employee explicitly pairs the Extension using a valid pairing code from their organization.
-- **Purpose of Management Communication:** After pairing, the Extension retrieves administrator-approved security policies (mandated detection categories, locked protection modes, and restricted domain lists).
+- **Standalone LOCAL Mode (Initial State):** Upon installation, the Extension operates in standalone mode. It makes **zero network connections, runs zero background alarms, sends zero heartbeats, and operates on-device**.
+- **Pairing and Enrollment:** Heartbeats and policy synchronization activate **only** after an employee explicitly pairs the Extension using a valid 6-digit pairing code from their organization or deploys OS-managed policy via `chrome.storage.managed`.
+- **Purpose of Management Communication:** After pairing, the Extension retrieves administrator-approved security policies (mandated detection categories, locked protection modes, confidence thresholds, and restricted domain lists), while keeping employee accessibility accommodations (font sizing, high contrast, dyslexia spacing, reduced motion, speech announcements, mask colors, UI language) unlocked.
 - **Cryptographic Validation:** All received policies are signed with an Ed25519 private key by the organization administrator and validated locally against a pinned public key before application.
-- **Periodic Lightweight Status Checks (Heartbeats):** Once paired in MANAGE mode, the Extension sends lightweight status information via periodic alarms (every 15 minutes) to verify installation, active health, and policy compliance:
-  - Device installation public UUID
-  - Browser metadata (name, version, platform)
-  - Extension version
-  - Policy version
-  - Timestamp & status
+- **Periodic Lightweight Status Checks (Heartbeats):** Once paired in `MANAGE` mode, the Extension sends lightweight status information via periodic `chrome.alarms` (every 15 minutes) to verify installation, active health, and policy compliance:
+  - Device installation public UUID (`device_id`)
+  - Organization & employee identifiers (`organization_id`, `employee_id`)
+  - Browser metadata (`browser_info`: name, version, platform)
+  - Extension version (`extension_version`)
+  - Policy version & enforcement status (`policy_version`, `policy_status`)
+  - Timestamp & health `status`
 - **What is NEVER Sent to Management Infrastructure or Administrators:**
   - Web browsing history, URLs visited, search queries, or tab titles.
   - Page text, DOM structures, or web form inputs.
@@ -226,13 +227,9 @@ GovernWorld may offer paid services, organizational deployments, enterprise capa
   - Personal files, credentials, passwords, or tokens.
   - Extracted OCR text or detected sensitive values.
   - Remote control commands or screen surveillance.
-- **Offline Enforcement:** If communication with the management infrastructure is interrupted, the Extension continues to enforce the last valid administrator policy locally without interruption or fail-open vulnerability.
+- **Offline Enforcement & Safe Unpairing:** If communication with the management infrastructure is interrupted, the Extension continues to enforce the last valid administrator policy locally without failing open. Unpairing immediately deletes enrollment credentials and stored policy overrides, cancels the heartbeat alarm, and restores standalone `LOCAL` mode with zero network egress.
 
-GovernWorld may offer paid services, organizational deployments, enterprise capabilities, APIs, runtime governance, policy enforcement, monitoring, audit, integrations, or other connected services.
-
-These services may require transmission of information to GovernWorld or its service providers. The information processed depends on the specific product, configuration, permissions, organization policies, and services enabled.
-
-An Organization may configure GovernWorld to provide governance or monitoring capabilities that necessarily involve information being transmitted to GovernWorld systems.
+The information processed by connected services depends on the specific product, configuration, permissions, organization policies, and services enabled. An Organization may configure GovernWorld to provide governance or monitoring capabilities that involve metadata transmission to GovernWorld systems.
 
 **The privacy characteristics of an organizational deployment are therefore not necessarily identical to those of the standalone free local Extension.**
 

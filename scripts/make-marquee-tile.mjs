@@ -2,7 +2,7 @@
 // Generates the Chrome Web Store Marquee Promo Tile (1400x560 PNG, 24-bit RGB, no alpha).
 // Follows Google Chrome Web Store developer image specifications.
 
-import { chromium } from "playwright";
+import { chromium } from "@playwright/test";
 import { browserChannelArgs } from "./browser-launch.mjs";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -191,12 +191,12 @@ const page = `<!doctype html>
   <div class="glow"></div>
   <div class="left">
     <div class="badge-row">
-      <div class="badge"><span class="badge-dot"></span> 100% On-Device Security</div>
-      <div class="badge" style="border-color: rgba(148, 163, 184, 0.3); color: #cbd5e1; background: rgba(255,255,255,0.05);">Zero Data Egress</div>
+      <div class="badge"><span class="badge-dot"></span> Local-First On-Device Security</div>
+      <div class="badge" style="border-color: rgba(148, 163, 184, 0.3); color: #cbd5e1; background: rgba(255,255,255,0.05);">Zero Content Egress</div>
     </div>
     <h1>Private PII & PHI Redaction<br><span>Directly in Your Browser.</span></h1>
     <p class="desc">
-      Scan active webpages, intercept clipboard pastes, and redact PDF documents locally. Your sensitive data never touches a cloud server.
+      Page text and documents stay on your device &mdash; with optional enterprise MANAGE policies.
     </p>
     <div class="pills">
       <div class="pill"><span class="pill-check">&#10003;</span> In-Line DOM Masking</div>

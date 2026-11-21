@@ -99,12 +99,12 @@ Current release target (`v0.4.0`). Multi-browser release ZIPs (`governworld-chro
 The Chrome Web Store listing uploads these images separately from the extension zip, so the zip checksum does not cover them. Digests of the committed blobs (verified via `npm run verify:digests`):
 
 ```text
-A707493D3E702E0A6BE3E2D430C1736299FDB2AE6A6C2AD10C418B594C7ED5B9  release/images/promo-tile-440x280.png
-38667939A825CC888615AAF47C0678C87E36CF28E55E9211D1042713307F4652  release/screenshots/01-protection-idle.png
-85088D578276BD03B32DB821155EE2FC3DDC484B54A3872A37FA8E6AD8C3504C  release/screenshots/02-findings-masked.png
-38A2BE9D248CF98D51B640FA6C57ADA3EE9C75E62FB62F02DD6B1310E2DD3A1D  release/screenshots/03-page-masks-applied.png
-87038818708C24782DC776B78C1B16AD735A70F829E82CEB208910AE94BC134B  release/screenshots/04-document-studio.png
-0281AF692C57497C768C1B086837A2D7C58B9253DFC7C46394E32D758FD52E67  release/screenshots/05-settings-about.png
+5D614B13A6457B725A0316C80EB50179EE53B370E0EECFE516AC1C1F805DC892  release/images/promo-tile-440x280.png
+B734E6703940D5EC7B945CDA3F95AB087D05C2A824E03D7DE5532C8B0209B238  release/screenshots/01-protection-idle.png
+043AFE7412BB7D5DDC13FEE0166F081FE13EDBCCE984A9C8FBAAAC2C95A2FB96  release/screenshots/02-findings-masked.png
+B7BEC6CDBB5D381EF3118E9623FD3854B4DDDD3AE650C63E48A14F711981B4D6  release/screenshots/03-page-masks-applied.png
+86D67F9DC3223D08EAF5EE1C160E44CBA6014971363501AA32C4BAF43183C07F  release/screenshots/04-document-studio.png
+D587CE3C0B3E8EE52542B7E6A0E9F381A59C3403EEF9FD5B1E0216FA1889A32C  release/screenshots/05-settings-about.png
 ```
 
 Note that the `NOTES.md` files under `release/` are text documentation and are excluded from binary asset digests.

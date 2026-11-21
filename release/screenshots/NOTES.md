@@ -8,8 +8,8 @@ All content is synthetic: it comes from `tests/fixtures/`, which uses RFC 2606
 `.test` domains, a never-issued SSN, and a documented test card. No real PII,
 no browser chrome, and no real user data appear in these images.
 
-1. **01-protection-idle.png** (1280x800) — Idle state before scanning: local mode, categories, threshold
-2. **02-findings-masked.png** (1280x800) — 12 findings with masked previews, before any mask is applied
-3. **03-page-masks-applied.png** (1280x800) — 10 overlay masks drawn on the page (source page unmodified)
-4. **04-document-studio.png** (1280x800) — Document review: local OCR found 8 detected on an image
-5. **05-settings-about.png** (1280x800) — Settings / About: local-first architecture and open-source credits
+1. **01-protection-idle.png** (1280x800) — Redesigned Protection surface: standalone LOCAL mode, live status strip, Scan & Document Studio
+2. **02-findings-masked.png** (1280x800) — 11 findings with Compliance Risk Scorecard and masked previews before applying masks
+3. **03-page-masks-applied.png** (1280x800) — 11 overlay masks drawn on the page (closed shadow DOM; source page unmodified)
+4. **04-document-studio.png** (1280x800) — Full-screen Document Review: local OCR (7 detected) on a synthetic medical image
+5. **05-settings-about.png** (1280x800) — Settings / About: diagnostics, legal links, BSL 1.1 credits & sponsorship support

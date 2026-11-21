@@ -537,9 +537,9 @@
             <a class="btn btn--ghost" href="https://github.com/ACR-LOGIC/governworld-extension" target="_blank" rel="noopener noreferrer">View the project</a>
           </div>
           <div class="hero__stats">
-            <div class="stat"><div class="stat__value">23</div><div class="stat__label">detection categories</div></div>
-            <div class="stat"><div class="stat__value">0</div><div class="stat__label">host permissions by default</div></div>
-            <div class="stat"><div class="stat__value">100%</div><div class="stat__label">on-device scanning</div></div>
+            <div class="stat"><div class="stat__value">24</div><div class="stat__label">detection categories</div></div>
+            <div class="stat"><div class="stat__value">0</div><div class="stat__label">install-time host permissions</div></div>
+            <div class="stat"><div class="stat__value">LOCAL</div><div class="stat__label">zero-egress default mode</div></div>
           </div>
         </div>
 
@@ -590,43 +590,43 @@
             <div class="feature__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3" width="16" height="18" rx="2" /><line x1="8" y1="8" x2="16" y2="8" /><line x1="8" y1="12" x2="14" y2="12" /><line x1="8" y1="16" x2="12" y2="16" /></svg>
             </div>
-            <strong>Page scanning</strong>
-            <span>Scan the current page's visible text with one click and review every finding with confidence, category, and masked preview.</span>
+            <strong>Page scanning &amp; Paste Shield</strong>
+            <span>Scan visible text on demand across 24 categories (with census-backed name parsing) and guard pastes/submissions before sensitive data leaves your screen.</span>
           </div>
           <div class="feature">
             <div class="feature__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l7 2.6v5.1c0 4.3-2.9 7.6-7 9.3-4.1-1.7-7-5-7-9.3V5.6L12 3z" /><path d="M9 12.2l2 2 4-4.2" /></svg>
             </div>
-            <strong>Document redaction</strong>
-            <span>Drop in a PDF, image, or Word file and download a flattened, blacked-out copy. The original is never modified.</span>
+            <strong>Document Redaction Studio</strong>
+            <span>Drop in a PDF, Word (.docx), or image file, review in full-screen with Blackout, Whiteout, or Text Stamp boxes, and download a pixel-verified flattened copy.</span>
           </div>
           <div class="feature">
             <div class="feature__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9" /><path d="M8.5 12.2l2.4 2.4 4.6-5" /></svg>
             </div>
-            <strong>Preset policies</strong>
-            <span>HIPAA, PCI DSS, GDPR, Developer, or fully custom category selection — reverting to Custom the moment you adjust a box.</span>
+            <strong>10 Compliance Presets &amp; Policy Studio</strong>
+            <span>HIPAA, PCI DSS, GDPR, Developer, PIPEDA, UK GDPR/NHS, India DPDP, Australia Privacy, Brazil LGPD, and Custom — plus URL-scoped DLP rules in Policy Studio.</span>
           </div>
           <div class="feature">
             <div class="feature__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l8 3.5V11c0 5-3.4 8.6-8 11-4.6-2.4-8-6-8-11V5.5z" /><path d="M12 8v5" /><circle cx="12" cy="16.2" r="0.6" fill="currentColor" /></svg>
             </div>
-            <strong>Signed audit trail</strong>
-            <span>Every scan, mask, and policy change is recorded in a metadata-only audit log, and exports are ECDSA-signed so an edit to an export is detectable.</span>
+            <strong>Signed audit trail &amp; certificates</strong>
+            <span>Metadata-only audit records hash-chained with SHA-256 and signed with ECDSA P-256, alongside exportable HTML Compliance Certificates and CSV/JSON findings.</span>
           </div>
           <div class="feature">
             <div class="feature__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="3" width="16" height="18" rx="2" /><rect x="8" y="9" width="8" height="4" fill="currentColor" stroke="none" /><path d="M8 17h6" /></svg>
             </div>
-            <strong>Redaction labels</strong>
-            <span>Optional white labels on mask blocks — [SSN], [DOB], [API KEY] — so you always know what was covered.</span>
+            <strong>LOCAL &amp; MANAGE Governance Modes</strong>
+            <span>Boots standalone in LOCAL mode with zero network connections. Organizations can opt into MANAGE mode via 6-digit pairing for Ed25519-signed policy sync without content surveillance.</span>
           </div>
           <div class="feature">
             <div class="feature__icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
             </div>
             <strong>Local Logic Wizard &amp; Community</strong>
-             <span>Author custom regex patterns locally using sample text. Raw examples stay on your device. Community sharing is disabled until server authorization is configured.</span>
+            <span>Author custom regex rules and location-aware document rules locally using sample inputs. Raw examples stay on your device; community sharing is disabled in this release.</span>
           </div>
         </div>
       </section>
@@ -647,7 +647,7 @@
               </li>
               <li>
                 <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="4 12 9 17 20 6" /></svg></span>
-                <div><strong>No egress for scanning</strong><p>Scanning and OCR run on-device. The only optional network surface is opt-in account linking.</p></div>
+                <div><strong>No content egress for scanning</strong><p>Standalone LOCAL mode makes zero network calls. Optional MANAGE pairing syncs Ed25519-signed policies and 15-min health metadata only; optional account linking handles billing metadata only.</p></div>
               </li>
               <li>
                 <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="4 12 9 17 20 6" /></svg></span>
@@ -685,7 +685,7 @@
         <div class="feature-grid">
           <div class="feature"><strong>Zero raw-data persistence</strong><span>Findings keep masked previews and counts only. Document bytes are staged for the review step, then removed.</span></div>
           <div class="feature"><strong>Local OCR and rendering</strong><span>PDF engine and OCR are bundled — no third-party cloud processing.</span></div>
-          <div class="feature"><strong>Opt-in account linking</strong><span>A gateway origin and API key only if you want profile and checkout; it never enables content upload.</span></div>
+          <div class="feature"><strong>Opt-in pairing &amp; account linking</strong><span>Optional MANAGE pairing pulls signed policies with accessibility left unlocked; optional account linking handles billing only. Neither ever uploads scan content.</span></div>
           <div class="feature"><strong>Honest limits</strong><span>A one-time notice reminds you detection is pattern-based and cannot guarantee completeness.</span></div>
         </div>
         <p>
@@ -714,8 +714,20 @@
               compliance.
             </p>
             <p>
+              Source-available under <strong>Business Source License 1.1 (BSL 1.1)</strong> — free for personal,
+              educational, academic, government, and internal non-commercial use (transitions to Apache License 2.0
+              after November 13, 2030). Commercial licensing:
+              <a href="mailto:andres@acr-logic.com">andres@acr-logic.com</a>.
+            </p>
+            <p>
               <a href="https://github.com/ACR-LOGIC/governworld-extension" target="_blank" rel="noopener noreferrer">View the project on GitHub</a>
             </p>
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:14px;">
+              <span id="github-sponsor-slot" style="display:inline-flex;align-items:center;">
+                <a class="btn btn--ghost" style="min-height:32px;padding:6px 14px;font-size:13px;border-color:#db61a2;color:#f472b6;" href="https://github.com/sponsors/ACR-LOGIC" target="_blank" rel="noopener noreferrer">&#9829; Sponsor ACR-LOGIC</a>
+              </span>
+              <a class="btn btn--ghost" style="min-height:32px;padding:6px 14px;font-size:13px;" href="https://buymeacoffee.com/governworld" target="_blank" rel="noopener noreferrer">Buy Me a Coffee</a>
+            </div>
           </div>
           <div class="card">
             <h3>Why local-first?</h3>
@@ -749,9 +761,11 @@
                 <tr><td>Name</td><td>GovernWorld Redaction</td></tr>
                 <tr><td>Version</td><td>0.4.0</td></tr>
                 <tr><td>Manifest</td><td>MV3</td></tr>
+                <tr><td>Operating modes</td><td><code>LOCAL</code> (standalone default, zero network calls) · <code>MANAGE</code> (optional paired enterprise policy)</td></tr>
                 <tr><td>Permissions</td><td><code>activeTab</code>, <code>scripting</code>, <code>storage</code>, <code>downloads</code>, <code>offscreen</code>, <code>sidePanel</code>, <code>contextMenus</code>, <code>alarms</code> + optional <code>notifications</code></td></tr>
                 <tr><td>Host permissions</td><td>Optional <code>http://*/*</code>, <code>https://*/*</code> (granted at runtime for always-on mode; revocable)</td></tr>
-                <tr><td>Data</td><td>Fully on-device; no raw content stored or uploaded</td></tr>
+                <tr><td>Data</td><td>On-device scanning &amp; OCR; no raw scan text or document bytes uploaded</td></tr>
+                <tr><td>License</td><td>Business Source License 1.1 (BSL 1.1) — source-available</td></tr>
                 <tr><td>Source</td><td><a href="https://github.com/ACR-LOGIC/governworld-extension" target="_blank" rel="noopener noreferrer">github.com/ACR-LOGIC/governworld-extension</a></td></tr>
               </tbody>
             </table>
@@ -760,10 +774,10 @@
 
         <section class="panel" data-panel="categories" role="tabpanel" aria-labelledby="tab-categories">
           <div class="card">
-            <h3>Detection categories</h3>
+            <h3>Detection categories (24)</h3>
             <div class="feature-grid" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr))">
               <div class="feature"><strong>Email</strong><span>Email addresses</span></div>
-              <div class="feature"><strong>Phone</strong><span>US phone numbers</span></div>
+              <div class="feature"><strong>Phone</strong><span>US and international phone numbers</span></div>
               <div class="feature"><strong>SSN</strong><span>Social Security numbers</span></div>
               <div class="feature"><strong>Date of birth</strong><span>DOB values</span></div>
               <div class="feature"><strong>Medical record number</strong><span>MRN identifiers</span></div>
@@ -774,7 +788,7 @@
               <div class="feature"><strong>Address</strong><span>US addresses</span></div>
               <div class="feature"><strong>Payment card</strong><span>PAN (Luhn-validated)</span></div>
               <div class="feature"><strong>API keys &amp; secrets</strong><span>OpenAI, Stripe, GitHub, AWS, JWT, private keys &amp; more</span></div>
-              <div class="feature"><strong>Possible name</strong><span>Name-like tokens</span></div>
+              <div class="feature"><strong>Possible name</strong><span>Structured name parsing &amp; enrichment</span></div>
               <div class="feature"><strong>Custom patterns</strong><span>User-defined regex</span></div>
               <div class="feature"><strong>Canadian SIN</strong><span>Social Insurance Number</span></div>
               <div class="feature"><strong>UK NHS</strong><span>NHS Number</span></div>
@@ -802,7 +816,12 @@
                 <tr><td>HIPAA (Healthcare)</td><td>MRN, member ID, NPI, DEA, MBI, SSN, DOB, address, phone, email, name, IP address</td></tr>
                 <tr><td>PCI DSS (Payments)</td><td>Payment card, SSN, address, phone, email</td></tr>
                 <tr><td>GDPR (EU Personal Data)</td><td>Email, phone, address, SSN, DOB, name, MRN, member ID, IP address, username, bank account, salary</td></tr>
-                <tr><td>Developer</td><td>API keys &amp; secrets, email, phone</td></tr>
+                <tr><td>Developer</td><td>API keys &amp; secrets, email, phone, IP address, username</td></tr>
+                <tr><td>PIPEDA (Canada Personal Data)</td><td>Canadian SIN, email, phone, address, DOB, name, payment card, IP address, username, bank account</td></tr>
+                <tr><td>UK GDPR / NHS (United Kingdom)</td><td>UK NHS, email, phone, address, DOB, name, MRN, member ID, payment card, IP address, username, bank account, salary</td></tr>
+                <tr><td>DPDP Act (India Privacy)</td><td>Aadhaar, PAN India, email, phone, address, DOB, name, payment card, IP address, username, bank account</td></tr>
+                <tr><td>Privacy Act (Australia)</td><td>Australian TFN, email, phone, address, DOB, name, payment card, IP address, username, bank account</td></tr>
+                <tr><td>LGPD (Brazil Personal Data)</td><td>CPF, email, phone, address, DOB, name, payment card, IP address, username, bank account</td></tr>
               </tbody>
             </table>
             <p style="margin-top:14px">
@@ -837,6 +856,8 @@
           <a href="legal.html">Terms</a>
           &nbsp;·&nbsp;
           <a href="https://github.com/ACR-LOGIC/governworld-extension/issues" target="_blank" rel="noopener noreferrer">Support</a>
+          &nbsp;·&nbsp;
+          <a href="https://github.com/sponsors/ACR-LOGIC" target="_blank" rel="noopener noreferrer">Sponsor</a>
           &nbsp;·&nbsp;
           <a href="https://github.com/ACR-LOGIC/governworld-extension" target="_blank" rel="noopener noreferrer">Project</a>
         </span>

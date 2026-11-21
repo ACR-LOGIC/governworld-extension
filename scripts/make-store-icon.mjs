@@ -3,7 +3,7 @@
 // Conforms to Google Chrome Web Store developer image guidelines:
 // https://developer.chrome.com/webstore/images#icons
 
-import { chromium } from "playwright";
+import { chromium } from "@playwright/test";
 import { browserChannelArgs } from "./browser-launch.mjs";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";

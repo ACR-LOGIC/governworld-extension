@@ -622,6 +622,10 @@ GovernWorld is **free for non-commercial use and source-available** with local-f
 If GovernWorld saves you time or protects your sensitive workflows, you can support ongoing development, maintenance of offline models, and validator improvements:
 
 <p align="center">
+  <a href="https://github.com/sponsors/ACR-LOGIC" target="_blank" rel="noopener noreferrer">
+    <img src="https://img.shields.io/badge/Sponsor-ACR--LOGIC-ea4aaa?style=for-the-badge&logo=github-sponsors&logoColor=white" alt="Sponsor ACR-LOGIC on GitHub" />
+  </a>
+  &nbsp;
   <a href="https://buymeacoffee.com/governworld" target="_blank" rel="noopener noreferrer">
     <img src="https://img.shields.io/badge/Support%20GovernWorld-Buy%20Me%20A%20Coffee-ff813f?style=for-the-badge&logo=buy-me-a-coffee&logoColor=white" alt="Support on Buy Me A Coffee" />
   </a>

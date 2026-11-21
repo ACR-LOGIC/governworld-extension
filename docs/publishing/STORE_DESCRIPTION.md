@@ -23,10 +23,13 @@ you cover them up:
   the default, needs no site access), or **Always on** (every site you visit,
   only after you grant site access at runtime; revoking access stops it).
 - **Local only — enforced.** Scanning, detection, OCR, and redaction all run
-  on your device. Your page text and documents never leave your device, and the
-  local pipeline has no network path at all. The optional account-linking
-  feature contacts GovernWorld for billing metadata only — it is off until you
-  enable it, and it never carries scan content.
+  on your device in standalone `LOCAL` mode with zero network connections. Your
+  page text and documents never leave your device, and the local pipeline has no
+  network path at all. Optional organizational pairing (`MANAGE` mode via
+  6-digit code or OS policy) synchronizes Ed25519-signed policies and
+  15-minute metadata-only health checks while leaving employee accessibility
+  settings unlocked, and optional account linking contacts GovernWorld for
+  billing metadata only — neither ever carries scan content.
 - **Review, then act.** Findings are listed with masked previews (for example,
   `phone: ***-***-1234`). Choose what to cover.
 - **Temporary page masks.** Masks are an on-screen overlay only. They do not
@@ -34,8 +37,9 @@ you cover them up:
   can show the category they covered (e.g. `[SSN]`, `[API KEY]`).
 - **Copy redacted text.** Get a copy of the page text with sensitive values
   replaced by solid blocks, after your explicit confirmation.
-- **Preset policies.** HIPAA, PCI DSS, GDPR, and Developer (API keys &amp;
-  secrets) presets auto-select the categories they cover; unchecking any
+- **Preset policies.** Custom, HIPAA, PCI DSS, GDPR, PIPEDA, UK GDPR / NHS,
+  India DPDP, Australia Privacy, Brazil LGPD, and Developer (API keys &amp;
+  secrets) presets auto-select across 24 detection categories; unchecking any
   category reverts to Custom, and the change is recorded in the signed audit
   log.
 - **Side panel.** Keep scanning, document redaction, notifications, and
@@ -76,9 +80,12 @@ you cover them up:
 - Privacy policy:
   https://governworld.acrlogic.com/chrome-extension-privacy
 
-**A note on compliance.** This extension helps you redact sensitive values,
-but using it does not by itself make you or your organization HIPAA or
+**A note on compliance & licensing.** This extension helps you redact sensitive
+values, but using it does not by itself make you or your organization HIPAA or
 otherwise compliant. You remain responsible for your compliance obligations.
+Source-available under Business Source License 1.1 (BSL 1.1) — free for
+personal, educational, academic, government, and internal non-commercial use
+(not an OSI-approved open-source licence).
 
 ## Single purpose
 

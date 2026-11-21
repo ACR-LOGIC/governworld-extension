@@ -100,7 +100,8 @@ describe("legal.html (Terms & Conditions)", () => {
   });
 
   it("distinguishes the source-available GovernWorld licence from its open-source dependencies", () => {
-    expect(legalText).toMatch(/GovernWorld Source-Available Community License/);
+    expect(legalText).toMatch(/Business Source License 1\.1 \(BSL 1\.1\)/);
+    expect(legalText).not.toMatch(/GovernWorld Source-Available Community License/);
     expect(legalText).toMatch(/not an OSI-approved open-source licence/i);
   });
 
