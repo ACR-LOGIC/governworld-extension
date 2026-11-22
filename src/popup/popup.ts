@@ -1067,9 +1067,10 @@ function renderState(state: PopupState): void {
       // a document full of PII, and the user has no way to guess that "0
       // characters" means "nothing was checked". Point them at OCR instead.
       const nothingToRead = state.visibleChars === 0;
+      const hasCoverageWarnings = Boolean(state.coverageWarnings && state.coverageWarnings.length > 0);
       status.textContent = nothingToRead
         ? t(currentLang, "status_no_text_found")
-        : state.truncated
+        : state.truncated || hasCoverageWarnings
           ? t(currentLang, "status_partial_results")
           : t(currentLang, "status_completed_securely");
       status.classList.toggle("status--error", nothingToRead);
@@ -1256,6 +1257,9 @@ function renderCoverage(state: PopupState): void {
   const deferred = document.getElementById("coverage-deferred");
   const scanCoverageEl = document.getElementById("scan-coverage-statement");
   const windowsDetailEl = document.getElementById("coverage-windows-detail");
+  const warningsBannerEl = document.getElementById("coverage-warnings-banner");
+  const warningsListEl = document.getElementById("coverage-warnings-list");
+  const warningsCountEl = document.getElementById("coverage-warnings-findings-count");
 
   if (deferred) {
     const count = state.deferredMediaCount ?? 0;
@@ -1279,6 +1283,12 @@ function renderCoverage(state: PopupState): void {
       windowsDetailEl.hidden = true;
       windowsDetailEl.textContent = "";
       windowsDetailEl.removeAttribute("data-tone");
+    }
+    if (warningsBannerEl) {
+      warningsBannerEl.hidden = true;
+    }
+    if (warningsListEl) {
+      warningsListEl.replaceChildren();
     }
     return;
   }
@@ -1319,6 +1329,62 @@ function renderCoverage(state: PopupState): void {
     windowsDetailEl.textContent = statement;
     if (statementWarn) windowsDetailEl.setAttribute("data-tone", "warn");
     else windowsDetailEl.removeAttribute("data-tone");
+  }
+
+  const effectiveWarnings: import("../shared/types.js").CoverageWarning[] =
+    state.coverageWarnings && state.coverageWarnings.length > 0
+      ? [...state.coverageWarnings]
+      : state.incompleteWindows && state.incompleteWindows.length > 0
+        ? [
+            {
+              cause: "incomplete_window",
+              count: state.incompleteWindows.length,
+              detail: state.incompleteWindows.map((w) => `Window ${w.windowIndex}: ${w.reason}`).join("; "),
+            },
+          ]
+        : state.truncated
+          ? [{ cause: "truncated", count: 1 }]
+          : [];
+
+  if (warningsBannerEl && warningsListEl) {
+    warningsListEl.replaceChildren();
+    if (effectiveWarnings.length === 0) {
+      warningsBannerEl.hidden = true;
+    } else {
+      warningsBannerEl.hidden = false;
+      if (warningsCountEl) {
+        const findingTotal = state.totalFindings ?? state.findings.length;
+        warningsCountEl.textContent = t(currentLang, "coverage_warning_findings_badge", {
+          count: String(findingTotal),
+        });
+      }
+      for (const w of effectiveWarnings) {
+        const li = document.createElement("li");
+        li.className = "coverage-warning-banner__item";
+        li.setAttribute("data-cause", w.cause);
+        if (w.cause === "incomplete_window") {
+          li.textContent = t(currentLang, "coverage_warn_incomplete_window", {
+            count: String(w.count),
+            detail: w.detail || "",
+          });
+        } else if (w.cause === "truncated") {
+          li.textContent = t(currentLang, "coverage_warn_truncated");
+        } else if (w.cause === "cross_origin_iframe") {
+          li.textContent = t(currentLang, "coverage_warn_cross_origin_iframe", {
+            count: String(w.count),
+          });
+        } else if (w.cause === "closed_shadow_root") {
+          li.textContent = t(currentLang, "coverage_warn_closed_shadow_root", {
+            count: String(w.count),
+          });
+        } else if (w.cause === "canvas_only") {
+          li.textContent = t(currentLang, "coverage_warn_canvas_only", {
+            count: String(w.count),
+          });
+        }
+        warningsListEl.appendChild(li);
+      }
+    }
   }
 }
 

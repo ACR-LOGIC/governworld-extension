@@ -157,6 +157,13 @@
         <p id="status" class="status-text"></p>
         <p id="summary-chars" class="footnote"></p>
         <p id="scan-coverage-statement" class="footnote" role="status" aria-live="polite" hidden></p>
+        <div id="coverage-warnings-banner" class="coverage-warning-banner" role="alert" aria-live="polite" hidden>
+          <div class="coverage-warning-banner__header">
+            <strong class="coverage-warning-banner__title" data-i18n="coverage_warning_banner_title">Incomplete Coverage — Unscanned Page Regions</strong>
+            <span id="coverage-warnings-findings-count" class="count-badge">0 findings</span>
+          </div>
+          <ul id="coverage-warnings-list" class="coverage-warning-banner__list"></ul>
+        </div>
 
         <!--
         Shown only when a page scan found no text to read AND the page carries

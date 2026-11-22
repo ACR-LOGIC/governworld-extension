@@ -2926,3 +2926,44 @@ body[data-reduced-motion="true"] *::after {
 .doc-staged-audit__msg {
   margin-top: 4px;
 }
+
+.coverage-warning-banner {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid #d97706;
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--text);
+}
+
+.coverage-warning-banner[hidden] {
+  display: none;
+}
+
+.coverage-warning-banner__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.coverage-warning-banner__title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #b45309;
+}
+
+.coverage-warning-banner__list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.coverage-warning-banner__item {
+  margin: 0;
+}

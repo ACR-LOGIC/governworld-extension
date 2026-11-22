@@ -144,6 +144,19 @@ export interface IncompleteWindowInfo {
   reason: string;
 }
 
+export type CoverageWarningCause =
+  | "incomplete_window"
+  | "truncated"
+  | "cross_origin_iframe"
+  | "closed_shadow_root"
+  | "canvas_only";
+
+export interface CoverageWarning {
+  cause: CoverageWarningCause;
+  count: number;
+  detail?: string;
+}
+
 export interface ScanStats {
   visibleChars: number;
   /** Characters of accessibility-attribute text also analyzed. */
@@ -178,6 +191,8 @@ export interface ScanStats {
   deferredMediaCount?: number;
   /** Honest coverage classification based on what was and was not inspected. */
   coverageStatus?: ScanCoverageStatus;
+  /** Explicit unscannable or partially scanned region causes surfaced in the popup (C3). */
+  coverageWarnings?: CoverageWarning[];
 }
 
 
@@ -287,6 +302,9 @@ export interface ScanSettingsMessage {
   /** Session timeout in milliseconds, or 0 for "never". */
   sessionTimeoutMs: number;
   confidenceThresholds?: Record<FindingCategory, number>;
+  windowChars?: number;
+  windowOverlapChars?: number;
+  maxTotalWindows?: number;
 }
 
 export type WorkerMessage =
@@ -382,6 +400,8 @@ export interface PopupState {
   windowsTotal?: number;
   /** Any windows that could not be scanned, named for honest reporting. */
   incompleteWindows?: IncompleteWindowInfo[];
+  /** Explicit unscannable or partially scanned region causes surfaced in the popup (C3). */
+  coverageWarnings?: CoverageWarning[];
 }
 
 /** One processed document page for the review UI (thumbnails only, no raw text). */

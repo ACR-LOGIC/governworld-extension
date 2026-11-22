@@ -167,11 +167,13 @@ export function buildCanonicalDocumentWindows(options: {
   sourceKind?: CanonicalDocument["sourceKind"];
   maxVisibleChars?: number;
   maxNodeChars?: number;
+  windowChars?: number;
+  windowOverlapChars?: number;
   maxTotalWindows?: number;
   nodeIds: Map<string, Node>;
 }): WindowedCanonicalDocument {
   const startTime = performance.now();
-  const maxVisibleChars = options.maxVisibleChars ?? 250_000;
+  const maxVisibleChars = options.windowChars ?? options.maxVisibleChars ?? 250_000;
   const maxNodeChars = options.maxNodeChars ?? 10_000;
   const sourceKind = options.sourceKind ?? "web-dom";
 

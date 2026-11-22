@@ -15,10 +15,10 @@
  * the single implementation for the whole extension.
  */
 
-import { getAccessibleShadowRoot } from "./shadow.js";
+import { getAccessibleShadowRoot, isRecordedClosedShadowHost } from "./shadow.js";
 import { CoverageTelemetry, PerformanceTelemetry } from "../../shared/telemetry.js";
 
-export { getAccessibleShadowRoot } from "./shadow.js";
+export { getAccessibleShadowRoot, isRecordedClosedShadowHost } from "./shadow.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -65,6 +65,7 @@ export interface PageInventory {
   formControls: number;
   openShadowRoots: number;
   closedShadowRootsAccessed: number;
+  closedShadowRootsBlocked?: number;
   sameOriginIframes: number;
   crossOriginIframes: number;
   images: {
@@ -231,6 +232,7 @@ export function runDOMInventoryPass(rootDoc: Document = document): DOMInventoryP
     formControls: 0,
     openShadowRoots: 0,
     closedShadowRootsAccessed: 0,
+    closedShadowRootsBlocked: 0,
     sameOriginIframes: 0,
     crossOriginIframes: 0,
     images: { total: 0, visible: 0, dataOrBlob: 0, cssBackgrounds: 0, inlineSvgs: 0 },
@@ -297,6 +299,18 @@ export function runDOMInventoryPass(rootDoc: Document = document): DOMInventoryP
           height: Math.round(rect.height),
         };
 
+        // Skip GovernWorld's own injected overlay, toast, and paste-guard hosts
+        if (
+          el.hasAttribute("data-gw-scan-overlay") ||
+          el.hasAttribute("data-gw-toast-host") ||
+          el.hasAttribute("data-gw-paste-guard") ||
+          (typeof el.id === "string" && el.id.startsWith("__governworld-")) ||
+          Boolean(el.closest("[data-gw-scan-overlay], [data-gw-toast-host], [data-gw-paste-guard], [id^='__governworld-']"))
+        ) {
+          node = walker.nextNode();
+          continue;
+        }
+
         // ── Shadow DOM ────────────────────────────────────────────
         const shadow = getAccessibleShadowRoot(el);
         if (shadow) {
@@ -304,6 +318,8 @@ export function runDOMInventoryPass(rootDoc: Document = document): DOMInventoryP
           if (shadow.mode === "open") inv.openShadowRoots++;
           else inv.closedShadowRootsAccessed++;
           walkRoot(shadow, depth + 1);
+        } else if (isRecordedClosedShadowHost(el) || el.hasAttribute("data-closed-shadow-host")) {
+          inv.closedShadowRootsBlocked = (inv.closedShadowRootsBlocked ?? 0) + 1;
         }
 
         // ── Tables ────────────────────────────────────────────────

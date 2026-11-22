@@ -150,6 +150,7 @@ interface SessionState {
     imageCandidates?: ImageCandidate[];
     coverageStatus?: ScanCoverageStatus;
     deferredMediaCount?: number;
+    coverageWarnings?: import("../shared/types.js").CoverageWarning[];
   };
   scannedAt: number;
   scanning: boolean;
@@ -203,6 +204,7 @@ function isSessionState(value: unknown): value is SessionState {
     (v.stats.windowsScanned === undefined || (typeof v.stats.windowsScanned === "number" && Number.isSafeInteger(v.stats.windowsScanned) && v.stats.windowsScanned >= 0)) &&
     (v.stats.windowsTotal === undefined || (typeof v.stats.windowsTotal === "number" && Number.isSafeInteger(v.stats.windowsTotal) && v.stats.windowsTotal >= 0)) &&
     (v.stats.incompleteWindows === undefined || Array.isArray(v.stats.incompleteWindows)) &&
+    (v.stats.coverageWarnings === undefined || Array.isArray(v.stats.coverageWarnings)) &&
     (v.stats.findingsTruncated === undefined || typeof v.stats.findingsTruncated === "boolean") &&
     (v.stats.totalFindings === undefined ||
       (typeof v.stats.totalFindings === "number" &&
@@ -758,6 +760,9 @@ function buildPopupState(
     ...(session?.stats.windowsScanned !== undefined ? { windowsScanned: session.stats.windowsScanned } : {}),
     ...(session?.stats.windowsTotal !== undefined ? { windowsTotal: session.stats.windowsTotal } : {}),
     ...(hasIncompleteWindows ? { incompleteWindows } : {}),
+    ...(session?.stats.coverageWarnings && session.stats.coverageWarnings.length > 0
+      ? { coverageWarnings: session.stats.coverageWarnings }
+      : {}),
   };
 }
 

@@ -27,10 +27,10 @@ const args = process.argv.slice(2);
 const modeArg = (args.find((a) => a.startsWith("--mode=")) || "--mode=baseline").split("=")[1];
 const stageArg = (args.find((a) => a.startsWith("--stage=")) || "--stage=all").split("=")[1];
 const outArg = args.find((a) => a.startsWith("--out="))?.slice(6);
-const TAKE_SCREENSHOTS = args.includes("--screenshot") || ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p11", "c2"].includes(modeArg);
+const TAKE_SCREENSHOTS = args.includes("--screenshot") || ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p11", "c2", "c3"].includes(modeArg);
 const SCREENSHOT_DIR = join(ROOT, "docs", "releases", "directive-reports", "screenshots");
 const RESULTS_PATH = outArg ? resolve(ROOT, outArg) : join(ROOT, "docs", "benchmarks", "results-run2.json");
-const IS_GATE = ["gate", "p1", "p2", "p3", "p4", "p5", "p6", "p7", "p11", "c2"].includes(modeArg);
+const IS_GATE = ["gate", "p1", "p2", "p3", "p4", "p5", "p6", "p7", "p11", "c2", "c3"].includes(modeArg);
 
 const executablePath = (process.env.GW_BROWSER_EXECUTABLE || "").trim() || chromium.executablePath();
 
@@ -887,6 +887,155 @@ try {
   }
 
   // -------------------------------------------------------------------------
+  // STAGE: C3 (Coverage warnings for incomplete windows, cross-origin iframes,
+  // closed shadow roots, canvas-only pages, and clean HTML pages)
+  // -------------------------------------------------------------------------
+  if (shouldRun("c3")) {
+    console.log("\n[Run 2 - C3 Coverage Warnings Stage]");
+    const xServer = createServer((_req, res) => {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end("<!doctype html><html><body><p>External cross-origin iframe chart content</p></body></html>");
+    });
+    const xPort = await new Promise((resolve) => xServer.listen(0, "127.0.0.1", () => resolve(xServer.address().port)));
+
+    try {
+      const readWarningUi = async () => {
+        return await popup.evaluate(() => {
+          const banner = document.getElementById("coverage-warnings-banner");
+          const findingsNote = document.getElementById("coverage-warnings-findings-count");
+          const items = Array.from(document.querySelectorAll("#coverage-warnings-list li")).map((li) => ({
+            cause: li.getAttribute("data-cause") ?? "",
+            text: (li.textContent ?? "").trim(),
+          }));
+          const covBanner = document.getElementById("coverage-banner-text");
+          return {
+            bannerHidden: banner ? banner.hidden : true,
+            findingsNoteText: (findingsNote?.textContent ?? "").trim(),
+            items,
+            coverageBannerText: (covBanner?.textContent ?? "").trim(),
+          };
+        });
+      };
+
+      const runC3Case = async (label, setupFn, screenshotName, settingsOverride = null) => {
+        await page.goto(fixtureUrl, { waitUntil: "domcontentloaded" });
+        await setupFn();
+        if (settingsOverride) {
+          await sw.evaluate(async (override) => {
+            const raw = await chrome.storage.local.get("settings");
+            const current = raw.settings || {};
+            await chrome.storage.local.set({ settings: { ...current, ...override } });
+          }, settingsOverride);
+        }
+
+        await popup.evaluate(() => document.querySelector('[data-tab="scan"]')?.click());
+        await injectAndScan();
+        await popup.waitForTimeout(250);
+
+        const ui = await readWarningUi();
+        if (TAKE_SCREENSHOTS && screenshotName) {
+          mkdirSync(SCREENSHOT_DIR, { recursive: true });
+          await popup.screenshot({ path: join(SCREENSHOT_DIR, screenshotName) });
+        }
+
+        if (settingsOverride) {
+          await sw.evaluate(async () => {
+            const raw = await chrome.storage.local.get("settings");
+            const current = raw.settings || {};
+            await chrome.storage.local.set({
+              settings: { ...current, maxVisibleChars: 250_000, maxNodeChars: 20_000 },
+            });
+          });
+        }
+        console.log(`  C3 ${label}: hidden=${ui.bannerHidden} causes=[${ui.items.map((i) => i.cause).join(",")}] note="${ui.findingsNoteText}"`);
+        return ui;
+      };
+
+      // 1. Incomplete window ceiling (205 windows of 1,000 chars > 200 maxTotalWindows ceiling)
+      const incompleteWindowUi = await runC3Case(
+        "incomplete_window",
+        async () => {
+          await page.evaluate(() => {
+            const stage = document.getElementById("stage");
+            const chunks = [];
+            for (let i = 0; i < 205; i++) {
+              chunks.push(`<p>${"Clinical narrative block for windowed ceiling check. ".repeat(20)}SSN 219-09-${String(1000 + (i % 9000))}</p>`);
+            }
+            stage.innerHTML = chunks.join("");
+          });
+        },
+        "C3-incomplete-window.png",
+        { maxVisibleChars: 1000 }
+      );
+
+      // 2. Cross-origin iframe
+      const crossOriginIframeUi = await runC3Case(
+        "cross_origin_iframe",
+        async () => {
+          await page.evaluate((xp) => {
+            const stage = document.getElementById("stage");
+            stage.innerHTML = `<p>Host clinical note SSN 219-09-9999</p><iframe id="xframe" src="http://127.0.0.1:${xp}/frame" width="320" height="80"></iframe>`;
+          }, xPort);
+          await page.waitForTimeout(250);
+        },
+        "C3-cross-origin-iframe.png"
+      );
+
+      // 3. Closed shadow root
+      const closedShadowRootUi = await runC3Case(
+        "closed_shadow_root",
+        async () => {
+          await page.evaluate(() => {
+            const stage = document.getElementById("stage");
+            stage.innerHTML = `<p>Host clinical note SSN 219-09-9999</p><div id="closed-widget-host"></div>`;
+            const host = document.getElementById("closed-widget-host");
+            const closedRoot = host.attachShadow({ mode: "closed" });
+            closedRoot.innerHTML = `<p>Encapsulated closed shadow root widget content</p>`;
+          });
+        },
+        "C3-closed-shadow-root.png"
+      );
+
+      // 4. Canvas-only page (visible canvas with zero DOM text)
+      const canvasOnlyUi = await runC3Case(
+        "canvas_only",
+        async () => {
+          await page.evaluate(() => {
+            document.body.innerHTML = `<main><canvas id="chart-canvas" width="420" height="220" style="width:420px;height:220px;display:block;border:1px solid #333;"></canvas></main>`;
+            const c = document.getElementById("chart-canvas");
+            const ctx = c.getContext("2d");
+            ctx.fillStyle = "#eef2ff";
+            ctx.fillRect(0, 0, 420, 220);
+          });
+        },
+        "C3-canvas-only.png"
+      );
+
+      // 5. Clean HTML page (findings present, zero unscannable regions -> no warning banner)
+      const cleanPageUi = await runC3Case(
+        "clean_html",
+        async () => {
+          await page.evaluate(() => {
+            const stage = document.getElementById("stage");
+            stage.innerHTML = `<p>Routine clinical note with SSN 219-09-9999 and no unscannable regions.</p>`;
+          });
+        },
+        "C3-clean-no-warning.png"
+      );
+
+      out.c3 = {
+        incompleteWindowUi,
+        crossOriginIframeUi,
+        closedShadowRootUi,
+        canvasOnlyUi,
+        cleanPageUi,
+      };
+    } finally {
+      await new Promise((resolve) => xServer.close(() => resolve()));
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // STAGE: PASTE (Real clipboard Ctrl+V, 15 trials, dialog latency + 0 escapes)
   // -------------------------------------------------------------------------
   if (shouldRun("paste")) {
@@ -1187,10 +1336,29 @@ const runP5Check = modeArg === "p5";
 const runP6Check = modeArg === "p6";
 const runP11Check = modeArg === "p11";
 const runC2Check = modeArg === "c2";
+const runC3Check = modeArg === "c3";
 const runPasteCheck = modeArg === "gate";
 const runLatencyP7Check = modeArg === "p7";
 
 if (IS_GATE) {
+  if (runC3Check) {
+    const c3 = out.c3;
+    if (
+      !c3 ||
+      c3.incompleteWindowUi?.bannerHidden ||
+      !c3.incompleteWindowUi?.items?.some((i) => i.cause === "incomplete_window") ||
+      c3.crossOriginIframeUi?.bannerHidden ||
+      !c3.crossOriginIframeUi?.items?.some((i) => i.cause === "cross_origin_iframe") ||
+      c3.closedShadowRootUi?.bannerHidden ||
+      !c3.closedShadowRootUi?.items?.some((i) => i.cause === "closed_shadow_root") ||
+      c3.canvasOnlyUi?.bannerHidden ||
+      !c3.canvasOnlyUi?.items?.some((i) => i.cause === "canvas_only") ||
+      !c3.cleanPageUi?.bannerHidden ||
+      (c3.cleanPageUi?.items?.length ?? 0) !== 0
+    ) {
+      out.gateFailures.push(`C3 coverage warnings check failed: ${JSON.stringify(c3)}`);
+    }
+  }
   if (runC2Check) {
     const c2 = out.docs.c2Audit;
     if (

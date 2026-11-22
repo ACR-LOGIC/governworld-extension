@@ -363,6 +363,32 @@ function normalizeIncompleteWindows(value: unknown): IncompleteWindowInfo[] | un
   return out.length > 0 ? out : undefined;
 }
 
+const COVERAGE_WARNING_CAUSES = new Set<string>([
+  "incomplete_window",
+  "truncated",
+  "cross_origin_iframe",
+  "closed_shadow_root",
+  "canvas_only",
+]);
+
+function normalizeCoverageWarnings(value: unknown): import("./types.js").CoverageWarning[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out: import("./types.js").CoverageWarning[] = [];
+  for (const entry of value) {
+    if (out.length >= 16) break;
+    if (!isRecord(entry)) continue;
+    if (typeof entry.cause !== "string" || !COVERAGE_WARNING_CAUSES.has(entry.cause)) continue;
+    if (typeof entry.count !== "number" || !Number.isSafeInteger(entry.count) || entry.count < 1) continue;
+    if (entry.detail !== undefined && (typeof entry.detail !== "string" || entry.detail.length > 512)) continue;
+    out.push({
+      cause: entry.cause as import("./types.js").CoverageWarningCause,
+      count: entry.count,
+      ...(typeof entry.detail === "string" && entry.detail.length > 0 ? { detail: entry.detail } : {}),
+    });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
 function normalizeScanStats(value: unknown): ScanStats | null {
   if (!isRecord(value) || typeof value.visibleChars !== "number" || !Number.isSafeInteger(value.visibleChars) || value.visibleChars < 0) return null;
   if (value.attrChars !== undefined && (typeof value.attrChars !== "number" || !Number.isSafeInteger(value.attrChars) || value.attrChars < 0)) return null;
@@ -379,6 +405,7 @@ function normalizeScanStats(value: unknown): ScanStats | null {
   const visualQueue = value.visualQueue === undefined ? undefined : normalizeVisualQueue(value.visualQueue);
   const pdfQueue = value.pdfQueue === undefined ? undefined : normalizePdfQueue(value.pdfQueue);
   const incompleteWindows = value.incompleteWindows === undefined ? undefined : normalizeIncompleteWindows(value.incompleteWindows);
+  const coverageWarnings = value.coverageWarnings === undefined ? undefined : normalizeCoverageWarnings(value.coverageWarnings);
   const deferredMediaCount =
     typeof value.deferredMediaCount === "number" &&
     Number.isSafeInteger(value.deferredMediaCount) &&
@@ -405,6 +432,7 @@ function normalizeScanStats(value: unknown): ScanStats | null {
     ...(pdfQueue ? { pdfQueue } : {}),
     ...(deferredMediaCount !== undefined ? { deferredMediaCount } : {}),
     ...(coverageStatus !== undefined ? { coverageStatus } : {}),
+    ...(coverageWarnings ? { coverageWarnings } : {}),
   };
 }
 
@@ -498,7 +526,10 @@ export function isScanSettings(value: unknown): value is ScanSettingsMessage {
     typeof value.maskPlaceholders === "boolean" &&
     typeof value.sessionTimeoutMs === "number" &&
     value.sessionTimeoutMs >= 0 &&
-    (value.confidenceThresholds === undefined || isConfidenceThresholds(value.confidenceThresholds))
+    (value.confidenceThresholds === undefined || isConfidenceThresholds(value.confidenceThresholds)) &&
+    (value.windowChars === undefined || (typeof value.windowChars === "number" && Number.isSafeInteger(value.windowChars) && value.windowChars >= 100)) &&
+    (value.windowOverlapChars === undefined || (typeof value.windowOverlapChars === "number" && Number.isSafeInteger(value.windowOverlapChars) && value.windowOverlapChars >= 0)) &&
+    (value.maxTotalWindows === undefined || (typeof value.maxTotalWindows === "number" && Number.isSafeInteger(value.maxTotalWindows) && value.maxTotalWindows >= 1))
   );
 }
 
@@ -539,6 +570,8 @@ function normalizePopupState(value: unknown): PopupState | null {
       : undefined;
   const incompleteWindows =
     value.incompleteWindows === undefined ? undefined : normalizeIncompleteWindows(value.incompleteWindows);
+  const coverageWarnings =
+    value.coverageWarnings === undefined ? undefined : normalizeCoverageWarnings(value.coverageWarnings);
   return {
     mode: value.mode,
     ...(value.operatingMode === "MANAGE" || value.operatingMode === "LOCAL" ? { operatingMode: value.operatingMode } : {}),
@@ -558,6 +591,7 @@ function normalizePopupState(value: unknown): PopupState | null {
     ...(windowsScanned !== undefined ? { windowsScanned } : {}),
     ...(windowsTotal !== undefined ? { windowsTotal } : {}),
     ...(incompleteWindows ? { incompleteWindows } : {}),
+    ...(coverageWarnings ? { coverageWarnings } : {}),
   };
 }
 

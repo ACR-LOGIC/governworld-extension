@@ -33,7 +33,7 @@ Tick a box only when the task's Definition of Done (S9) is fully met and its S6 
 - [ ] **P14 / M5** Peak RSS measured, reported separately from heap Ref: `docs/releases/directive-reports/M5.md`
 - [x] **C1 / G1–G9** All gates hard failures in CI (D5) Ref: `docs/releases/directive-reports/C1.md` (branch `task/C1-ci-hard-gates`)
 - [x] **C2** Startup purge + staged-data display and purge button Ref: `docs/releases/directive-reports/C2.md` (branch `task/C2-startup-purge-and-studio-audit`)
-- [ ] **C3** Coverage warnings in popup Ref: `docs/releases/directive-reports/C3.md`
+- [x] **C3** Coverage warnings in popup Ref: `docs/releases/directive-reports/C3.md` (branch `task/C3-coverage-warnings`)
 - [ ] **C4** Label-free name recall measured Ref: `docs/releases/directive-reports/C4.md`
 - [ ] **C5** Export metadata verified / stripped Ref: `docs/releases/directive-reports/C5.md`
 - [ ] **C6** Box alignment matrix passed Ref: `docs/releases/directive-reports/C6.md`

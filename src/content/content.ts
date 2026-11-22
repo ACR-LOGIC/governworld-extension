@@ -91,6 +91,7 @@ if (g.__gwRedactionContentLoaded !== true) {
   let lastWindowsScanned: number | undefined;
   let lastWindowsTotal: number | undefined;
   let lastIncompleteWindows: IncompleteWindowInfo[] | undefined;
+  let lastCoverageWarnings: import("../shared/types.js").CoverageWarning[] | undefined;
 
   function clearSession() {
     sessionId = null;
@@ -113,6 +114,7 @@ if (g.__gwRedactionContentLoaded !== true) {
     lastWindowsScanned = undefined;
     lastWindowsTotal = undefined;
     lastIncompleteWindows = undefined;
+    lastCoverageWarnings = undefined;
     if (mutationDebounceTimer !== null) {
       clearTimeout(mutationDebounceTimer);
       mutationDebounceTimer = null;
@@ -355,6 +357,9 @@ if (g.__gwRedactionContentLoaded !== true) {
       sourceKind: "web-dom",
       maxVisibleChars: settings.maxVisibleChars,
       maxNodeChars: settings.maxNodeChars,
+      windowChars: settings.windowChars,
+      windowOverlapChars: settings.windowOverlapChars,
+      maxTotalWindows: settings.maxTotalWindows,
       nodeIds,
     });
 
@@ -678,13 +683,55 @@ if (g.__gwRedactionContentLoaded !== true) {
       }
     }
 
+    const coverageWarnings: import("../shared/types.js").CoverageWarning[] = [];
+    if (incompleteWindows.length > 0) {
+      coverageWarnings.push({
+        cause: "incomplete_window",
+        count: incompleteWindows.length,
+        detail: incompleteWindows.map((w) => `Window ${w.windowIndex}: ${w.reason}`).join("; "),
+      });
+    } else if (effectiveTruncated) {
+      coverageWarnings.push({
+        cause: "truncated",
+        count: 1,
+      });
+    }
+    if ((inventory?.crossOriginIframes ?? 0) > 0) {
+      coverageWarnings.push({
+        cause: "cross_origin_iframe",
+        count: inventory!.crossOriginIframes,
+      });
+    }
+    const closedShadowCount =
+      (inventory?.closedShadowRootsAccessed ?? 0) + (inventory?.closedShadowRootsBlocked ?? 0);
+    if (closedShadowCount > 0) {
+      coverageWarnings.push({
+        cause: "closed_shadow_root",
+        count: closedShadowCount,
+      });
+    }
+    if ((inventory?.canvases ?? 0) > 0 && combined.length === 0) {
+      coverageWarnings.push({
+        cause: "canvas_only",
+        count: inventory!.canvases,
+      });
+    }
+
     lastAttrChars = attrChars;
     lastTruncated = effectiveTruncated;
-    lastCoverageStatus = incompleteWindows.length > 0 ? "PARTIALLY_SCANNED" : coverageStatus;
+    const rawCoverageStatus = incompleteWindows.length > 0 ? "PARTIALLY_SCANNED" : coverageStatus;
+    lastCoverageStatus =
+      coverageWarnings.length > 0 &&
+      (rawCoverageStatus === "FULLY_SCANNED" ||
+        rawCoverageStatus === "NO_SENSITIVE_DATA_DETECTED" ||
+        rawCoverageStatus === undefined)
+        ? "PARTIALLY_SCANNED"
+        : rawCoverageStatus;
     lastDeferredMediaCount = deferredMediaCount;
     lastWindowsScanned = windowsScanned;
     lastWindowsTotal = totalWindows;
     lastIncompleteWindows = incompleteWindows.length > 0 ? incompleteWindows : undefined;
+    lastCoverageWarnings = coverageWarnings.length > 0 ? coverageWarnings : undefined;
 
     const imageCandidates = (combined.length === 0 || (combined.length < 300 && findings.length === 0)) ? collectImageCandidates() : undefined;
 
@@ -745,6 +792,9 @@ if (g.__gwRedactionContentLoaded !== true) {
           : {}),
         ...(lastDeferredMediaCount > 0 ? { deferredMediaCount: lastDeferredMediaCount } : {}),
         ...(lastCoverageStatus !== undefined ? { coverageStatus: lastCoverageStatus } : {}),
+        ...(lastCoverageWarnings && lastCoverageWarnings.length > 0
+          ? { coverageWarnings: lastCoverageWarnings }
+          : {}),
         ...extraStats,
       },
     };
@@ -1372,4 +1422,7 @@ interface ScanSettings {
   maskPlaceholders: boolean;
   sessionTimeoutMs: number;
   confidenceThresholds?: Record<FindingCategory, number>;
+  windowChars?: number;
+  windowOverlapChars?: number;
+  maxTotalWindows?: number;
 }

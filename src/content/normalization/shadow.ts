@@ -17,12 +17,36 @@
  * tests, where `chrome.dom` does not exist.
  */
 
+const closedShadowHosts = new WeakSet<Element>();
+let attachShadowHooked = false;
+
+function ensureAttachShadowHook(): void {
+  if (attachShadowHooked) return;
+  attachShadowHooked = true;
+  if (typeof Element !== "undefined" && typeof Element.prototype?.attachShadow === "function") {
+    const orig = Element.prototype.attachShadow;
+    Element.prototype.attachShadow = function (init: ShadowRootInit): ShadowRoot {
+      if (init && init.mode === "closed") {
+        closedShadowHosts.add(this);
+      }
+      return orig.call(this, init);
+    };
+  }
+}
+
+ensureAttachShadowHook();
+
+export function isRecordedClosedShadowHost(element: Element): boolean {
+  return closedShadowHosts.has(element);
+}
+
 /**
  * Returns the shadow root hosted by `element`, preferring the Chromium
  * extension API so closed roots are included. Returns null when the element
  * hosts no root, or when the API is unavailable (Firefox, unit tests).
  */
 export function getAccessibleShadowRoot(element: Element): ShadowRoot | null {
+  ensureAttachShadowHook();
   try {
     // chrome.dom is Chromium-only and absent from unit-test environments.
     const chromeApi = (globalThis as unknown as {
