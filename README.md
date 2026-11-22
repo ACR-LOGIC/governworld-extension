@@ -1,7 +1,7 @@
 # GovernWorld Extension
 
 [![CI](https://github.com/ACR-LOGIC/governworld-extension/actions/workflows/ci.yml/badge.svg)](https://github.com/ACR-LOGIC/governworld-extension/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/Version-0.4.0-blue.svg)](https://github.com/ACR-LOGIC/governworld-extension/releases/tag/v0.4.0)
+[![Version](https://img.shields.io/badge/Version-0.4.1-blue.svg)](https://github.com/ACR-LOGIC/governworld-extension/releases/tag/v0.4.1)
 [![License](https://img.shields.io/badge/License-BSL--1.1%20Source--Available-orange.svg)](LICENSE)
 [![Manifest V3](https://img.shields.io/badge/Extension-Manifest%20V3-green.svg)](manifest.json)
 [![Local-First](https://img.shields.io/badge/Architecture-Local--First-brightgreen.svg)](#local-first-architecture--privacy-guarantees)
@@ -9,7 +9,7 @@
 [![Support on Buy Me A Coffee](https://img.shields.io/badge/Support-Buy%20Me%20A%20Coffee-ff813f?logo=buy-me-a-coffee&logoColor=white)](https://buymeacoffee.com/governworld)
 [![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?logo=github)](https://github.com/sponsors/ACR-LOGIC)
 
-The **GovernWorld Extension** (`v0.4.0`) is a local-first browser protection tool that runs GovernWorld's deterministic detection and redaction engine directly in your web browser. It lets users detect, mask, and redact sensitive Personally Identifiable Information (PII), Protected Health Information (PHI), financial data, credentials, and custom patterns on web pages you choose to scan and in uploaded documents (PDF, DOCX, images). The page text and document content you scan **never leave your device** — the local detection and document pipelines have no network path at all. Optional organizational pairing (`MANAGE` mode) and optional account-linking flows are inactive by default and transmit non-content metadata only when explicitly enabled.
+The **GovernWorld Extension** (`v0.4.1`) is a local-first browser protection tool that runs GovernWorld's deterministic detection and redaction engine directly in your web browser. It lets users detect, mask, and redact sensitive Personally Identifiable Information (PII), Protected Health Information (PHI), financial data, credentials, and custom patterns on web pages you choose to scan and in uploaded documents (PDF, DOCX, images). The page text and document content you scan **never leave your device** — the local detection and document pipelines have no network path at all. Optional organizational pairing (`MANAGE` mode) and optional account-linking flows are inactive by default and transmit non-content metadata only when explicitly enabled.
 
 > **Licensing:** GovernWorld Extension is source-available under **Business Source License 1.1 (BSL 1.1)** — free for personal, educational, academic, government, and internal non-commercial use (transitioning to Apache License 2.0 on November 13, 2030). Commercial hosting, resale, or competing products require a separate commercial license from Andres Chavez Ramirez (`andres@acr-logic.com`). This is not an OSI-approved open-source license. See [LICENSE](LICENSE) for details.
 
@@ -52,10 +52,12 @@ The **GovernWorld Extension** (`v0.4.0`) is a local-first browser protection too
 ## Core Capabilities
 
 1. **On-Demand Page Scanning & Visual Masking:**
-   - Scans visible page text (and report-only accessibility attributes like `aria-label`, `alt`, `placeholder`, `title`) only after explicit user action.
+   - Uses an explicit **Pinned Scan Target** picker (`#pinned-target-bar` / `#pinned-tab-select` / `#pin-current-tab-btn`, Decision D2) in the popup header so all scan, rescan, finding, badge, and overlay operations remain bound to the explicitly pinned tab ID without auto-following tab focus changes. Clearly warns when no target tab is pinned, when the pinned tab navigates to a new URL, or when the pinned target tab closes (pausing scanning and disabling Scan/Apply Masks until a new target tab is chosen).
+   - Scans visible page text across the entire document using **chunked (windowed) scanning** (`Settings → Advanced → Per-window character safeguard`, default `250,000` chars per window — a per-window memory bound, not a whole-page cut-off) and report-only accessibility attributes (`aria-label`, `alt`, `placeholder`, `title`) only after explicit user action.
+   - Displays live window/character progress in the popup while scanning (`Scanning window X of Y`) and chunks large finding sets across runtime IPC (`<= 64 KB` per message) so all findings arrive without silent drops.
    - Highlights findings, applies non-destructive visual masks in a shadow-root overlay, and copies securely redacted text (sensitive values replaced with `[REDACTED]`).
-   - Structured **possible name** findings are enriched with parsed components (prefix/first/middle/last/suffix/credentials/gender/age/DOB) for review and export; structured names are boosted before thresholding and low-structure names are not auto-selected for masking to reduce false-positive redaction.
-   - Coverage is reported honestly (including truncated/partial/no-readable-text cases). A page with no readable text is not reported as a clean scan; image-only pages can be routed into the Document Studio via detected image candidates.
+   - Structured **possible name** findings are enriched with parsed components (prefix/first/middle/last/suffix/credentials/gender/age/DOB) for review and export; structured names are boosted before thresholding, while single-token names remain review-only (unchecked by default to avoid false positives) unless **Settings → Detection → Auto-mask single names (Possible name)** (`autoMaskSingleNames`, default OFF, Decision D1) is enabled.
+   - Ends every scan with an explicit coverage statement naming all scanned windows or any incomplete/unreadable window (such as the 200-window technical ceiling, partial/truncated nodes, or no-readable-text pages), and displays a prominent popup warning banner (`#coverage-warnings-banner`) whenever unscannable regions are present — explicitly naming the cause (`incomplete_window`, `cross_origin_iframe`, `closed_shadow_root`, or `canvas_only`) alongside the count of findings in scanned regions. Never reports an incomplete scan as clean; image-only pages can be routed into the Document Studio via detected image candidates.
    - Keyboard shortcuts (rebindable at `chrome://extensions/shortcuts`): `Alt+Shift+E` opens popup, `Alt+Shift+S` scans page, `Alt+Shift+M` applies/removes masks, `Alt+Shift+P` opens side panel.
 
 2. **"Paste, Prompt & Submit" Shield (on-demand, policy-aware):**
@@ -228,7 +230,7 @@ iMessage, native apps, or the OS.
 
 ## Operating Modes: LOCAL vs. MANAGE
 
-GovernWorld Extension v0.4.0 supports two user-facing operating modes:
+GovernWorld Extension v0.4.1 supports two user-facing operating modes:
 
 ```text
 +-----------------------------------------------------------------------------------+
@@ -264,6 +266,8 @@ In **LOCAL mode**, the extension starts and runs as an autonomous, self-containe
 - **Offline Continuity:** If the coordinator is unreachable, the extension continues enforcing the last valid policy locally and never fails open.
 
 ---
+
+> **Supabase pairing:** MANAGE mode pairs through a pinned Supabase backend (fail-closed, signature-verified policy, 15-minute heartbeat and session rotation). LOCAL mode is unchanged: zero network egress. Details in [docs/supabase-pairing.md](docs/supabase-pairing.md).
 
 ## Extension Policy Updates vs. Extension Software Updates
 

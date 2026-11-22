@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 import type { DocumentPage, CountInput } from "../document-pipeline/adapter.js";
 import { BrowserDocumentPipeline } from "../document-pipeline/browser.js";
-import { MAX_DOC_PAGES } from "../document-pipeline/contract.js";
+import { DocumentCancelledError, MAX_DOC_PAGES } from "../document-pipeline/contract.js";
 import type { RedactionVerification } from "../document-pipeline/verify.js";
 import type { RedactedDocRef } from "../shared/docStore.js";
 import { MAX_DOC_BYTES, pageWindowLabel, resolvePageWindow } from "../shared/docLimits.js";
@@ -12,7 +12,19 @@ import {
   isDocumentPipelineSupported,
 } from "../shared/platform.js";
 import { loadCustomPatterns } from "../shared/customPatterns.js";
-import { docStoreFile, docReadFile, docDeleteFile, docClearFiles, markDocumentStaged, isDocumentStaged, clearStagedMarker } from "../shared/docDb.js";
+import {
+  docStoreFile,
+  docReadFile,
+  docDeleteByPrefix,
+  docClearFiles,
+  docListKeys,
+  docGetStagedStats,
+  markDocumentStaged,
+  isDocumentStaged,
+  getStagedFileKey,
+  clearStagedMarker,
+} from "../shared/docDb.js";
+import type { PurgeStagedDataResult, StagedStorageAudit } from "../shared/types.js";
 
 /**
  * Document session management for the service worker. File bytes are held in
@@ -67,6 +79,8 @@ export interface DocSession {
 }
 
 const sessions = new Map<string, DocSession>();
+const inFlightFileKeys = new Set<string>();
+const cancelledFileKeys = new Set<string>();
 let lastDocId: string | null = null;
 
 /**
@@ -78,7 +92,7 @@ let lastDocId: string | null = null;
  * `markDocumentStaged` in shared/docDb.ts.
  */
 export async function storeFile(fileKey: string, bytes: ArrayBuffer): Promise<void> {
-  await markDocumentStaged();
+  await markDocumentStaged(fileKey);
   await docStoreFile(fileKey, bytes);
 }
 
@@ -91,7 +105,7 @@ export async function readFile(fileKey: string): Promise<ArrayBuffer | null> {
 }
 
 export async function deleteFile(fileKey: string): Promise<void> {
-  await docDeleteFile(fileKey);
+  await docDeleteByPrefix(fileKey);
 }
 
 /**
@@ -218,17 +232,166 @@ export async function restoreLastSession(): Promise<DocSession | null> {
   return session;
 }
 
-export async function clearSession(docId: string): Promise<void> {
-  const session = sessions.get(docId);
-  if (session) await deleteFile(session.fileKey);
-  sessions.delete(docId);
-  if (lastDocId === docId) {
+export async function clearSession(docId?: string, fileKey?: string): Promise<void> {
+  const byId = docId ? sessions.get(docId) : undefined;
+  const byFileKey =
+    !byId && fileKey ? [...sessions.values()].find((s) => s.fileKey === fileKey) : undefined;
+  const session = byId ?? byFileKey;
+  const targetFileKey = session?.fileKey ?? fileKey;
+  const targetDocId = session?.docId ?? docId;
+
+  if (targetDocId) sessions.delete(targetDocId);
+  if (targetFileKey) {
+    await docDeleteByPrefix(targetFileKey).catch(() => undefined);
+  }
+  const persisted = await chrome.storage.session.get([LAST_DOC_KEY, LAST_SESSION_KEY]).catch(() => ({} as Record<string, unknown>));
+  const persistedSession = persisted[LAST_SESSION_KEY] as PersistedSession | undefined;
+  const matchesPersisted =
+    (targetDocId && (lastDocId === targetDocId || persisted[LAST_DOC_KEY] === targetDocId || persistedSession?.docId === targetDocId)) ||
+    (targetFileKey && persistedSession?.fileKey === targetFileKey);
+
+  if (matchesPersisted || sessions.size === 0) {
     setLastDocId(null);
     forgetPersistedSession();
+  }
+  if (sessions.size === 0 && inFlightFileKeys.size === 0) {
+    await clearStagedMarker();
   }
 }
 
 const pipeline = new BrowserDocumentPipeline();
+
+export async function cancelDocument(docId?: string, fileKey?: string): Promise<void> {
+  const byId = docId ? sessions.get(docId) : undefined;
+  const targetKey =
+    byId?.fileKey ??
+    fileKey ??
+    (inFlightFileKeys.size === 1 ? [...inFlightFileKeys][0] : undefined);
+  if (targetKey) {
+    cancelledFileKeys.add(targetKey);
+  }
+  await pipeline.cancel(targetKey).catch(() => undefined);
+  if (targetKey) {
+    inFlightFileKeys.delete(targetKey);
+  }
+  await clearSession(docId, targetKey);
+  if (targetKey) {
+    await docDeleteByPrefix(targetKey).catch(() => undefined);
+  }
+}
+
+async function collectLiveStagedRoots(): Promise<Set<string>> {
+  const liveRoots = new Set<string>();
+  for (const s of sessions.values()) liveRoots.add(s.fileKey);
+  for (const fk of inFlightFileKeys) liveRoots.add(fk);
+
+  const raw = await chrome.storage.session.get(LAST_SESSION_KEY).catch(() => ({} as Record<string, unknown>));
+  const persisted = raw[LAST_SESSION_KEY] as Partial<PersistedSession> | undefined;
+  if (persisted && typeof persisted.fileKey === "string" && persisted.fileKey) {
+    liveRoots.add(persisted.fileKey);
+  }
+  if (await hasStagedDocument()) {
+    const stagedKey = await getStagedFileKey();
+    if (stagedKey) liveRoots.add(stagedKey);
+  }
+  return liveRoots;
+}
+
+export async function purgeOrphanedStagedKeys(): Promise<number> {
+  const liveRoots = await collectLiveStagedRoots();
+
+  let keys: string[];
+  try {
+    keys = await docListKeys();
+  } catch {
+    return 0;
+  }
+
+  const orphanRoots = new Set<string>();
+  for (const k of keys) {
+    const root = k.split("::")[0] || k;
+    if (!liveRoots.has(root)) {
+      orphanRoots.add(root);
+    }
+  }
+
+  let deletedCount = 0;
+  for (const root of orphanRoots) {
+    deletedCount += await docDeleteByPrefix(root).catch(() => 0);
+  }
+  return deletedCount;
+}
+
+export async function getStagedStorageAudit(): Promise<StagedStorageAudit> {
+  const [rawStats, liveRoots] = await Promise.all([
+    docGetStagedStats().catch(() => ({ keyCount: 0, totalBytes: 0, byPrefix: {} })),
+    collectLiveStagedRoots(),
+  ]);
+
+  let liveKeys = 0;
+  let liveBytes = 0;
+  let orphanKeys = 0;
+  let orphanBytes = 0;
+
+  for (const [prefix, entry] of Object.entries(rawStats.byPrefix)) {
+    if (liveRoots.has(prefix)) {
+      liveKeys += entry.keyCount;
+      liveBytes += entry.bytes;
+    } else {
+      orphanKeys += entry.keyCount;
+      orphanBytes += entry.bytes;
+    }
+  }
+
+  return {
+    totalKeys: rawStats.keyCount,
+    totalBytes: rawStats.totalBytes,
+    liveKeys,
+    liveBytes,
+    orphanKeys,
+    orphanBytes,
+    hasInFlightJob: inFlightFileKeys.size > 0,
+  };
+}
+
+export async function purgeStagedData(options?: {
+  includeIdleSession?: boolean;
+}): Promise<PurgeStagedDataResult> {
+  const includeIdle = options?.includeIdleSession !== false;
+  const before = await docGetStagedStats().catch(() => ({ keyCount: 0, totalBytes: 0, byPrefix: {} }));
+  const protectedRoots = includeIdle ? new Set(inFlightFileKeys) : await collectLiveStagedRoots();
+
+  if (includeIdle) {
+    for (const [docId, s] of [...sessions.entries()]) {
+      if (!protectedRoots.has(s.fileKey)) {
+        sessions.delete(docId);
+      }
+    }
+    if (inFlightFileKeys.size === 0) {
+      await chrome.storage.session.remove([LAST_DOC_KEY, LAST_SESSION_KEY]).catch(() => undefined);
+      await clearStagedMarker().catch(() => undefined);
+      lastDocId = null;
+    }
+  }
+
+  let deletedKeys = 0;
+  let deletedBytes = 0;
+  for (const [prefix, entry] of Object.entries(before.byPrefix)) {
+    if (!protectedRoots.has(prefix)) {
+      const removed = await docDeleteByPrefix(prefix).catch(() => 0);
+      deletedKeys += removed;
+      if (removed > 0) deletedBytes += entry.bytes;
+    }
+  }
+
+  const remaining = await getStagedStorageAudit();
+  return {
+    deletedKeys,
+    deletedBytes,
+    preservedLiveSession: remaining.liveKeys > 0,
+    remaining,
+  };
+}
 
 function uniqueCategories(pages: DocumentPage[]): FindingCategory[] {
   const seen = new Set<FindingCategory>();
@@ -283,9 +446,14 @@ export async function previewDocument(
   // The cap is applied here, against a real total, so an offset the popup
   // computed before the document changed still yields a bounded window.
   const pageWindow = resolvePageWindow(totalPages ?? 1, pageOffset + 1);
+  cancelledFileKeys.delete(fileKey);
+  inFlightFileKeys.add(fileKey);
   let previewed: { pages: DocumentPage[]; truncated: boolean };
   try {
     await clearAllFiles();
+    if (cancelledFileKeys.has(fileKey)) {
+      throw new DocumentCancelledError();
+    }
     await storeFile(fileKey, bytes);
     previewed = await pipeline.preview({
       kind,
@@ -302,9 +470,21 @@ export async function previewDocument(
       customPatterns,
       previewKeyPrefix: fileKey,
     });
+    if (cancelledFileKeys.has(fileKey)) {
+      throw new DocumentCancelledError();
+    }
   } catch (error) {
-    await deleteFile(fileKey).catch(() => undefined);
+    await docDeleteByPrefix(fileKey).catch(() => undefined);
+    await clearStagedMarker().catch(() => undefined);
     throw error;
+  } finally {
+    inFlightFileKeys.delete(fileKey);
+  }
+  if (cancelledFileKeys.has(fileKey)) {
+    cancelledFileKeys.delete(fileKey);
+    await docDeleteByPrefix(fileKey).catch(() => undefined);
+    await clearStagedMarker().catch(() => undefined);
+    throw new DocumentCancelledError();
   }
   // Confidence thresholds are enforced server-side (here), not in the UI.
   const pages = previewed.pages.map((p) => ({

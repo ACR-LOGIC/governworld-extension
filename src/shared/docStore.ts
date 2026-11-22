@@ -183,6 +183,38 @@ export async function deleteDocBytes(key: string): Promise<void> {
   });
 }
 
+export async function listDocKeys(): Promise<string[]> {
+  const db = await openDocDb();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, "readonly");
+    const req = tx.objectStore(STORE).getAllKeys();
+    req.onsuccess = () => resolve(Array.from(req.result ?? [], (k) => String(k)));
+    req.onerror = () => reject(req.error ?? new Error("Could not list staged keys"));
+  });
+}
+
+export async function deleteDocBytesByPrefix(prefix: string): Promise<number> {
+  if (!prefix) return 0;
+  const db = await openDocDb();
+  return new Promise((resolve, reject) => {
+    let deleted = 0;
+    const tx = db.transaction(STORE, "readwrite");
+    const store = tx.objectStore(STORE);
+    const req = store.getAllKeys();
+    req.onsuccess = () => {
+      for (const rawKey of req.result ?? []) {
+        const key = String(rawKey);
+        if (key === prefix || key.startsWith(`${prefix}::`)) {
+          store.delete(rawKey);
+          deleted += 1;
+        }
+      }
+    };
+    tx.oncomplete = () => resolve(deleted);
+    tx.onerror = () => reject(tx.error ?? new Error("Could not delete the document bytes"));
+  });
+}
+
 /** Resolve a stored preview into an object URL suitable for `<img src>`. */
 export async function previewObjectUrl(key: string): Promise<string | null> {
   const bytes = await getDocBytes(key);

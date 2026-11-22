@@ -7,7 +7,18 @@ import type { AuthTokens, BootstrapResponse } from "../src/api/types.js";
 
 describe("API Authentication & Server-Side Tenant Resolution", () => {
   beforeEach(() => {
+    const localStore: Record<string, unknown> = {};
     vi.stubGlobal("fetch", vi.fn());
+    vi.stubGlobal("chrome", {
+      storage: {
+        local: {
+          get: vi.fn(async (key: string) => ({ [key]: localStore[key] })),
+          set: vi.fn(async (items: Record<string, unknown>) => {
+            Object.assign(localStore, items);
+          }),
+        },
+      },
+    });
   });
 
   afterEach(() => {

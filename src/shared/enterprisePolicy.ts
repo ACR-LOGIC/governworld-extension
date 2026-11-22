@@ -1,10 +1,15 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
-import { isRecord } from "./types.js";
+import { isRecord, type RedactionStyle } from "./types.js";
 import type { NetworkDestinationPolicy } from "./networkGuard.js";
+import type { PolicyRule } from "../api/types.js";
+import type { ManagementEnrollment } from "./managedPolicy.js";
+import { getInstallationId } from "../api/config.js";
 import {
   ALL_CATEGORIES,
   isCategory,
   isProtectionMode,
+  normalizePairingState,
+  PAIRING_STATE_KEY,
   type FindingCategory,
   type ProtectionMode,
   type Settings,
@@ -43,6 +48,22 @@ export interface EnterprisePolicy {
   networkDestinationPolicy: NetworkDestinationPolicy;
   /** Internal network allowlist for managed_intranet. */
   networkAllowlist: string[];
+  /** Optional admin-mandated per-category confidence thresholds (maximum allowed). */
+  confidenceThresholds?: Partial<Record<FindingCategory, number>>;
+  /** Optional admin-mandated Document Studio redaction style. */
+  defaultRedactionStyle?: RedactionStyle;
+  /** Optional admin-mandated Document Studio text stamp. */
+  defaultStampText?: string;
+  /** Optional admin-mandated single-token name masking setting. */
+  autoMaskSingleNames?: boolean;
+  /** Optional admin-mandated page character scan cap. */
+  maxVisibleChars?: number;
+  /** Optional admin-mandated per-node character scan cap. */
+  maxNodeChars?: number;
+  /** Optional admin-mandated custom detection rules. */
+  customRules?: PolicyRule[];
+  /** True when an administrator has explicitly unlocked this paired seat for local overrides. */
+  seatUnlocked?: boolean;
   /** Optional metadata from local office coordinator when enrolled via desktop app */
   coordinatorOrigin?: string;
   organizationName?: string;
@@ -116,6 +137,69 @@ export function parseEnterprisePolicy(raw: unknown): EnterprisePolicy {
   const organizationName = typeof raw.organizationName === "string" ? raw.organizationName : undefined;
   const policyVersion = typeof raw.policyVersion === "number" ? raw.policyVersion : undefined;
 
+  let confidenceThresholds: Partial<Record<FindingCategory, number>> | undefined;
+  if (raw.confidenceThresholds !== undefined) {
+    if (!isRecord(raw.confidenceThresholds)) return { ...FAIL_CLOSED_ENTERPRISE_POLICY };
+    const parsedThresholds: Partial<Record<FindingCategory, number>> = {};
+    for (const [k, v] of Object.entries(raw.confidenceThresholds)) {
+      if (!isCategory(k) || typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 1) {
+        return { ...FAIL_CLOSED_ENTERPRISE_POLICY };
+      }
+      parsedThresholds[k] = v;
+    }
+    confidenceThresholds = parsedThresholds;
+  }
+
+  let defaultRedactionStyle: RedactionStyle | undefined;
+  if (raw.defaultRedactionStyle !== undefined) {
+    if (raw.defaultRedactionStyle !== "blackout" && raw.defaultRedactionStyle !== "whiteout" && raw.defaultRedactionStyle !== "stamp") {
+      return { ...FAIL_CLOSED_ENTERPRISE_POLICY };
+    }
+    defaultRedactionStyle = raw.defaultRedactionStyle;
+  }
+
+  let defaultStampText: string | undefined;
+  if (raw.defaultStampText !== undefined) {
+    if (typeof raw.defaultStampText !== "string" || raw.defaultStampText.trim().length === 0 || raw.defaultStampText.length > 50) {
+      return { ...FAIL_CLOSED_ENTERPRISE_POLICY };
+    }
+    defaultStampText = raw.defaultStampText.trim();
+  }
+
+  let autoMaskSingleNames: boolean | undefined;
+  if (raw.autoMaskSingleNames !== undefined) {
+    if (typeof raw.autoMaskSingleNames !== "boolean") return { ...FAIL_CLOSED_ENTERPRISE_POLICY };
+    autoMaskSingleNames = raw.autoMaskSingleNames;
+  }
+
+  let maxVisibleChars: number | undefined;
+  if (raw.maxVisibleChars !== undefined) {
+    if (typeof raw.maxVisibleChars !== "number" || !Number.isFinite(raw.maxVisibleChars) || raw.maxVisibleChars < 100) {
+      return { ...FAIL_CLOSED_ENTERPRISE_POLICY };
+    }
+    maxVisibleChars = raw.maxVisibleChars;
+  }
+
+  let maxNodeChars: number | undefined;
+  if (raw.maxNodeChars !== undefined) {
+    if (typeof raw.maxNodeChars !== "number" || !Number.isFinite(raw.maxNodeChars) || raw.maxNodeChars < 10) {
+      return { ...FAIL_CLOSED_ENTERPRISE_POLICY };
+    }
+    maxNodeChars = raw.maxNodeChars;
+  }
+
+  let customRules: PolicyRule[] | undefined;
+  if (raw.customRules !== undefined) {
+    if (!Array.isArray(raw.customRules)) return { ...FAIL_CLOSED_ENTERPRISE_POLICY };
+    customRules = raw.customRules as PolicyRule[];
+  }
+
+  let seatUnlocked: boolean | undefined;
+  if (raw.seatUnlocked !== undefined) {
+    if (typeof raw.seatUnlocked !== "boolean") return { ...FAIL_CLOSED_ENTERPRISE_POLICY };
+    seatUnlocked = raw.seatUnlocked;
+  }
+
   return {
     managed: true,
     valid: true,
@@ -124,6 +208,14 @@ export function parseEnterprisePolicy(raw: unknown): EnterprisePolicy {
     enforcedCategories: enforced,
     networkDestinationPolicy: networkPolicy,
     networkAllowlist: allowlist,
+    ...(confidenceThresholds ? { confidenceThresholds } : {}),
+    ...(defaultRedactionStyle ? { defaultRedactionStyle } : {}),
+    ...(defaultStampText !== undefined ? { defaultStampText } : {}),
+    ...(autoMaskSingleNames !== undefined ? { autoMaskSingleNames } : {}),
+    ...(maxVisibleChars !== undefined ? { maxVisibleChars } : {}),
+    ...(maxNodeChars !== undefined ? { maxNodeChars } : {}),
+    ...(customRules ? { customRules } : {}),
+    ...(seatUnlocked !== undefined ? { seatUnlocked } : {}),
     ...(coordinatorOrigin ? { coordinatorOrigin } : {}),
     ...(organizationName ? { organizationName } : {}),
     ...(policyVersion ? { policyVersion } : {}),
@@ -132,8 +224,13 @@ export function parseEnterprisePolicy(raw: unknown): EnterprisePolicy {
 
 export const STORAGE_KEY_COORDINATOR_POLICY = "gw_coordinator_policy";
 export const STORAGE_KEY_MANAGED_POLICY = "gw_applied_managed_policy";
+const STORAGE_KEY_ENROLLMENT = "gw_management_enrollment";
 
-export async function loadEnterprisePolicy(): Promise<EnterprisePolicy> {
+export interface LoadEnterprisePolicyOptions {
+  trustedKey?: JsonWebKey | CryptoKey;
+}
+
+export async function loadEnterprisePolicy(options?: LoadEnterprisePolicyOptions): Promise<EnterprisePolicy> {
   try {
     // 1. Check GPO / OS managed storage first (highest authority)
     if (typeof chrome !== "undefined" && chrome.storage?.managed) {
@@ -146,52 +243,90 @@ export async function loadEnterprisePolicy(): Promise<EnterprisePolicy> {
     // Managed storage unreadable or not configured
   }
 
-  try {
-    // 2. Check signed administrator policy received from management infrastructure
-    if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      const stored = await chrome.storage.local.get(STORAGE_KEY_MANAGED_POLICY);
-      const applied = stored[STORAGE_KEY_MANAGED_POLICY];
-      if (isRecord(applied) && isRecord(applied.settings)) {
-        const s = applied.settings;
-        return {
-          managed: true,
-          valid: true,
-          protectionMode: isProtectionMode(s.protectionMode) ? s.protectionMode : "always-on",
-          userCanDisable: s.userCanDisable === true,
-          enforcedCategories: Array.isArray(s.enforcedCategories)
-            ? (s.enforcedCategories as unknown[]).filter(isCategory)
-            : [...ALL_CATEGORIES],
-          networkDestinationPolicy:
-            s.networkDestinationPolicy === "managed_intranet" || s.networkDestinationPolicy === "disabled"
-              ? s.networkDestinationPolicy
-              : "public_only",
-          networkAllowlist: Array.isArray(s.networkAllowlist) ? (s.networkAllowlist as string[]) : [],
-          coordinatorOrigin: typeof applied.organization_id === "string" ? applied.organization_id : undefined,
-          organizationName:
-            typeof applied.organization_name === "string"
-              ? applied.organization_name
-              : typeof applied.organization_id === "string"
-                ? applied.organization_id
-                : undefined,
-          policyVersion: typeof applied.policy_version === "number" ? applied.policy_version : undefined,
-        };
-      }
-    }
-  } catch {
-    // Local storage unreadable
+  if (typeof chrome === "undefined" || !chrome.storage?.local) {
+    return { ...NO_ENTERPRISE_POLICY };
   }
 
+  let stored: Record<string, unknown>;
   try {
-    // 3. Check local Office Manager coordinator policy in local storage
-    if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      const stored = await chrome.storage.local.get(STORAGE_KEY_COORDINATOR_POLICY);
-      const coordPolicy = stored[STORAGE_KEY_COORDINATOR_POLICY];
-      if (coordPolicy && typeof coordPolicy === "object") {
-        return parseEnterprisePolicy(coordPolicy);
-      }
-    }
+    stored = await chrome.storage.local.get([
+      STORAGE_KEY_MANAGED_POLICY,
+      STORAGE_KEY_ENROLLMENT,
+      PAIRING_STATE_KEY,
+      STORAGE_KEY_COORDINATOR_POLICY,
+    ]);
   } catch {
-    // Local storage unreadable
+    // Fail closed if local extension storage fails while checking policy state
+    return { ...FAIL_CLOSED_ENTERPRISE_POLICY };
+  }
+
+  const applied = stored[STORAGE_KEY_MANAGED_POLICY];
+  const coordPolicy = stored[STORAGE_KEY_COORDINATOR_POLICY];
+  const pairingState = normalizePairingState(stored[PAIRING_STATE_KEY]);
+
+  // 2. Cryptographically re-verify signed administrator policy before enforcing
+  if (applied !== undefined && applied !== null) {
+    try {
+      let enrollment: ManagementEnrollment | null = null;
+      const rawEnrollment = stored[STORAGE_KEY_ENROLLMENT];
+      if (
+        isRecord(rawEnrollment) &&
+        typeof rawEnrollment.organization_id === "string" &&
+        rawEnrollment.organization_id.trim().length > 0 &&
+        typeof rawEnrollment.employee_id === "string" &&
+        rawEnrollment.employee_id.trim().length > 0 &&
+        typeof rawEnrollment.device_id === "string" &&
+        rawEnrollment.device_id.trim().length > 0
+      ) {
+        enrollment = rawEnrollment as unknown as ManagementEnrollment;
+      } else if (
+        (pairingState.status === "paired" || pairingState.status === "paired_offline") &&
+        pairingState.organisation_id &&
+        pairingState.seat_id
+      ) {
+        const deviceId = await getInstallationId();
+        enrollment = {
+          organization_id: pairingState.organisation_id,
+          ...(pairingState.organisation_name ? { organization_name: pairingState.organisation_name } : {}),
+          employee_id: pairingState.seat_id,
+          device_id: deviceId,
+          enrolled_at: new Date(0).toISOString(),
+          management_mode: "MANAGE",
+        };
+      }
+
+      if (!enrollment) {
+        return { ...FAIL_CLOSED_ENTERPRISE_POLICY };
+      }
+
+      const { verifyAndValidateManagedPolicy, managedPolicyToEnterprisePolicy } = await import("./managedPolicy.js");
+      const check = await verifyAndValidateManagedPolicy(
+        applied,
+        enrollment,
+        null,
+        Date.now(),
+        options?.trustedKey,
+      );
+      if (!check.valid || !check.policy) {
+        return { ...FAIL_CLOSED_ENTERPRISE_POLICY };
+      }
+
+      const seatUnlocked =
+        (pairingState.status === "paired" || pairingState.status === "paired_offline") &&
+        pairingState.unlocked === true;
+
+      return {
+        ...managedPolicyToEnterprisePolicy(check.policy),
+        ...(seatUnlocked ? { seatUnlocked: true } : {}),
+      };
+    } catch {
+      return { ...FAIL_CLOSED_ENTERPRISE_POLICY };
+    }
+  }
+
+  // 3. Reject unsigned/legacy coordinator policy fail-closed
+  if (coordPolicy !== undefined && coordPolicy !== null) {
+    return { ...FAIL_CLOSED_ENTERPRISE_POLICY };
   }
 
   return { ...NO_ENTERPRISE_POLICY };
@@ -218,6 +353,16 @@ export function resolveEffectiveProtection(
   settings: Settings,
   policy: EnterprisePolicy
 ): EffectiveProtection {
+  if (policy.managed && !policy.valid) {
+    return {
+      mode: FAIL_CLOSED_ENTERPRISE_POLICY.protectionMode,
+      locked: true,
+      managed: true,
+      enabledCategories: [...ALL_CATEGORIES],
+      lockedCategories: [...ALL_CATEGORIES],
+    };
+  }
+
   const enforced = new Set<FindingCategory>(policy.enforcedCategories);
   const enabled = new Set<FindingCategory>([...settings.enabledCategories, ...enforced]);
   if (!policy.managed) {
@@ -229,6 +374,17 @@ export function resolveEffectiveProtection(
       lockedCategories: [],
     };
   }
+
+  if (policy.seatUnlocked === true) {
+    return {
+      mode: settings.protectionMode,
+      locked: false,
+      managed: true,
+      enabledCategories: [...settings.enabledCategories],
+      lockedCategories: [],
+    };
+  }
+
   if (!policy.userCanDisable) {
     // Locked: the admin mode is a floor, never a ceiling. An admin "off" is
     // explicit and wins outright; otherwise the wider of the admin and user

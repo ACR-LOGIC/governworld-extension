@@ -2,14 +2,19 @@
 import { detect, maskValue, placeholderLabelFor } from "./detect.js";
 import { showToast } from "./toast.js";
 import type { RawMatch } from "./detect.js";
-import { DEFAULT_SETTINGS, normalizeSettings } from "../shared/settings.js";
+import { DEFAULT_SETTINGS, normalizeSettings, PAIRING_STATE_KEY } from "../shared/settings.js";
 import type { FindingCategory, ProtectionMode, Settings } from "../shared/settings.js";
 import {
+  FAIL_CLOSED_ENTERPRISE_POLICY,
+  loadEnterprisePolicy,
   NO_ENTERPRISE_POLICY,
-  parseEnterprisePolicy,
   resolveEffectiveProtection,
+  STORAGE_KEY_COORDINATOR_POLICY,
+  STORAGE_KEY_MANAGED_POLICY,
   type EnterprisePolicy,
 } from "../shared/enterprisePolicy.js";
+import { STORAGE_KEY_ENROLLMENT } from "../shared/managedPolicy.js";
+import { applySettingsWithPolicy } from "../shared/policyOwnership.js";
 import type { CustomPattern } from "../shared/customPatterns.js";
 import { recordAudit } from "../shared/audit.js";
 import { evaluateSitePolicies, findMatchingFullSiteBlockPolicy, parseSitePolicy, SITE_POLICIES_KEY, type SitePolicy } from "../shared/policyStudio.js";
@@ -1055,6 +1060,7 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
   let cachedSettings: Settings = opts?.initialSettings
     ? normalizeSettings(opts.initialSettings)
     : { ...DEFAULT_SETTINGS };
+  let effectiveSettings: Settings = cachedSettings;
   let cachedCustomPatterns: CustomPattern[] = [];
   let cachedSitePolicies: SitePolicy[] = opts?.initialSitePolicies ? [...opts.initialSitePolicies] : [];
   let cachedPolicy: EnterprisePolicy = { ...NO_ENTERPRISE_POLICY };
@@ -1078,25 +1084,42 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
   };
 
   const recompute = (): void => {
-    const eff = resolveEffectiveProtection(cachedSettings, cachedPolicy);
+    const enforced = cachedPolicy.managed
+      ? applySettingsWithPolicy(cachedSettings, {}, cachedPolicy).settings
+      : cachedSettings;
+    effectiveSettings = enforced;
+    const eff = resolveEffectiveProtection(enforced, cachedPolicy);
     cachedMode = eff.mode;
     cachedEnabledCategories = eff.enabledCategories;
   };
 
-  const refreshManaged = async (): Promise<void> => {
+  const refreshPolicy = async (): Promise<void> => {
     try {
-      if (typeof chrome !== "undefined" && chrome.storage?.managed) {
-        const raw = await chrome.storage.managed.get(null);
-        cachedPolicy = parseEnterprisePolicy(raw && Object.keys(raw).length > 0 ? raw : null);
+      if (typeof chrome !== "undefined" && (chrome.storage?.managed || chrome.storage?.local)) {
+        if (!globalThis.crypto?.subtle && chrome.storage?.local) {
+          const rawLocal = await chrome.storage.local.get([
+            STORAGE_KEY_MANAGED_POLICY,
+            STORAGE_KEY_COORDINATOR_POLICY,
+          ]);
+          if (
+            rawLocal[STORAGE_KEY_MANAGED_POLICY] !== undefined ||
+            rawLocal[STORAGE_KEY_COORDINATOR_POLICY] !== undefined
+          ) {
+            cachedPolicy = { ...FAIL_CLOSED_ENTERPRISE_POLICY };
+            recompute();
+            return;
+          }
+        }
+        cachedPolicy = await loadEnterprisePolicy();
         recompute();
       }
     } catch {
-      // Managed storage unreadable: keep the last resolved policy rather than
+      // Storage unreadable: keep the last resolved policy rather than
       // flapping enforcement on a transient storage fault.
     }
   };
 
-  // Load settings and custom patterns asynchronously from extension storage if available
+  // Load settings, custom patterns, and verified enterprise policy before recomputing
   const loadStored = async () => {
     try {
       if (typeof chrome !== "undefined" && chrome.storage?.local) {
@@ -1115,18 +1138,18 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
           }
           cachedSitePolicies = valid;
         }
-        recompute();
-        checkFullSiteBlock();
       }
     } catch {
       // Fall back to defaults
     }
-    await refreshManaged();
+    await refreshPolicy();
+    recompute();
+    checkFullSiteBlock();
   };
 
   void loadStored();
 
-  // Listen for real-time settings changes
+  // Listen for real-time settings and policy changes
   const storageListener = (changes: { [key: string]: chrome.storage.StorageChange }, areaName: string) => {
     if (areaName === "local") {
       if (changes.settings) {
@@ -1145,8 +1168,16 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
         cachedSitePolicies = valid;
         checkFullSiteBlock();
       }
+      if (
+        changes[STORAGE_KEY_MANAGED_POLICY] ||
+        changes[STORAGE_KEY_ENROLLMENT] ||
+        changes[STORAGE_KEY_COORDINATOR_POLICY] ||
+        changes[PAIRING_STATE_KEY]
+      ) {
+        void refreshPolicy();
+      }
     } else if (areaName === "managed") {
-      void refreshManaged();
+      void refreshPolicy();
     }
   };
 
@@ -1262,9 +1293,9 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
         complianceReason: complianceEval.reason,
         onSanitize: () => {
           isHandlingEvent = false;
-          const sanitized = sanitizePastedText(text, matches);
+          const sanitized = sanitizePastedText(text, matches, effectiveSettings.defaultStampText);
           insertTextIntoElement(target, sanitized);
-          if (cachedSettings.notificationPrefs?.toastEnabled && cachedSettings.notificationPrefs?.notifyPasteInterception) {
+          if (effectiveSettings.notificationPrefs?.toastEnabled && effectiveSettings.notificationPrefs?.notifyPasteInterception) {
             showToast({
               title: "GovernWorld — Paste Shield",
               message: "Sanitized text pasted safely.",

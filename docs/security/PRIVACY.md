@@ -84,7 +84,7 @@ The specific detection capabilities may change as the Extension is updated.
 
 **Local first, by default.** All detection, classification, and redaction runs on your device. The extension does not transmit your scanned page text, document contents, or page images anywhere unless you explicitly enable cloud analysis, and cloud analysis is disabled by default.
 
-**Raw content handling.** The Extension does not persist raw scan text or page snapshots. When you open a document, its bytes are held in memory and in the Extension's private IndexedDB store only while you review or redact it. The bytes are deleted when you clear the document, complete a redaction, clear extension data, or start the browser. They are not deleted merely because the Extension's service worker restarts, which happens routinely: an MV3 service worker is suspended when idle and restarted on the next event, and clearing the document on every restart would destroy a file you were still reviewing. Raw document bytes are not sent to logs, telemetry, analytics, or error reporting.
+**Raw content handling.** The Extension does not persist raw scan text or page snapshots. When you open a document, its bytes and derived per-page preview/image keys are held in memory and in the Extension's private IndexedDB store only while you review or redact it. Cancelling aborts in-flight rendering/OCR and deletes the source key together with every derived `::page::`, `::preview::`, and `::redacted::` key; **Start Over**, completed redaction, clear extension data, and browser startup remove all derived keys for that document. Active in-session documents are not deleted merely because the Extension's service worker restarts, which happens routinely under MV3, though orphaned staged keys without a live session are purged on service-worker startup. Raw document bytes are not sent to logs, telemetry, analytics, or error reporting.
 
 The Extension also stores only the following non-content data:
 
@@ -404,3 +404,7 @@ Privacy contact: privacy@acrlogic.com
 Website: governworld.acrlogic.com
 Privacy Policy: https://governworld.acrlogic.com/chrome-extension-privacy
 Support: https://github.com/ACR-LOGIC/governworld-extension/issues
+
+## Supabase pairing (MANAGE mode only)
+
+In LOCAL mode the extension makes no network requests. If an organisation pairs a seat, the extension contacts only the pinned GovernWorld Supabase project to redeem the pairing code, fetch signed policy and send a 15-minute metadata heartbeat (install UUID, browser and extension versions, policy version, health status). It never sends browsing history, URLs, page text, form data, keystrokes or credentials. See `docs/supabase-pairing.md`.

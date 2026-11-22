@@ -11,12 +11,12 @@
 import { GovernWorldApiClient } from "./client.js";
 import type { PolicyPackage, PolicyRule } from "./types.js";
 import { PolicyTelemetry, SecurityTelemetry } from "../shared/telemetry.js";
-import { TRUSTED_POLICY_PUBLIC_KEY_JWK } from "./config.js";
+import { isTrustedPolicyPublicKeyConfigured, TRUSTED_POLICY_PUBLIC_KEY_JWK } from "./config.js";
 
 const STORAGE_KEY_CACHED_POLICY = "gw_cached_policy";
 
 export interface VerifyPolicyIntegrityOptions {
-  /** When true, rejects packages that do not carry a valid cryptographic signature. */
+  /** Signatures are always required in production; retained for interface compatibility. */
   requireSignature?: boolean;
   /** Pinned/trusted Ed25519 public key JWK to verify against. */
   trustedPublicKeyJwk?: JsonWebKey;
@@ -59,6 +59,9 @@ export function canonicalizePolicyPackageForSigning(pkg: PolicyPackage): string 
  * Computes the SHA-256 hex digest of a string using Web Crypto API.
  */
 export async function computeSha256Hex(content: string): Promise<string> {
+  if (typeof crypto === "undefined" || !crypto.subtle) {
+    throw new Error("WebCrypto SubtleCrypto is unavailable for SHA-256 computation.");
+  }
   const encoder = new TextEncoder();
   const data = encoder.encode(content);
   const hashBuffer = await crypto.subtle.digest("SHA-256", data);
@@ -141,11 +144,11 @@ export async function verifyPolicySignatureEd25519(
   if (pkg.signature_algorithm && pkg.signature_algorithm !== "Ed25519") return false;
 
   const keySource = trustedKey ?? TRUSTED_POLICY_PUBLIC_KEY_JWK;
-  if (!keySource) return false;
-  if (!(keySource instanceof CryptoKey)) {
-    if (keySource.kty !== "OKP" || (keySource.crv && keySource.crv !== "Ed25519")) {
-      return false;
-    }
+  if (!isTrustedPolicyPublicKeyConfigured(keySource)) {
+    return false;
+  }
+  if (typeof crypto === "undefined" || !crypto.subtle) {
+    return false;
   }
 
   const canonical = canonicalizePolicyPackageForSigning(pkg);
@@ -169,8 +172,8 @@ export async function verifyPolicySignatureEd25519(
 }
 
 /**
- * Validates the cryptographic hash, expiration, and optional/required Ed25519
- * signature of a policy package.
+ * Validates the expiration, cryptographic SHA-256 hash, and mandatory Ed25519
+ * signature of a policy package (fail-closed; unsigned packages are always rejected).
  */
 export async function verifyPolicyIntegrity(
   pkg: PolicyPackage,
@@ -181,17 +184,26 @@ export async function verifyPolicyIntegrity(
     return { valid: false, reason: "Malformed policy structure." };
   }
 
-  // Check expiration if provided
-  if (pkg.expires_at) {
-    const expiresMs = new Date(pkg.expires_at).getTime();
-    if (!isNaN(expiresMs) && nowMs > expiresMs) {
-      return { valid: false, reason: `Policy expired at ${pkg.expires_at}.` };
-    }
+  // Enforce mandatory, valid expiration timestamp (fail-closed on missing/NaN)
+  if (typeof pkg.expires_at !== "string" || pkg.expires_at.trim().length === 0) {
+    return { valid: false, reason: "Missing policy expiration timestamp." };
+  }
+  const expiresMs = Date.parse(pkg.expires_at);
+  if (!Number.isFinite(expiresMs)) {
+    return { valid: false, reason: "Malformed policy expiration timestamp." };
+  }
+  if (nowMs > expiresMs) {
+    return { valid: false, reason: `Policy expired at ${pkg.expires_at}.` };
   }
 
   // Compute and compare SHA-256 hash
-  const canonical = canonicalizePolicyRules(pkg.rules);
-  const computedHash = await computeSha256Hex(canonical);
+  let computedHash: string;
+  try {
+    const canonical = canonicalizePolicyRules(pkg.rules);
+    computedHash = await computeSha256Hex(canonical);
+  } catch {
+    return { valid: false, reason: "Integrity check failed: cryptographic hash verification unavailable." };
+  }
 
   if (computedHash.toLowerCase() !== pkg.policy_hash.toLowerCase()) {
     SecurityTelemetry.record("policy_hash_mismatch", {
@@ -204,9 +216,9 @@ export async function verifyPolicyIntegrity(
     };
   }
 
-  // Verify Ed25519 signature when present or required
-  const hasSignature = typeof pkg.policy_signature === "string" && pkg.policy_signature.length > 0;
-  if (options?.requireSignature && !hasSignature) {
+  // Enforce Ed25519 signature unconditionally (no opt-out)
+  const hasSignature = typeof pkg.policy_signature === "string" && pkg.policy_signature.trim().length > 0;
+  if (!hasSignature) {
     SecurityTelemetry.record("policy_signature_missing", {
       policyId: pkg.policy_id,
       policyVersion: pkg.policy_version,
@@ -217,34 +229,25 @@ export async function verifyPolicyIntegrity(
     };
   }
 
-  let signatureVerified = false;
-  if (hasSignature || options?.trustedPublicKeyJwk) {
-    if (!hasSignature) {
-      return {
-        valid: false,
-        reason: "Signature check failed: Trusted public key provided but policy package is unsigned.",
-      };
-    }
-    const sigOk = await verifyPolicySignatureEd25519(pkg, options?.trustedPublicKeyJwk);
-    if (!sigOk) {
-      SecurityTelemetry.record("policy_signature_invalid", {
-        policyId: pkg.policy_id,
-        policyVersion: pkg.policy_version,
-      });
-      return {
-        valid: false,
-        reason: "Signature check failed: Invalid Ed25519 policy signature.",
-      };
-    }
-    signatureVerified = true;
-    PolicyTelemetry.record("policy_signature_verified", {
+  const sigOk = await verifyPolicySignatureEd25519(pkg, options?.trustedPublicKeyJwk);
+  if (!sigOk) {
+    SecurityTelemetry.record("policy_signature_invalid", {
       policyId: pkg.policy_id,
       policyVersion: pkg.policy_version,
-      algorithm: pkg.signature_algorithm ?? "Ed25519",
     });
+    return {
+      valid: false,
+      reason: "Signature check failed: Invalid Ed25519 policy signature.",
+    };
   }
 
-  return { valid: true, signatureVerified };
+  PolicyTelemetry.record("policy_signature_verified", {
+    policyId: pkg.policy_id,
+    policyVersion: pkg.policy_version,
+    algorithm: pkg.signature_algorithm ?? "Ed25519",
+  });
+
+  return { valid: true, signatureVerified: true };
 }
 
 /**

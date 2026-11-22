@@ -1,10 +1,25 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
-import { validateMessage, type ImageCandidate } from "../shared/messages.js";
+import { validateMessage, chunkFindingsByByteBudget, DEFAULT_FINDINGS_CHUNK_BYTES, type ImageCandidate } from "../shared/messages.js";
 import { loadSettings, saveSettings, isCloudAllowed, isAllowedGatewayOrigin, meetsThreshold } from "../shared/settings.js";
 import { recordAudit, exportSignedAuditLog, handlePopupRecordAudit } from "./auditService.js";
 import type { Settings } from "../shared/settings.js";
-import type { DocKind, PopupState, ScanMode, WorkerMessage, ExtensionMessage, Finding, FindingCategory, PopupFromWorker, Rect, RedactionOptions, ScanSettingsMessage, ScanCoverageStatus } from "../shared/types.js";
-import { previewDocument, redactDocument, countDocument, restoreLastSession, clearSession as clearDocSession, clearAllFiles, storeFile, deleteFile, hasStagedDocument } from "./documents.js";
+import { MAX_MESSAGE_BYTES, type DocKind, type PopupState, type ScanMode, type WorkerMessage, type ExtensionMessage, type Finding, type FindingCategory, type PopupFromWorker, type Rect, type RedactionOptions, type ScanSettingsMessage, type ScanCoverageStatus, type IncompleteWindowInfo } from "../shared/types.js";
+import {
+  previewDocument,
+  redactDocument,
+  countDocument,
+  restoreLastSession,
+  clearSession as clearDocSession,
+  cancelDocument as cancelDocSession,
+  purgeOrphanedStagedKeys,
+  getStagedStorageAudit,
+  purgeStagedData,
+  clearAllFiles,
+  storeFile,
+  deleteFile,
+  hasStagedDocument,
+} from "./documents.js";
+import { DocumentCancelledError } from "../document-pipeline/contract.js";
 import { analyzeExamples, testPattern } from "../shared/wizardAnalyzer.js";
 import { captureImage, stageCapturedImage, ImageCaptureError } from "./captureImage.js";
 import {
@@ -100,6 +115,8 @@ function buildScanSettingsMessage(
             ? 15 * 60 * 1000
             : 30 * 60 * 1000,
     confidenceThresholds: settings.confidenceThresholds,
+    autoMaskSingleNames: settings.autoMaskSingleNames,
+    medicalDictionaryEnabled: settings.medicalDictionaryEnabled,
   };
 }
 
@@ -125,12 +142,17 @@ interface SessionState {
    */
   stats: {
     visibleChars: number;
+    attrChars?: number;
     truncated: boolean;
+    windowsScanned?: number;
+    windowsTotal?: number;
+    incompleteWindows?: IncompleteWindowInfo[];
     findingsTruncated?: boolean;
     totalFindings?: number;
     imageCandidates?: ImageCandidate[];
     coverageStatus?: ScanCoverageStatus;
     deferredMediaCount?: number;
+    coverageWarnings?: import("../shared/types.js").CoverageWarning[];
   };
   scannedAt: number;
   scanning: boolean;
@@ -146,6 +168,16 @@ function pushMaskHistory(state: SessionState, appliedIds: string[]): SessionStat
 }
 
 const pendingScans = new Map<number, { requestId: string; sessionId: string; timer: ReturnType<typeof setTimeout> }>();
+const pendingResultChunks = new Map<
+  string,
+  { tabId: number; sessionId: string; totalChunks: number; chunks: Map<number, Finding[]> }
+>();
+
+function clearPendingChunksForTab(tabId: number): void {
+  for (const [key, entry] of pendingResultChunks) {
+    if (entry.tabId === tabId) pendingResultChunks.delete(key);
+  }
+}
 
 function sessionKey(tabId: number): string {
   return `${SESSION_KEY_PREFIX}${tabId}`;
@@ -171,6 +203,10 @@ function isSessionState(value: unknown): value is SessionState {
     v.stats !== null &&
     typeof v.stats.visibleChars === "number" &&
     typeof v.stats.truncated === "boolean" &&
+    (v.stats.windowsScanned === undefined || (typeof v.stats.windowsScanned === "number" && Number.isSafeInteger(v.stats.windowsScanned) && v.stats.windowsScanned >= 0)) &&
+    (v.stats.windowsTotal === undefined || (typeof v.stats.windowsTotal === "number" && Number.isSafeInteger(v.stats.windowsTotal) && v.stats.windowsTotal >= 0)) &&
+    (v.stats.incompleteWindows === undefined || Array.isArray(v.stats.incompleteWindows)) &&
+    (v.stats.coverageWarnings === undefined || Array.isArray(v.stats.coverageWarnings)) &&
     (v.stats.findingsTruncated === undefined || typeof v.stats.findingsTruncated === "boolean") &&
     (v.stats.totalFindings === undefined ||
       (typeof v.stats.totalFindings === "number" &&
@@ -561,7 +597,187 @@ export async function getActiveTab(): Promise<chrome.tabs.Tab | undefined> {
   return allTabs.find((t) => t.active && isScannableTab(t));
 }
 
+const PINNED_TARGET_KEY = "pinnedScanTarget";
+
+interface StoredPinnedTarget {
+  status: import("../shared/types.js").PinnedTargetStatus;
+  pinnedTabId: number | null;
+  title?: string;
+  url?: string;
+  domain?: string;
+  scannedUrl?: string;
+  closedTitle?: string;
+  closedDomain?: string;
+}
+
+let lastPinnedTargetInfo: import("../shared/types.js").PinnedTargetInfo | undefined;
+
+function tabDomain(url?: string): string {
+  if (!url) return "";
+  try {
+    return new URL(url).host;
+  } catch {
+    return "";
+  }
+}
+
+function tabDisplayTitle(tab: chrome.tabs.Tab | undefined, fallback?: string): string {
+  const rawTitle = typeof tab?.title === "string" ? tab.title.trim() : "";
+  if (rawTitle.length > 0) return rawTitle.slice(0, 140);
+  const host = tabDomain(tab?.url);
+  if (host.length > 0) return host;
+  if (fallback && fallback.trim().length > 0) return fallback.trim().slice(0, 140);
+  return tab?.id ? `Tab #${tab.id}` : "Untitled tab";
+}
+
+function isStoredPinnedTarget(value: unknown): value is StoredPinnedTarget {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Partial<StoredPinnedTarget>;
+  if (v.status !== "unpinned" && v.status !== "pinned" && v.status !== "navigated" && v.status !== "closed") {
+    return false;
+  }
+  if (v.pinnedTabId !== null && (typeof v.pinnedTabId !== "number" || !Number.isSafeInteger(v.pinnedTabId) || v.pinnedTabId <= 0)) {
+    return false;
+  }
+  return true;
+}
+
+async function readPinnedTarget(): Promise<StoredPinnedTarget | null> {
+  try {
+    const raw: unknown = await chrome.storage.session.get(PINNED_TARGET_KEY);
+    if (typeof raw !== "object" || raw === null) return null;
+    const value = (raw as Record<string, unknown>)[PINNED_TARGET_KEY];
+    return isStoredPinnedTarget(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writePinnedTarget(target: StoredPinnedTarget): Promise<void> {
+  try {
+    await chrome.storage.session.set({ [PINNED_TARGET_KEY]: target });
+  } catch {
+    // Best-effort session storage persistence
+  }
+}
+
+async function listScannableTabs(): Promise<import("../shared/types.js").ScannableTabSummary[]> {
+  try {
+    const allTabs = await chrome.tabs.query({});
+    const out: import("../shared/types.js").ScannableTabSummary[] = [];
+    for (const t of allTabs) {
+      if (!isScannableTab(t) || !t.id || !t.url) continue;
+      out.push({
+        tabId: t.id,
+        title: tabDisplayTitle(t),
+        url: t.url,
+        domain: tabDomain(t.url),
+        active: Boolean(t.active),
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+async function refreshPinnedTargetInfo(options?: { autoPinInitialIfUnset?: boolean }): Promise<import("../shared/types.js").PinnedTargetInfo> {
+  const [availableTabs, initialStored] = await Promise.all([listScannableTabs(), readPinnedTarget()]);
+  let stored = initialStored;
+
+  if (!stored && options?.autoPinInitialIfUnset) {
+    const initialTab = await getActiveTab();
+    if (initialTab?.id && initialTab.url) {
+      stored = {
+        status: "pinned",
+        pinnedTabId: initialTab.id,
+        title: tabDisplayTitle(initialTab),
+        url: initialTab.url,
+        domain: tabDomain(initialTab.url),
+      };
+      await writePinnedTarget(stored);
+    }
+  }
+
+  if (stored && stored.pinnedTabId !== null) {
+    let liveTab: chrome.tabs.Tab | undefined;
+    try {
+      liveTab = await chrome.tabs.get(stored.pinnedTabId);
+    } catch {
+      liveTab = undefined;
+    }
+    if (!liveTab || !isScannableTab(liveTab)) {
+      stored = {
+        status: "closed",
+        pinnedTabId: null,
+        closedTitle: stored.title,
+        closedDomain: stored.domain,
+      };
+      await writePinnedTarget(stored);
+    } else {
+      const nextUrl = liveTab.url ?? stored.url;
+      const nextTitle = tabDisplayTitle(liveTab, stored.title);
+      const nextDomain = tabDomain(nextUrl) || stored.domain;
+      const navigated =
+        stored.status === "navigated" ||
+        Boolean(stored.scannedUrl && nextUrl && nextUrl !== stored.scannedUrl);
+      const nextStatus: import("../shared/types.js").PinnedTargetStatus = navigated ? "navigated" : "pinned";
+      if (
+        nextStatus !== stored.status ||
+        nextUrl !== stored.url ||
+        nextTitle !== stored.title ||
+        nextDomain !== stored.domain
+      ) {
+        stored = {
+          ...stored,
+          status: nextStatus,
+          url: nextUrl,
+          title: nextTitle,
+          domain: nextDomain,
+        };
+        await writePinnedTarget(stored);
+      }
+    }
+  }
+
+  const info: import("../shared/types.js").PinnedTargetInfo = {
+    status: stored?.status ?? "unpinned",
+    pinnedTabId: stored?.pinnedTabId ?? null,
+    ...(stored?.title ? { title: stored.title } : {}),
+    ...(stored?.url ? { url: stored.url } : {}),
+    ...(stored?.domain ? { domain: stored.domain } : {}),
+    ...(stored?.scannedUrl ? { scannedUrl: stored.scannedUrl } : {}),
+    ...(stored?.closedTitle ? { closedTitle: stored.closedTitle } : {}),
+    ...(stored?.closedDomain ? { closedDomain: stored.closedDomain } : {}),
+    availableTabs,
+  };
+  lastPinnedTargetInfo = info;
+  return info;
+}
+
 export async function resolveTargetTab(explicitTabId?: number): Promise<chrome.tabs.Tab | undefined> {
+  const stored = await readPinnedTarget();
+  if (stored) {
+    if (stored.status === "closed" || stored.status === "unpinned" || stored.pinnedTabId === null) {
+      return undefined;
+    }
+    try {
+      const pinnedCandidate = await chrome.tabs.get(stored.pinnedTabId);
+      if (pinnedCandidate && isScannableTab(pinnedCandidate)) {
+        return pinnedCandidate;
+      }
+    } catch {
+      // Tab no longer exists
+    }
+    await writePinnedTarget({
+      status: "closed",
+      pinnedTabId: null,
+      closedTitle: stored.title,
+      closedDomain: stored.domain,
+    });
+    return undefined;
+  }
+
   if (typeof explicitTabId === "number" && explicitTabId > 0) {
     try {
       const candidate = await chrome.tabs.get(explicitTabId);
@@ -576,6 +792,39 @@ export async function resolveTargetTab(explicitTabId?: number): Promise<chrome.t
 }
 
 function notifyPopup(message: PopupFromWorker): void {
+  if (message.type === "POPUP_STATE" && message.state.findings.length > 1) {
+    const serialized = JSON.stringify(message);
+    if (serialized.length > MAX_MESSAGE_BYTES - 1024) {
+      const chunks = chunkFindingsByByteBudget(message.state.findings, DEFAULT_FINDINGS_CHUNK_BYTES);
+      if (chunks.length > 1) {
+        const sessionId = message.state.sessionId ?? "state";
+        void (async () => {
+          for (let i = 0; i < chunks.length - 1; i++) {
+            await chrome.runtime.sendMessage({
+              type: "POPUP_STATE_CHUNK",
+              requestId: message.requestId,
+              sessionId,
+              chunkIndex: i,
+              totalChunks: chunks.length,
+              findings: chunks[i],
+            }).catch(() => undefined);
+          }
+          await chrome.runtime.sendMessage({
+            ...message,
+            chunkIndex: chunks.length - 1,
+            totalChunks: chunks.length,
+            state: {
+              ...message.state,
+              findings: chunks[chunks.length - 1],
+              findingsTruncated: false,
+              totalFindings: message.state.findings.length,
+            },
+          }).catch(() => undefined);
+        })();
+        return;
+      }
+    }
+  }
   void chrome.runtime.sendMessage(message).catch(() => {
     // Popup may be closed; state lives in storage.session for the next open.
   });
@@ -667,13 +916,15 @@ function buildPopupState(
   session: SessionState | null,
   error?: { code: string; userMessage: string }
 ): PopupState {
+  const incompleteWindows = session?.stats.incompleteWindows;
+  const hasIncompleteWindows = Boolean(incompleteWindows && incompleteWindows.length > 0);
   return {
     mode: settings.mode,
     operatingMode: currentOperatingMode,
     scanning: session?.scanning ?? false,
     findings: session?.findings ?? [],
     scanned: session !== null,
-    truncated: (session?.stats.truncated ?? false) || (session?.stats.findingsTruncated ?? false),
+    truncated: (session?.stats.truncated ?? false) || (session?.stats.findingsTruncated ?? false) || hasIncompleteWindows,
     findingsTruncated: session?.stats.findingsTruncated,
     totalFindings: session?.stats.totalFindings,
     visibleChars: session?.stats.visibleChars ?? 0,
@@ -686,21 +937,73 @@ function buildPopupState(
     // Carried so the coverage panel reports the real outcome. Without these the
     // panel's five tick marks are static markup asserting a clean bill of
     // health the scan never gave.
-    coverageStatus: session?.stats.coverageStatus,
+    coverageStatus: hasIncompleteWindows ? "PARTIALLY_SCANNED" : session?.stats.coverageStatus,
     deferredMediaCount: session?.stats.deferredMediaCount,
+    ...(session?.stats.windowsScanned !== undefined ? { windowsScanned: session.stats.windowsScanned } : {}),
+    ...(session?.stats.windowsTotal !== undefined ? { windowsTotal: session.stats.windowsTotal } : {}),
+    ...(hasIncompleteWindows ? { incompleteWindows } : {}),
+    ...(session?.stats.coverageWarnings && session.stats.coverageWarnings.length > 0
+      ? { coverageWarnings: session.stats.coverageWarnings }
+      : {}),
+    ...(lastPinnedTargetInfo ? { pinnedTarget: lastPinnedTargetInfo } : {}),
   };
 }
 
-async function stateForActiveTab(explicitTabId?: number): Promise<PopupState> {
+async function stateForActiveTab(explicitTabId?: number, autoPinInitial = false): Promise<PopupState> {
   await refreshOperatingMode();
+  await refreshPinnedTargetInfo({ autoPinInitialIfUnset: autoPinInitial });
   const settings = await loadSettings();
   const tab = await resolveTargetTab(explicitTabId);
   const session = tab ? await readSession(tab.id ?? -1) : null;
   return buildPopupState(settings, session);
 }
 
+async function handlePopupPinTab(tabId: number | null, pinCurrent: boolean | undefined, requestId: string): Promise<void> {
+  if (pinCurrent === true) {
+    const active = await getActiveTab();
+    if (active?.id && active.url) {
+      const existingSession = await readSession(active.id);
+      await writePinnedTarget({
+        status: "pinned",
+        pinnedTabId: active.id,
+        title: tabDisplayTitle(active),
+        url: active.url,
+        domain: tabDomain(active.url),
+        ...(existingSession ? { scannedUrl: active.url } : {}),
+      });
+    } else {
+      await writePinnedTarget({ status: "unpinned", pinnedTabId: null });
+    }
+  } else if (tabId === null) {
+    await writePinnedTarget({ status: "unpinned", pinnedTabId: null });
+  } else {
+    let target: chrome.tabs.Tab | undefined;
+    try {
+      target = await chrome.tabs.get(tabId);
+    } catch {
+      target = undefined;
+    }
+    if (target && isScannableTab(target) && target.id && target.url) {
+      const existingSession = await readSession(target.id);
+      await writePinnedTarget({
+        status: "pinned",
+        pinnedTabId: target.id,
+        title: tabDisplayTitle(target),
+        url: target.url,
+        domain: tabDomain(target.url),
+        ...(existingSession ? { scannedUrl: target.url } : {}),
+      });
+    } else {
+      await writePinnedTarget({ status: "unpinned", pinnedTabId: null });
+    }
+  }
+  const state = await stateForActiveTab();
+  notifyPopup({ type: "POPUP_STATE", requestId, state });
+}
+
 async function handlePopupScan(mode: ScanMode, requestId: string, explicitTabId?: number): Promise<void> {
   const settings = await loadSettings();
+  await refreshPinnedTargetInfo();
 
   if (mode === "cloud" && !isCloudAllowed(settings)) {
     notifyPopup({
@@ -709,6 +1012,30 @@ async function handlePopupScan(mode: ScanMode, requestId: string, explicitTabId?
       state: buildPopupState(settings, null, {
         code: "CLOUD_NOT_ALLOWED",
         userMessage: "Cloud analysis is disabled. Scans run locally on this device.",
+      }),
+    });
+    return;
+  }
+
+  const storedPin = await readPinnedTarget();
+  if (storedPin?.status === "closed") {
+    notifyPopup({
+      type: "POPUP_STATE",
+      requestId,
+      state: buildPopupState(settings, null, {
+        code: "TARGET_TAB_CLOSED",
+        userMessage: "Pinned target tab closed. Choose a new target tab to scan.",
+      }),
+    });
+    return;
+  }
+  if (storedPin?.status === "unpinned") {
+    notifyPopup({
+      type: "POPUP_STATE",
+      requestId,
+      state: buildPopupState(settings, null, {
+        code: "NO_PINNED_TAB",
+        userMessage: "No target tab is pinned. Select or pin a tab to scan.",
       }),
     });
     return;
@@ -727,8 +1054,21 @@ async function handlePopupScan(mode: ScanMode, requestId: string, explicitTabId?
     return;
   }
 
+  if (storedPin && storedPin.pinnedTabId === tab.id && tab.url) {
+    await writePinnedTarget({
+      ...storedPin,
+      status: "pinned",
+      url: tab.url,
+      title: tabDisplayTitle(tab, storedPin.title),
+      domain: tabDomain(tab.url) || storedPin.domain,
+      scannedUrl: tab.url,
+    });
+    await refreshPinnedTargetInfo();
+  }
+
   const sessionId = crypto.randomUUID();
   const tabId = tab.id;
+  clearPendingChunksForTab(tabId);
   const timer = setTimeout(() => {
     pendingScans.delete(tabId);
     void (async () => {
@@ -759,6 +1099,7 @@ async function handlePopupScan(mode: ScanMode, requestId: string, explicitTabId?
 
 /** True when the action ran; false when the popup was told it could not. */
 async function handlePopupApplyMasks(findingIds: string[], requestId: string, explicitTabId?: number): Promise<boolean> {
+  await refreshPinnedTargetInfo();
   const tab = await resolveTargetTab(explicitTabId);
   const settings = await loadSettings();
   const session = tab?.id ? await readSession(tab.id) : null;
@@ -786,6 +1127,7 @@ async function handlePopupApplyMasks(findingIds: string[], requestId: string, ex
 }
 
 async function handlePopupUndoMasks(requestId: string, explicitTabId?: number): Promise<void> {
+  await refreshPinnedTargetInfo();
   const tab = await resolveTargetTab(explicitTabId);
   const settings = await loadSettings();
   const session = tab?.id ? await readSession(tab.id) : null;
@@ -808,6 +1150,7 @@ async function handlePopupUndoMasks(requestId: string, explicitTabId?: number): 
 
 /** True when the action ran; false when the popup was told it could not. */
 async function handlePopupRemoveMasks(requestId: string, explicitTabId?: number): Promise<boolean> {
+  await refreshPinnedTargetInfo();
   const tab = await resolveTargetTab(explicitTabId);
   const settings = await loadSettings();
   const session = tab?.id ? await readSession(tab.id) : null;
@@ -827,8 +1170,9 @@ async function handlePopupRemoveMasks(requestId: string, explicitTabId?: number)
   return true;
 }
 
-async function handlePopupCopyRedacted(findingIds: string[], requestId: string): Promise<void> {
-  const tab = await getActiveTab();
+async function handlePopupCopyRedacted(findingIds: string[], requestId: string, explicitTabId?: number): Promise<void> {
+  await refreshPinnedTargetInfo();
+  const tab = await resolveTargetTab(explicitTabId);
   const session = tab?.id ? await readSession(tab.id) : null;
   if (!tab?.id || !session) {
     const settings = await loadSettings();
@@ -839,6 +1183,7 @@ async function handlePopupCopyRedacted(findingIds: string[], requestId: string):
 }
 
 async function handlePopupClearData(requestId: string, explicitTabId?: number): Promise<void> {
+  await refreshPinnedTargetInfo();
   const tab = await resolveTargetTab(explicitTabId);
   const settings = await loadSettings();
   if (tab?.id) {
@@ -904,6 +1249,10 @@ async function handlePopupDocPreview(
       outcome: "ok",
     });
   } catch (error) {
+    if (error instanceof DocumentCancelledError || (error instanceof Error && error.name === "DocumentCancelledError")) {
+      void recordAudit({ ts: new Date().toISOString(), action: "doc_cleared", outcome: "ok" });
+      return;
+    }
     const userMessage = error instanceof Error ? error.message : "The document could not be processed.";
     notifyPopup({ type: "POPUP_DOC_ERROR", requestId, code: "DOC_ERROR", userMessage });
     void recordAudit({ ts: new Date().toISOString(), action: "doc_previewed", outcome: "error" });
@@ -1171,25 +1520,150 @@ function tabHost(tab: chrome.tabs.Tab | undefined): string | undefined {
   }
 }
 
+async function handleContentScanProgress(
+  message: Extract<WorkerMessage, { type: "SCAN_PROGRESS" }>,
+  tabId: number
+): Promise<void> {
+  const pending = pendingScans.get(tabId);
+  if (!pending || pending.sessionId !== message.sessionId) return;
+  notifyPopup({
+    type: "POPUP_SCAN_PROGRESS",
+    requestId: pending.requestId,
+    sessionId: message.sessionId,
+    windowsCompleted: message.windowsCompleted,
+    windowsTotal: message.windowsTotal,
+    charsScanned: message.charsScanned,
+    charsTotal: message.charsTotal,
+    findingsSoFar: message.findingsSoFar,
+  });
+}
+
+async function handleContentScanResultChunk(
+  message: Extract<WorkerMessage, { type: "SCAN_RESULT_CHUNK" }>,
+  tabId: number
+): Promise<void> {
+  const pending = pendingScans.get(tabId);
+  const existing = pending ? null : await readSession(tabId);
+  const expectedSessionId = pending?.sessionId ?? existing?.sessionId;
+  if (!expectedSessionId || expectedSessionId !== message.sessionId) {
+    return;
+  }
+  const chunkKey = `${tabId}:${message.sessionId}:${message.requestId}`;
+  let buffer = pendingResultChunks.get(chunkKey);
+  if (!buffer) {
+    buffer = {
+      tabId,
+      sessionId: message.sessionId,
+      totalChunks: message.totalChunks,
+      chunks: new Map(),
+    };
+    pendingResultChunks.set(chunkKey, buffer);
+  }
+  buffer.chunks.set(message.chunkIndex, message.findings);
+}
+
+function reassembleScanResult(
+  message: Extract<WorkerMessage, { type: "SCAN_RESULT" }>,
+  tabId: number
+): { findings: Finding[]; stats: Extract<WorkerMessage, { type: "SCAN_RESULT" }>["stats"] } {
+  const chunkKey = `${tabId}:${message.sessionId}:${message.requestId}`;
+  const buffer = pendingResultChunks.get(chunkKey);
+  pendingResultChunks.delete(chunkKey);
+
+  if (!message.totalChunks || message.totalChunks <= 1) {
+    return { findings: message.findings, stats: message.stats };
+  }
+
+  const combined: Finding[] = [];
+  const missingChunkIndices: number[] = [];
+  const finalIdx = message.chunkIndex ?? message.totalChunks - 1;
+  for (let i = 0; i < message.totalChunks; i++) {
+    if (i === finalIdx) {
+      combined.push(...message.findings);
+      continue;
+    }
+    const part = buffer?.chunks.get(i);
+    if (!part) {
+      missingChunkIndices.push(i);
+      continue;
+    }
+    combined.push(...part);
+  }
+
+  if (missingChunkIndices.length === 0) {
+    return {
+      findings: combined,
+      stats: {
+        ...message.stats,
+        findingsTruncated: false,
+        totalFindings: combined.length,
+      },
+    };
+  }
+
+  const extraIncomplete: IncompleteWindowInfo[] = missingChunkIndices.map((idx) => ({
+    windowIndex: idx + 1,
+    reason: `IPC findings chunk ${idx + 1} of ${message.totalChunks} missing`,
+  }));
+  return {
+    findings: combined,
+    stats: {
+      ...message.stats,
+      truncated: true,
+      findingsTruncated: true,
+      coverageStatus: "PARTIALLY_SCANNED",
+      incompleteWindows: [...(message.stats.incompleteWindows ?? []), ...extraIncomplete],
+    },
+  };
+}
+
 async function handleContentScanResult(message: Extract<WorkerMessage, { type: "SCAN_RESULT" }>, tabId: number): Promise<void> {
   const pending = pendingScans.get(tabId);
   if (!pending) {
+    const existing = await readSession(tabId);
+    if (!existing || existing.sessionId !== message.sessionId) {
+      pendingResultChunks.delete(`${tabId}:${message.sessionId}:${message.requestId}`);
+      return;
+    }
+    const reassembled = reassembleScanResult(message, tabId);
+    const settings = await loadSettings();
+    const findings = reassembled.findings.filter((f) => meetsThreshold(settings, f.category, f.confidence));
+    await writeSession(tabId, {
+      sessionId: message.sessionId,
+      mode: settings.mode,
+      findings,
+      stats: {
+        ...reassembled.stats,
+        ...(existing.stats.imageCandidates ? { imageCandidates: existing.stats.imageCandidates } : {}),
+      },
+      scannedAt: Date.now(),
+      scanning: false,
+    });
+    const session = await readSession(tabId);
+    await refreshPinnedTargetInfo();
+    const storedPin = await readPinnedTarget();
+    if (!storedPin?.pinnedTabId || storedPin.pinnedTabId === tabId) {
+      notifyPopup({ type: "POPUP_STATE", requestId: message.requestId, state: buildPopupState(settings, session) });
+    }
+    updateBadgeForTab(tabId, findings.length);
     return;
   }
   if (message.sessionId !== pending.sessionId) {
     clearTimeout(pending.timer);
     pendingScans.delete(tabId);
+    clearPendingChunksForTab(tabId);
     return;
   }
   clearTimeout(pending.timer);
   pendingScans.delete(tabId);
+  const reassembled = reassembleScanResult(message, tabId);
   const settings = await loadSettings();
-  const findings = message.findings.filter((f) => meetsThreshold(settings, f.category, f.confidence));
+  const findings = reassembled.findings.filter((f) => meetsThreshold(settings, f.category, f.confidence));
   await writeSession(tabId, {
     sessionId: message.sessionId,
     mode: settings.mode,
     findings,
-    stats: message.stats,
+    stats: reassembled.stats,
     scannedAt: Date.now(),
     scanning: false,
   });
@@ -1202,7 +1676,11 @@ async function handleContentScanResult(message: Extract<WorkerMessage, { type: "
     outcome: "ok",
   });
   const session = await readSession(tabId);
-  notifyPopup({ type: "POPUP_STATE", requestId: pending.requestId, state: buildPopupState(settings, session) });
+  await refreshPinnedTargetInfo();
+  const storedPin = await readPinnedTarget();
+  if (!storedPin?.pinnedTabId || storedPin.pinnedTabId === tabId) {
+    notifyPopup({ type: "POPUP_STATE", requestId: pending.requestId, state: buildPopupState(settings, session) });
+  }
   updateBadgeForTab(tabId, findings.length);
   void maybeNotifyFindings(findings, tabId);
 
@@ -1635,7 +2113,9 @@ function purgeStagedFilesOnLifecycle(reason: string): void {
   startupPurge = (async () => {
     try {
       if (await hasStagedDocument()) {
-        console.warn(`[governworld] staged-file purge skipped on ${reason}: a document is staged.`);
+        await purgeOrphanedStagedKeys();
+        console.warn(`[governworld] active staged document preserved on ${reason}; orphaned keys purged.`);
+        startupCleanupError = undefined;
         return;
       }
       await clearAllFiles();
@@ -1665,6 +2145,30 @@ chrome.runtime.onInstalled?.addListener(() => {
 // extract the authorization code and state, then close the tab.
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === "loading") clearBadgeForTab(tabId);
+  if (changeInfo.url || changeInfo.title || changeInfo.status === "complete") {
+    void (async () => {
+      const stored = await readPinnedTarget();
+      if (stored && stored.pinnedTabId === tabId) {
+        const nextUrl = changeInfo.url ?? tab.url ?? stored.url;
+        const urlChanged = Boolean(changeInfo.url && stored.url && changeInfo.url !== stored.url);
+        const nextTitle = tabDisplayTitle(tab, stored.title);
+        const nextDomain = tabDomain(nextUrl) || stored.domain;
+        const nextStatus: import("../shared/types.js").PinnedTargetStatus =
+          urlChanged || stored.status === "navigated" || Boolean(stored.scannedUrl && nextUrl && nextUrl !== stored.scannedUrl)
+            ? "navigated"
+            : "pinned";
+        await writePinnedTarget({
+          ...stored,
+          status: nextStatus,
+          url: nextUrl,
+          title: nextTitle,
+          domain: nextDomain,
+        });
+        const state = await stateForActiveTab();
+        notifyPopup({ type: "POPUP_STATE", requestId: "pinned-tab-updated", state });
+      }
+    })().catch(() => undefined);
+  }
   if (!tab.url) return;
   let url: URL;
   try {
@@ -1775,6 +2279,7 @@ void reconcileTabStatuses();
 void syncManagedPolicy(false);
 void refreshOperatingMode();
 void scheduleHeartbeatAlarm();
+void purgeOrphanedStagedKeys();
 
 if (typeof chrome !== "undefined" && chrome.alarms?.onAlarm) {
   chrome.alarms.onAlarm.addListener((alarm) => {
@@ -2212,10 +2717,39 @@ async function handleApiSubmitLogic(patternId: string, requestId: string): Promi
 }
 
 const CONTENT_MESSAGE_TYPES = new Set<ExtensionMessage["type"]>([
+  "SCAN_PROGRESS",
+  "SCAN_RESULT_CHUNK",
   "SCAN_RESULT",
   "COPY_REDACTED_TEXT_RESULT",
   "CONTENT_ERROR",
+  "CONTENT_GET_NAME_DICTIONARIES",
+  "CONTENT_GET_MEDICAL_DICTIONARY",
 ]);
+
+let cachedMedicalDictionary: { terms: string[] } | null = null;
+async function getMedicalDictionaryPayload(): Promise<{ terms: string[] }> {
+  if (cachedMedicalDictionary) return cachedMedicalDictionary;
+  const resp = await fetch(chrome.runtime.getURL("assets/medical-dictionary.json"));
+  if (!resp.ok) throw new Error(`Failed to load medical-dictionary.json (${resp.status})`);
+  const parsed = (await resp.json()) as { terms?: unknown };
+  cachedMedicalDictionary = {
+    terms: Array.isArray(parsed.terms) ? parsed.terms.filter((t): t is string => typeof t === "string") : [],
+  };
+  return cachedMedicalDictionary;
+}
+
+let cachedNameDictionaries: { first: string; last: string } | null = null;
+async function getNameDictionariesPayload(): Promise<{ first: string; last: string }> {
+  if (cachedNameDictionaries) return cachedNameDictionaries;
+  const resp = await fetch(chrome.runtime.getURL("assets/name-dictionaries.json"));
+  if (!resp.ok) throw new Error(`Failed to load name-dictionaries.json (${resp.status})`);
+  const parsed = (await resp.json()) as { first?: string; last?: string };
+  cachedNameDictionaries = {
+    first: typeof parsed.first === "string" ? parsed.first : "",
+    last: typeof parsed.last === "string" ? parsed.last : "",
+  };
+  return cachedNameDictionaries;
+}
 
 function isTrustedExtensionPageSender(sender: chrome.runtime.MessageSender): boolean {
   return sender.id === chrome.runtime.id && Boolean(sender.url?.startsWith(chrome.runtime.getURL("")));
@@ -2257,11 +2791,25 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
       return;
     }
     switch (msg.type) {
+      case "CONTENT_GET_NAME_DICTIONARIES": {
+        const payload = await getNameDictionariesPayload();
+        sendResponse({ ok: true, ...payload });
+        return;
+      }
+      case "CONTENT_GET_MEDICAL_DICTIONARY": {
+        const payload = await getMedicalDictionaryPayload();
+        sendResponse({ ok: true, ...payload });
+        return;
+      }
+      case "SCAN_PROGRESS":
+      case "SCAN_RESULT_CHUNK":
       case "SCAN_RESULT":
       case "COPY_REDACTED_TEXT_RESULT":
       case "CONTENT_ERROR":
         if (!sender.tab?.id) return;
-        if (msg.type === "SCAN_RESULT") await handleContentScanResult(msg, sender.tab.id);
+        if (msg.type === "SCAN_PROGRESS") await handleContentScanProgress(msg, sender.tab.id);
+        else if (msg.type === "SCAN_RESULT_CHUNK") await handleContentScanResultChunk(msg, sender.tab.id);
+        else if (msg.type === "SCAN_RESULT") await handleContentScanResult(msg, sender.tab.id);
         else if (msg.type === "COPY_REDACTED_TEXT_RESULT") await handleContentCopyResult(msg, sender.tab.id);
         else await handleContentError(msg, sender.tab.id);
         return;
@@ -2272,6 +2820,9 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
       case "POPUP_SCAN":
         await handlePopupScan(msg.mode, msg.requestId, msg.tabId);
         break;
+      case "POPUP_PIN_TAB":
+        await handlePopupPinTab(msg.tabId, msg.pinCurrent, msg.requestId);
+        break;
       case "POPUP_APPLY_MASKS":
         await handlePopupApplyMasks(msg.findingIds, msg.requestId, msg.tabId);
         break;
@@ -2279,13 +2830,13 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
         await handlePopupRemoveMasks(msg.requestId, msg.tabId);
         break;
       case "POPUP_COPY_REDACTED":
-        await handlePopupCopyRedacted(msg.findingIds, msg.requestId);
+        await handlePopupCopyRedacted(msg.findingIds, msg.requestId, msg.tabId);
         break;
       case "POPUP_CLEAR_DATA":
         await handlePopupClearData(msg.requestId, msg.tabId);
         break;
       case "POPUP_GET_STATE": {
-        notifyPopup({ type: "POPUP_STATE", requestId: msg.requestId, state: await stateForActiveTab(msg.tabId) });
+        notifyPopup({ type: "POPUP_STATE", requestId: msg.requestId, state: await stateForActiveTab(msg.tabId, true) });
         const docSession = await restoreLastSession();
         if (docSession) {
           notifyPopup({ type: "POPUP_DOC_STATE", requestId: msg.requestId, docId: docSession.docId, name: docSession.name, fileKey: docSession.fileKey, mimeType: docSession.mimeType, kind: docSession.kind, pages: docSession.pages, pageOffset: docSession.pageOffset, totalPages: docSession.totalPages, ...(docSession.truncated ? { truncated: true } : {}) });
@@ -2310,7 +2861,7 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
         await handlePopupDocRedact(msg.docId, msg.fileKey, msg.name, msg.mimeType, msg.kind, msg.boxes, msg.findingIds, msg.requestId, msg.options);
         break;
       case "POPUP_DOC_CLEAR":
-        await clearDocSession(msg.docId);
+        await clearDocSession(msg.docId, msg.fileKey);
         void recordAudit({ ts: new Date().toISOString(), action: "doc_cleared", outcome: "ok" });
         break;
       case "POPUP_DOC_CAPTURE_IMAGE":
@@ -2354,7 +2905,7 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
         await handlePopupRecordAudit(msg);
         break;
       case "POPUP_UNDO_MASKS":
-        await handlePopupUndoMasks(msg.requestId);
+        await handlePopupUndoMasks(msg.requestId, msg.tabId);
         break;
       case "POPUP_SET_NOTIFICATIONS": {
         if (msg.enabled) {
@@ -2473,8 +3024,31 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
         await handleApiDisconnect(msg.requestId);
         break;
       case "POPUP_DOC_CANCEL":
-        await clearDocSession(msg.docId);
+        await cancelDocSession(msg.docId, msg.fileKey);
+        void recordAudit({ ts: new Date().toISOString(), action: "doc_cleared", outcome: "ok" });
         break;
+      case "POPUP_GET_STAGED_STATS": {
+        const stats = await getStagedStorageAudit();
+        notifyPopup({
+          type: "POPUP_STAGED_STATS_STATE",
+          requestId: msg.requestId,
+          stats,
+        });
+        break;
+      }
+      case "POPUP_PURGE_STAGED_DATA": {
+        const purged = await purgeStagedData({
+          includeIdleSession: msg.includeIdleSession !== false,
+        });
+        void recordAudit({ ts: new Date().toISOString(), action: "doc_cleared", outcome: "ok" });
+        notifyPopup({
+          type: "POPUP_STAGED_STATS_STATE",
+          requestId: msg.requestId,
+          stats: purged.remaining,
+          purged,
+        });
+        break;
+      }
       case "POPUP_API_GET_STATUS":
         await handleApiGetStatus(msg.requestId);
         break;
@@ -2518,12 +3092,30 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   return true; // async response
 });
 
-// Clean up stale sessions for closed tabs.
+// Clean up stale sessions for closed tabs and update pinned target state (Task A2 / Decision D2).
 chrome.tabs.onRemoved.addListener((tabId) => {
   const pending = pendingScans.get(tabId);
   if (pending) {
     clearTimeout(pending.timer);
     pendingScans.delete(tabId);
   }
+  clearPendingChunksForTab(tabId);
   void chrome.storage.session.remove(sessionKey(tabId));
+  void (async () => {
+    const stored = await readPinnedTarget();
+    if (stored && stored.pinnedTabId === tabId) {
+      await writePinnedTarget({
+        status: "closed",
+        pinnedTabId: null,
+        closedTitle: stored.title,
+        closedDomain: stored.domain,
+      });
+      const state = await stateForActiveTab();
+      notifyPopup({ type: "POPUP_STATE", requestId: "pinned-tab-closed", state });
+    } else if (stored) {
+      await refreshPinnedTargetInfo();
+      const state = await stateForActiveTab();
+      notifyPopup({ type: "POPUP_STATE", requestId: "tabs-list-updated", state });
+    }
+  })().catch(() => undefined);
 });

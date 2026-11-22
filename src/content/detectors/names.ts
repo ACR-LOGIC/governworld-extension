@@ -141,8 +141,7 @@ export function detectNames(text: string): RawMatch[] {
       const singleMatch = lineSlice.match(SINGLE_UNICODE_NAME_RE);
       if (singleMatch) {
         const candidate = singleMatch[0];
-        const hasHonorific = new RegExp(`^${INTL_HONORIFIC_PART}`, "u").test(candidate);
-        if (hasHonorific || hasNonAsciiUnicodeLetter(candidate)) {
+        if (!GENERIC_NAME_LABELS.has(candidate.toLowerCase().trim())) {
           nameMatch = singleMatch;
         }
       }

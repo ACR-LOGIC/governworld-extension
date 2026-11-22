@@ -31,6 +31,14 @@ import {
 } from "../src/content/pasteGuard.js";
 import { extractSvgText } from "../src/content/svgExtract.js";
 import { createOverlay } from "../src/content/overlay.js";
+import {
+  observeMutations,
+  shouldInvalidateBatch,
+  getAffectedNodeIds,
+  selectObserverDebounceMs,
+  BURST_DEBOUNCE_MS,
+  type MutationBatch,
+} from "../src/content/normalization/mutation.js";
 import { ALL_CATEGORIES } from "../src/shared/settings.js";
 import type { Finding, FindingCategory } from "../src/shared/types.js";
 import type { CustomPattern } from "../src/shared/customPatterns.js";
@@ -46,7 +54,7 @@ describe("Tier 4: Real-World Application Scenarios", () => {
   // Scenario 1: Dynamic SPA Route Transition & Mutation Storm
   // Features: F1, F2, F3, F4, F7, F24
   // =========================================================================
-  it("Scenario 1: Dynamic SPA Route Transition & Mutation Storm (F1, F2, F3, F4, F7, F24)", () => {
+  it("Scenario 1: Dynamic SPA Route Transition & Mutation Storm (F1, F2, F3, F4, F7, F24)", async () => {
     // 1. Initial Page Load: App container with view A
     const app = document.createElement("main");
     app.id = "app-root";
@@ -69,6 +77,11 @@ describe("Tier 4: Real-World Application Scenarios", () => {
     ]);
 
     // 2. SPA Route Transition: Route changes to View B (Mutation Storm: 65 nodes destroyed & created)
+    let observedBatch: MutationBatch | null = null;
+    const mutationHandle = observeMutations(app, (batch) => {
+      observedBatch = batch;
+    });
+
     viewA.remove();
 
     const viewB = document.createElement("section");
@@ -89,9 +102,17 @@ describe("Tier 4: Real-World Application Scenarios", () => {
       addedTextNodes.push(value);
     }
 
-    // 3. Mutation storm limit verification: 65 nodes does NOT destroy scan session
-    const mutationCount = 65;
-    expect(mutationCount).toBeGreaterThan(50); // exceeds 50 batch threshold
+    // 3. Mutation storm limit verification: >50 nodes triggers incremental invalidation for removed viewA only
+    await vi.waitFor(() => {
+      expect(observedBatch).not.toBeNull();
+    });
+    expect(observedBatch!.removedNodes).toContain(viewA);
+    expect(observedBatch!.addedNodes).toContain(viewB);
+    expect(shouldInvalidateBatch(observedBatch!)).toBe(true);
+    expect(selectObserverDebounceMs(65)).toBe(BURST_DEBOUNCE_MS);
+    const affected = getAffectedNodeIds(observedBatch!, nodeMap);
+    expect(affected.size).toBe(initialExtract.segments.length);
+    mutationHandle.disconnect();
 
     // 4. Incremental rescan maps delta to leaf text nodes rather than outer main container
     const deltaMap = new Map<string, Node>();

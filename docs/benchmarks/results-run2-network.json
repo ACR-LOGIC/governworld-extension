@@ -1,0 +1,20 @@
+{
+  "generatedAt": "2026-11-21T21:37:19.051Z",
+  "mode": "baseline",
+  "stage": "network",
+  "executablePath": "C:\\Users\\omg\\AppData\\Local\\ms-playwright\\chromium-1255\\chrome-win64\\chrome.exe",
+  "browserVersion": "Chrome/159.0.8154.6",
+  "nodeVersion": "v22.22.2",
+  "scan": {},
+  "paste": {},
+  "docs": {},
+  "ocrNode": {},
+  "network": {
+    "driverTotalRequests": 5,
+    "driverInMemoryBlobOrData": 0,
+    "driverExternalRequests": 0,
+    "driverExternalSample": [],
+    "verifyNetworkInspectionPassed": true
+  },
+  "gateFailures": []
+}

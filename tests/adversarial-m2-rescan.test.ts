@@ -15,7 +15,95 @@ import {
   getAffectedNodeIds,
   type MutationBatch,
 } from "../src/content/normalization/mutation.js";
-import type { Finding, FindingCategory, Rect } from "../src/shared/types.js";
+import { ALL_CATEGORIES } from "../src/shared/settings.js";
+import type { Finding, FindingCategory, Rect, WorkerMessage } from "../src/shared/types.js";
+
+type ScanResultMessage = Extract<WorkerMessage, { type: "SCAN_RESULT" }>;
+
+function setupLiveAdversarialContentEnv() {
+  delete (globalThis as Record<string, unknown>).__gwRedactionContentLoaded;
+  const listeners: Array<(msg: unknown, sender: chrome.runtime.MessageSender, sendResponse: (r?: unknown) => void) => boolean | void> = [];
+  const sentMessages: WorkerMessage[] = [];
+  const capturedShadows = new Map<Element, ShadowRoot>();
+  const createdObservers: MutationObserver[] = [];
+
+  const OrigMutationObserver = globalThis.MutationObserver;
+  globalThis.MutationObserver = class TrackedMutationObserver extends OrigMutationObserver {
+    constructor(cb: MutationCallback) {
+      super(cb);
+      createdObservers.push(this);
+    }
+  } as typeof MutationObserver;
+
+  const origAttachShadow = Element.prototype.attachShadow;
+  Element.prototype.attachShadow = function (init: ShadowRootInit): ShadowRoot {
+    const root = origAttachShadow.call(this, init);
+    capturedShadows.set(this, root);
+    return root;
+  };
+
+  const origGetClientRects = Range.prototype.getClientRects;
+  Range.prototype.getClientRects = function (): DOMRectList {
+    const rect = { x: 12, y: 24, width: 120, height: 18, top: 24, left: 12, right: 132, bottom: 42, toJSON: () => ({}) } as DOMRect;
+    const list = [rect] as unknown as DOMRectList & { item: (i: number) => DOMRect | null };
+    list.item = (i: number) => (i === 0 ? rect : null);
+    return list;
+  };
+
+  const prevChrome = (globalThis as Record<string, unknown>).chrome;
+  (globalThis as Record<string, unknown>).chrome = {
+    runtime: {
+      id: "test-extension-id",
+      onMessage: {
+        addListener(fn: (typeof listeners)[number]) { listeners.push(fn); },
+        removeListener(fn: (typeof listeners)[number]) {
+          const idx = listeners.indexOf(fn);
+          if (idx >= 0) listeners.splice(idx, 1);
+        },
+      },
+      sendMessage(msg: WorkerMessage) {
+        sentMessages.push(msg);
+        return Promise.resolve({ ok: true });
+      },
+    },
+    storage: {
+      local: { get: vi.fn().mockResolvedValue({}), set: vi.fn().mockResolvedValue(undefined) },
+    },
+  };
+
+  return {
+    sentMessages,
+    capturedShadows,
+    dispatch(msg: unknown) {
+      return new Promise((resolve) => {
+        const handler = listeners[listeners.length - 1];
+        if (!handler) {
+          resolve(undefined);
+          return;
+        }
+        handler(msg, { id: "test-extension-id" } as chrome.runtime.MessageSender, resolve);
+      });
+    },
+    restore() {
+      for (const obs of createdObservers) obs.disconnect();
+      globalThis.MutationObserver = OrigMutationObserver;
+      Element.prototype.attachShadow = origAttachShadow;
+      Range.prototype.getClientRects = origGetClientRects;
+      (globalThis as Record<string, unknown>).chrome = prevChrome;
+      delete (globalThis as Record<string, unknown>).__gwRedactionContentLoaded;
+    },
+  };
+}
+
+function makeDefaultScanSettings() {
+  return {
+    enabledCategories: [...ALL_CATEGORIES],
+    maxVisibleChars: 250_000,
+    maxNodeChars: 20_000,
+    maskPlaceholders: false,
+    sessionTimeoutMs: 900_000,
+  };
+}
 
 describe("Adversarial M2 Rescan & DOM Traversal Stress Suite", () => {
   beforeEach(() => {
@@ -28,173 +116,145 @@ describe("Adversarial M2 Rescan & DOM Traversal Stress Suite", () => {
   });
 
   // =========================================================================
-  // Challenge 1: Multi-Node Rescan Node ID Collision (Features 1 & 2)
-  // Stress-test: When multiple nodes are added in a single batch or across rapid batches,
-  // do their segment IDs collide, overwriting nodeIds and segmentIndexById?
   // =========================================================================
-  describe("Challenge 1: Multi-Node Rescan Node ID Collision & Node Mapping", () => {
-    it("empirically reproduces node ID collision when multiple nodes are processed in rescan", () => {
-      // Simulate the exact logic in content.ts lines 872-898
-      const nodeIds = new Map<string, Node>();
-      const segments: any[] = [];
-      const segmentIndexById = new Map<string, number>();
-      let combined = "";
-      const segmentStarts: number[] = [];
+  // Challenge 1: Multi-Node Rescan Node ID Uniqueness & Mask Isolation
+  // =========================================================================
+  describe("Challenge 1: Multi-Node Rescan Node ID Uniqueness & Node Mapping", () => {
+    it("assigns distinct session-scoped rescan nodeIds across multiple added nodes without collisions", async () => {
+      const env = setupLiveAdversarialContentEnv();
+      try {
+        document.body.innerHTML = `<p id="seed">Initial baseline record.</p>`;
+        vi.resetModules();
+        await import("../src/content/content.js");
 
-      // Create 3 separate container nodes added in a batch
-      const div1 = document.createElement("div");
-      const text1 = document.createTextNode("Provider NPI 1234567893 active");
-      div1.appendChild(text1);
+        await env.dispatch({
+          type: "SCAN_PAGE",
+          requestId: "req-adv-c1",
+          sessionId: "sess-adv-c1",
+          mode: "local",
+          settings: makeDefaultScanSettings(),
+        });
 
-      const div2 = document.createElement("div");
-      const text2 = document.createTextNode("Emergency contact: alice@hospital.com");
-      div2.appendChild(text2);
+        const div1 = document.createElement("div");
+        div1.textContent = "Provider NPI 1234567893 active";
+        const div2 = document.createElement("div");
+        div2.textContent = "Emergency contact: alice@hospital.test";
+        const div3 = document.createElement("div");
+        div3.textContent = "Billing SSN: 219-09-9999 verified";
 
-      const div3 = document.createElement("div");
-      const text3 = document.createTextNode("Billing SSN: 123-45-6789 verified");
-      div3.appendChild(text3);
+        document.body.appendChild(div1);
+        document.body.appendChild(div2);
+        document.body.appendChild(div3);
 
-      document.body.appendChild(div1);
-      document.body.appendChild(div2);
-      document.body.appendChild(div3);
+        await vi.waitFor(
+          () => {
+            const results = env.sentMessages.filter((m): m is ScanResultMessage => m.type === "SCAN_RESULT");
+            const latest = results[results.length - 1];
+            expect(latest?.findings).toHaveLength(3);
+          },
+          { timeout: 2500, interval: 30 }
+        );
 
-      const addedNodes = [div1, div2, div3];
+        const results = env.sentMessages.filter((m): m is ScanResultMessage => m.type === "SCAN_RESULT");
+        const latest = results[results.length - 1];
+        const categories = latest.findings.map((f) => f.category).sort();
+        expect(categories).toEqual(["email", "npi", "ssn"]);
 
-      // Execute rescan logic as implemented in content.ts
-      for (const node of addedNodes) {
-        if (node.nodeType === Node.ELEMENT_NODE || node.nodeType === Node.TEXT_NODE) {
-          const newNodeIds = new Map<string, Node>();
-          const extracted = extractVisibleText(node as Element, 10000, 500, newNodeIds);
-          if (extracted.segments.length > 0) {
-            const newBuilt = buildScanText(extracted.segments);
-            const offset = combined.length > 0 ? combined.length + 1 : 0;
-            for (let i = 0; i < extracted.segments.length; i++) {
-              const seg = extracted.segments[i];
-              // This is the verbatim line from content.ts line 887:
-              const newSeg = {
-                nodeId: `rescan_${seg.nodeId}`,
-                startOffset: seg.startOffset,
-                endOffset: seg.endOffset,
-                text: seg.text,
-                combinedStartOffset: offset + newBuilt.segmentStarts[i],
-                combinedEndOffset: offset + newBuilt.segmentStarts[i] + seg.text.length,
-              };
-              segments.push(newSeg);
-              const targetNode = newNodeIds.get(seg.nodeId) ?? (node as Node);
-              nodeIds.set(newSeg.nodeId, targetNode);
-              segmentIndexById.set(newSeg.nodeId, segments.length - 1);
-            }
-            combined += (combined.length > 0 ? "\n" : "") + newBuilt.combined;
-            segmentStarts.push(...newBuilt.segmentStarts.map((s) => s + offset));
-          }
-        }
+        // Each added leaf node MUST receive a globally unique nodeId (no collision on 'rescan_seg_0')
+        const nodeIdSet = new Set(latest.findings.map((f) => f.nodeId));
+        expect(nodeIdSet.size).toBe(3);
+
+        await env.dispatch({
+          type: "APPLY_MASKS",
+          requestId: "req-adv-c1-mask",
+          sessionId: "sess-adv-c1",
+          findingIds: latest.findings.map((f) => f.id),
+        });
+        await vi.waitFor(() => {
+          const host = document.querySelector("[data-gw-scan-overlay]");
+          expect(host).not.toBeNull();
+          const shadow = env.capturedShadows.get(host!)!;
+          expect(shadow.querySelectorAll('[data-kind="mask"]')).toHaveLength(3);
+        });
+      } finally {
+        env.restore();
       }
-
-      // Check for node ID collision
-      const uniqueSegmentIds = new Set(segments.map((s) => s.nodeId));
-
-      // CRITICAL ASSERTION:
-      // Each segment MUST have a globally unique nodeId.
-      // If uniqueSegmentIds.size < segments.length, there is an ID collision bug.
-      const hasCollision = uniqueSegmentIds.size < segments.length;
-      expect(hasCollision, "VULNERABILITY CONFIRMED: Multiple added nodes all received identical nodeId 'rescan_seg_0'").toBe(true);
-
-      // Verify that nodeIds was corrupted by the collision:
-      // nodeIds should hold 3 mappings, but because of collision, earlier nodes were overwritten:
-      expect(nodeIds.size).toBe(1);
-      expect(nodeIds.get("rescan_seg_0")).toBe(text3); // text1 and text2 are lost!
-
-      // Verify that segmentIndexById was corrupted:
-      // segmentIndexById should map 3 segments, but only index 2 survives:
-      expect(segmentIndexById.size).toBe(1);
-      expect(segmentIndexById.get("rescan_seg_0")).toBe(2); // indices 0 and 1 are lost!
     });
   });
 
   // =========================================================================
-  // Challenge 2: Earlier Segment Removal & Offset Desynchronization (Features 2 & 3)
-  // Stress-test: When an earlier node is removed, does rebuilding combined and
-  // segmentStarts cause surviving findings to desynchronize or black out wrong text?
+  // Challenge 2: Earlier Segment Removal & Offset Synchronization
   // =========================================================================
-  describe("Challenge 2: Splicing Earlier Segments & Surviving Findings Desynchronization", () => {
-    it("empirically demonstrates finding offset desynchronization when an earlier segment is removed", () => {
-      // Setup initial scan with 3 nodes
-      const seg0: TextSegment = { nodeId: "seg_0", startOffset: 0, endOffset: 15, text: "Header banner 1" };
-      const seg1: TextSegment = { nodeId: "seg_1", startOffset: 0, endOffset: 16, text: "SSN: 999-99-9999" };
-      const seg2: TextSegment = { nodeId: "seg_2", startOffset: 0, endOffset: 25, text: "Email: doctor@clinic.org" };
-      const segments = [seg0, seg1, seg2];
-      const segmentIndexById = new Map<string, number>([
-        ["seg_0", 0],
-        ["seg_1", 1],
-        ["seg_2", 2],
-      ]);
+  describe("Challenge 2: Splicing Earlier Segments & Surviving Findings Offset Sync", () => {
+    it("re-bases surviving finding offsets accurately when an earlier node is removed during live rescan", async () => {
+      const env = setupLiveAdversarialContentEnv();
+      try {
+        document.body.innerHTML =
+          `<p id="header">Header banner 1</p>` +
+          `<p id="p-ssn">SSN: 219-09-9999</p>` +
+          `<p id="p-email">Email: doctor@clinic.test</p>`;
+        vi.resetModules();
+        await import("../src/content/content.js");
 
-      const initialBuilt = buildScanText(segments);
-      let combined = initialBuilt.combined;
-      let segmentStarts = initialBuilt.segmentStarts;
+        await env.dispatch({
+          type: "SCAN_PAGE",
+          requestId: "req-adv-c2",
+          sessionId: "sess-adv-c2",
+          mode: "local",
+          settings: makeDefaultScanSettings(),
+        });
 
-      expect(combined).toBe("Header banner 1\nSSN: 999-99-9999\nEmail: doctor@clinic.org");
-      expect(segmentStarts).toEqual([0, 16, 33]);
+        const initial = env.sentMessages.find((m): m is ScanResultMessage => m.type === "SCAN_RESULT")!;
+        expect(initial.findings).toHaveLength(2);
+        const ssnBefore = initial.findings.find((f) => f.category === "ssn")!;
+        const emailBefore = initial.findings.find((f) => f.category === "email")!;
+        expect(ssnBefore.startOffset).toBe(21);
+        expect(emailBefore.startOffset).toBe(40);
 
-      // Detect findings on initial combined text
-      const matches = detect(combined, ["ssn", "email"]);
-      expect(matches).toHaveLength(2);
+        await env.dispatch({
+          type: "APPLY_MASKS",
+          requestId: "req-adv-c2-apply",
+          sessionId: "sess-adv-c2",
+          findingIds: initial.findings.map((f) => f.id),
+        });
 
-      const ssnMatch = matches.find((m) => m.category === "ssn")!;
-      const emailMatch = matches.find((m) => m.category === "email")!;
+        // Remove header node so surviving combined text shrinks by 16 chars
+        document.getElementById("header")!.remove();
 
-      expect(ssnMatch.value).toBe("999-99-9999");
-      expect(ssnMatch.start).toBe(21);
-      expect(ssnMatch.end).toBe(32);
+        await vi.waitFor(
+          () => {
+            const results = env.sentMessages.filter((m): m is ScanResultMessage => m.type === "SCAN_RESULT");
+            expect(results.length).toBeGreaterThanOrEqual(2);
+            const latest = results[results.length - 1];
+            const ssnAfter = latest.findings.find((f) => f.category === "ssn");
+            expect(ssnAfter?.startOffset).toBe(5);
+          },
+          { timeout: 2500, interval: 30 }
+        );
 
-      expect(emailMatch.value).toBe("doctor@clinic.org");
-      expect(emailMatch.start).toBe(40);
-      expect(emailMatch.end).toBe(57);
+        const results = env.sentMessages.filter((m): m is ScanResultMessage => m.type === "SCAN_RESULT");
+        const latest = results[results.length - 1];
+        const ssnAfter = latest.findings.find((f) => f.category === "ssn")!;
+        const emailAfter = latest.findings.find((f) => f.category === "email")!;
+        expect(ssnAfter.startOffset).toBe(5);
+        expect(ssnAfter.endOffset).toBe(16);
+        expect(emailAfter.startOffset).toBe(24);
+        expect(emailAfter.endOffset).toBe(42);
 
-      // Verify initial mapRange maps SSN correctly to seg_1
-      const initialSsnRange = mapRange(segments, segmentStarts, combined.length, ssnMatch.start, ssnMatch.end);
-      expect(initialSsnRange).toHaveLength(1);
-      expect(initialSsnRange[0].nodeId).toBe("seg_1");
-      expect(initialSsnRange[0].startOffset).toBe(5);
-      expect(initialSsnRange[0].endOffset).toBe(16);
-      expect(seg1.text.slice(initialSsnRange[0].startOffset, initialSsnRange[0].endOffset)).toBe("999-99-9999");
-
-      // NOW: Simulate removing seg_0 (the header banner)
-      // Execute the splice logic from content.ts lines 849-870:
-      const removedIndices = [0];
-      for (const idx of removedIndices) {
-        segments.splice(idx, 1);
+        // Surviving masks remain rendered in the live overlay without losing email or ssn
+        await vi.waitFor(() => {
+          const host = document.querySelector("[data-gw-scan-overlay]");
+          expect(host).not.toBeNull();
+          const shadow = env.capturedShadows.get(host!)!;
+          const labels = Array.from(shadow.querySelectorAll('[data-kind="mask"]')).map((el) =>
+            el.getAttribute("data-label") || ""
+          );
+          expect(labels.some((l) => l.startsWith("ssn:"))).toBe(true);
+          expect(labels.some((l) => l.startsWith("email:"))).toBe(true);
+        });
+      } finally {
+        env.restore();
       }
-      segmentIndexById.clear();
-      for (let i = 0; i < segments.length; i++) {
-        segmentIndexById.set(segments[i].nodeId, i);
-      }
-      const rebuilt = buildScanText(segments);
-      segmentStarts = rebuilt.segmentStarts;
-      combined = rebuilt.combined;
-
-      expect(combined).toBe("SSN: 999-99-9999\nEmail: doctor@clinic.org");
-      expect(segmentStarts).toEqual([0, 17]);
-      expect(combined.length).toBe(41);
-
-      // Now, test what mapRange produces for the SURVIVING findings whose offsets were NOT shifted:
-      // In content.ts, ssnMatch.start is STILL 21, and emailMatch.start is STILL 40!
-      const postSsnRange = mapRange(segments, segmentStarts, combined.length, ssnMatch.start, ssnMatch.end);
-      
-      // CRITICAL OBSERVATION:
-      // In new combined, offset 21 is inside Seg 2 ("Email: doctor@clinic.org"), NOT Seg 1!
-      expect(postSsnRange).toHaveLength(1);
-      expect(postSsnRange[0].nodeId).toBe("seg_2"); // WRONG NODE! Mapped to email node!
-      expect(postSsnRange[0].startOffset).toBe(4);
-      expect(postSsnRange[0].endOffset).toBe(15);
-      // It now masks characters inside the EMAIL text!
-      expect(seg2.text.slice(postSsnRange[0].startOffset, postSsnRange[0].endOffset)).toBe("l: doctor@c");
-
-      // And for emailMatch (start: 40, end: 57):
-      // In new combined, length is 41! end (57) exceeds combined length!
-      // mapRange clamps or fails:
-      const postEmailRange = mapRange(segments, segmentStarts, combined.length, emailMatch.start, emailMatch.end);
-      expect(postEmailRange[0]?.endOffset).toBe(seg2.text.length); // Clamped, partial coverage
     });
   });
 
@@ -348,55 +408,53 @@ describe("Adversarial M2 Rescan & DOM Traversal Stress Suite", () => {
       vi.useRealTimers();
     });
 
-    it("empirically demonstrates mutation batch overwrite risk when mutations arrive in rapid succession", () => {
-      // Trace content.ts lines 941-949:
-      // pendingMutationBatch = batch;
-      // if (mutationDebounceTimer !== null) clearTimeout(mutationDebounceTimer);
-      // mutationDebounceTimer = setTimeout(..., 500);
+    it("merges consecutive mutation batches in live content script so Batch 1 is never overwritten", async () => {
+      const env = setupLiveAdversarialContentEnv();
+      try {
+        document.body.innerHTML = `<p id="base">Baseline clear clinical line.</p>`;
+        vi.resetModules();
+        await import("../src/content/content.js");
 
-      let pendingMutationBatch: MutationBatch | null = null;
-      let timer: ReturnType<typeof setTimeout> | null = null;
-      const processedBatches: MutationBatch[] = [];
+        await env.dispatch({
+          type: "SCAN_PAGE",
+          requestId: "req-adv-c5",
+          sessionId: "sess-adv-c5",
+          mode: "local",
+          settings: makeDefaultScanSettings(),
+        });
 
-      function onMutationBatch(batch: MutationBatch) {
-        pendingMutationBatch = batch; // Non-merging overwrite
-        if (timer !== null) clearTimeout(timer);
-        timer = setTimeout(() => {
-          if (pendingMutationBatch) {
-            processedBatches.push(pendingMutationBatch);
-            pendingMutationBatch = null;
-          }
-        }, 500);
+        // Batch 1 arrives
+        const batch1El = document.createElement("div");
+        batch1El.id = "batch-1";
+        batch1El.textContent = "Batch1 SSN: 219-09-9999";
+        document.body.appendChild(batch1El);
+
+        // Wait inside the debounce window before Batch 2 arrives
+        await new Promise((r) => setTimeout(r, 20));
+
+        // Batch 2 arrives before Batch 1's debounced rescan runs
+        const batch2El = document.createElement("span");
+        batch2El.id = "batch-2";
+        batch2El.textContent = "Batch2 NPI: 1234567893";
+        document.body.appendChild(batch2El);
+
+        await vi.waitFor(
+          () => {
+            const results = env.sentMessages.filter((m): m is ScanResultMessage => m.type === "SCAN_RESULT");
+            const latest = results[results.length - 1];
+            const cats = latest?.findings.map((f) => f.category) ?? [];
+            expect(cats).toContain("ssn");
+            expect(cats).toContain("npi");
+          },
+          { timeout: 2500, interval: 30 }
+        );
+
+        const results = env.sentMessages.filter((m): m is ScanResultMessage => m.type === "SCAN_RESULT");
+        const latest = results[results.length - 1];
+        expect(latest.findings).toHaveLength(2);
+      } finally {
+        env.restore();
       }
-
-      const batch1: MutationBatch = {
-        addedNodes: [document.createElement("div")],
-        removedNodes: [],
-        mutatedTextNodes: [],
-        timestamp: 1000,
-      };
-
-      const batch2: MutationBatch = {
-        addedNodes: [document.createElement("span")],
-        removedNodes: [],
-        mutatedTextNodes: [],
-        timestamp: 1200,
-      };
-
-      onMutationBatch(batch1);
-      // 200ms later, before 500ms debounce fires, batch2 arrives:
-      onMutationBatch(batch2);
-
-      // Trigger timer:
-      if (timer) {
-        // Fast forward
-        processedBatches.push(pendingMutationBatch!);
-      }
-
-      // Batch 1 was completely dropped and never processed
-      expect(processedBatches).toHaveLength(1);
-      expect(processedBatches[0]).toBe(batch2);
-      expect(processedBatches[0].addedNodes[0]).toBe(batch2.addedNodes[0]);
     });
   });
 

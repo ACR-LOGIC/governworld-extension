@@ -16,6 +16,13 @@ import type { RedactedDocRef } from "../shared/docStore.js";
 
 export const OFFSCREEN_CHANNEL = "doc-pipeline";
 
+export class DocumentCancelledError extends Error {
+  constructor(message = "Document processing cancelled.") {
+    super(message);
+    this.name = "DocumentCancelledError";
+  }
+}
+
 /**
  * The page cap lives in `src/shared/docLimits.ts`, alongside the size cap and
  * the window arithmetic, so the popup, the worker, the offscreen document and
@@ -117,7 +124,19 @@ export interface OffscreenCountRequest {
   mimeType: string;
 }
 
-export type OffscreenRequest = OffscreenPreviewRequest | OffscreenRedactRequest | OffscreenCountRequest;
+export interface OffscreenCancelRequest {
+  channel: typeof OFFSCREEN_CHANNEL;
+  op: "cancel";
+  jobId: string;
+  targetJobId?: string;
+  fileKey?: string;
+}
+
+export type OffscreenRequest =
+  | OffscreenPreviewRequest
+  | OffscreenRedactRequest
+  | OffscreenCountRequest
+  | OffscreenCancelRequest;
 
 export interface OffscreenPreviewResponse {
   channel: typeof OFFSCREEN_CHANNEL;
@@ -189,15 +208,34 @@ export interface OffscreenCountError {
   userMessage: string;
 }
 
+export interface OffscreenCancelResponse {
+  channel: typeof OFFSCREEN_CHANNEL;
+  op: "cancel";
+  jobId: string;
+  ok: true;
+  cancelled: boolean;
+}
+
+export interface OffscreenCancelError {
+  channel: typeof OFFSCREEN_CHANNEL;
+  op: "cancel";
+  jobId: string;
+  ok: false;
+  code: string;
+  userMessage: string;
+}
+
 export type OffscreenResponse =
   | OffscreenPreviewResponse
   | OffscreenPreviewError
   | OffscreenRedactResponse
   | OffscreenRedactError
   | OffscreenCountResponse
-  | OffscreenCountError;
+  | OffscreenCountError
+  | OffscreenCancelResponse
+  | OffscreenCancelError;
 
-const OFFSCREEN_OPS = ["preview", "redact", "count"] as const;
+const OFFSCREEN_OPS = ["preview", "redact", "count", "cancel"] as const;
 type OffscreenOp = (typeof OFFSCREEN_OPS)[number];
 
 function isOffscreenOp(value: unknown): value is OffscreenOp {
@@ -210,6 +248,7 @@ export function isOffscreenRequest(raw: unknown): raw is OffscreenRequest {
   if (r.channel !== OFFSCREEN_CHANNEL) return false;
   if (!isOffscreenOp(r.op)) return false;
   if (typeof r.jobId !== "string" || !r.jobId) return false;
+  if (r.op === "cancel") return true;
   if (typeof r.kind !== "string" || (r.kind !== "pdf" && r.kind !== "image" && r.kind !== "docx")) return false;
   return true;
 }

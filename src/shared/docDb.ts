@@ -34,10 +34,24 @@ const STORE = "docfiles";
  * staged nothing.
  */
 const STAGED_MARKER_KEY = "docStagedMarker";
+const STAGED_FILE_KEY = "docStagedFileKey";
 
-export async function markDocumentStaged(): Promise<void> {
+export interface StagedPrefixStats {
+  keyCount: number;
+  bytes: number;
+}
+
+export interface StagedDataStats {
+  keyCount: number;
+  totalBytes: number;
+  byPrefix: Record<string, StagedPrefixStats>;
+}
+
+export async function markDocumentStaged(fileKey?: string): Promise<void> {
   try {
-    await chrome.storage.session.set({ [STAGED_MARKER_KEY]: Date.now() });
+    const payload: Record<string, unknown> = { [STAGED_MARKER_KEY]: Date.now() };
+    if (fileKey) payload[STAGED_FILE_KEY] = fileKey;
+    await chrome.storage.session.set(payload);
   } catch {
     // Best-effort. If this fails the purge may delete a staged document, which
     // the user can recover from by picking the file again; failing the pick
@@ -54,10 +68,20 @@ export async function isDocumentStaged(): Promise<boolean> {
   }
 }
 
+export async function getStagedFileKey(): Promise<string | null> {
+  try {
+    const raw = await chrome.storage.session.get(STAGED_FILE_KEY);
+    const val = raw[STAGED_FILE_KEY];
+    return typeof val === "string" && val.length > 0 ? val : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Clear the marker, e.g. once every staged document has been discarded. */
 export async function clearStagedMarker(): Promise<void> {
   try {
-    await chrome.storage.session.remove(STAGED_MARKER_KEY);
+    await chrome.storage.session.remove([STAGED_MARKER_KEY, STAGED_FILE_KEY]);
   } catch {
     // Nothing to do: the marker is session-scoped and expires with the session.
   }
@@ -206,35 +230,47 @@ export async function docClearFiles(): Promise<void> {
   await commitWrite((tx) => tx.objectStore(STORE).clear(), "clear document files");
 }
 
-export async function docReadFile(fileKey: string): Promise<ArrayBuffer | null> {
+async function executeRead<T>(
+  op: (store: IDBObjectStore, resolve: (value: T) => void, reject: (err: unknown) => void) => void,
+  label: string
+): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
     const db = await openDocDb();
     try {
-      return await new Promise<ArrayBuffer | null>((resolve, reject) => {
+      return await new Promise<T>((resolve, reject) => {
         let settled = false;
         const timer = setTimeout(() => {
           if (settled) return;
           settled = true;
-          reject(new Error("Could not read the file: storage did not respond."));
+          reject(new Error(`Could not ${label}: storage did not respond.`));
         }, OP_TIMEOUT_MS);
-        const settle = (fn: () => void): void => {
+        const settleResolve = (value: T): void => {
           if (settled) return;
           settled = true;
           clearTimeout(timer);
-          fn();
+          resolve(value);
+        };
+        const settleReject = (err: unknown): void => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          reject(err);
         };
         let tx: IDBTransaction;
         try {
           tx = db.transaction(STORE, "readonly");
         } catch (error) {
-          settle(() => reject(error));
+          settleReject(error);
           return;
         }
-        const req = tx.objectStore(STORE).get(fileKey);
-        req.onsuccess = () => settle(() => resolve((req.result as ArrayBuffer | undefined) ?? null));
-        req.onerror = () => settle(() => reject(req.error ?? new Error("Could not read the file")));
-        tx.onabort = () => settle(() => reject(tx.error ?? new Error("Could not read the file")));
+        tx.onabort = () => settleReject(tx.error ?? new Error(`Could not ${label}`));
+        tx.onerror = () => settleReject(tx.error ?? new Error(`Could not ${label}`));
+        try {
+          op(tx.objectStore(STORE), settleResolve, settleReject);
+        } catch (error) {
+          settleReject(error);
+        }
       });
     } catch (error) {
       lastError = error;
@@ -242,4 +278,75 @@ export async function docReadFile(fileKey: string): Promise<ArrayBuffer | null> 
     }
   }
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+export async function docListKeys(): Promise<string[]> {
+  return executeRead<string[]>((store, resolve, reject) => {
+    const req = store.getAllKeys();
+    req.onsuccess = () => resolve(Array.from(req.result ?? [], (k) => String(k)));
+    req.onerror = () => reject(req.error ?? new Error("Could not list staged keys"));
+  }, "list staged keys");
+}
+
+export async function docDeleteByPrefix(
+  prefix: string,
+  options?: { keepRedacted?: boolean }
+): Promise<number> {
+  if (!prefix) return 0;
+  let deleted = 0;
+  await commitWrite((tx) => {
+    const store = tx.objectStore(STORE);
+    const req = store.getAllKeys();
+    req.onsuccess = () => {
+      const keys = req.result ?? [];
+      for (const rawKey of keys) {
+        const key = String(rawKey);
+        if (
+          options?.keepRedacted &&
+          (key.startsWith(`${prefix}::redacted::`) || key === `${prefix}::redacted-manifest`)
+        ) {
+          continue;
+        }
+        if (key === prefix || key.startsWith(`${prefix}::`)) {
+          store.delete(rawKey);
+          deleted += 1;
+        }
+      }
+    };
+  }, "delete staged document keys");
+  return deleted;
+}
+
+export async function docGetStagedStats(): Promise<StagedDataStats> {
+  return executeRead<StagedDataStats>((store, resolve, reject) => {
+    const stats: StagedDataStats = { keyCount: 0, totalBytes: 0, byPrefix: {} };
+    const req = store.openCursor();
+    req.onsuccess = () => {
+      const cursor = req.result;
+      if (!cursor) {
+        resolve(stats);
+        return;
+      }
+      const key = String(cursor.key);
+      const val = cursor.value;
+      const bytes = val instanceof ArrayBuffer ? val.byteLength : ArrayBuffer.isView(val) ? val.byteLength : 0;
+      const rootPrefix = key.split("::")[0] || key;
+      stats.keyCount += 1;
+      stats.totalBytes += bytes;
+      const entry = stats.byPrefix[rootPrefix] ?? { keyCount: 0, bytes: 0 };
+      entry.keyCount += 1;
+      entry.bytes += bytes;
+      stats.byPrefix[rootPrefix] = entry;
+      cursor.continue();
+    };
+    req.onerror = () => reject(req.error ?? new Error("Could not inspect staged storage"));
+  }, "inspect staged storage");
+}
+
+export async function docReadFile(fileKey: string): Promise<ArrayBuffer | null> {
+  return executeRead<ArrayBuffer | null>((store, resolve, reject) => {
+    const req = store.get(fileKey);
+    req.onsuccess = () => resolve((req.result as ArrayBuffer | undefined) ?? null);
+    req.onerror = () => reject(req.error ?? new Error("Could not read the file"));
+  }, "read the file");
 }

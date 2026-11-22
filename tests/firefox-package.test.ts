@@ -45,8 +45,8 @@ describe.skipIf(!existsSync(manifestPath))("firefox extension package", () => {
     for (const key of ["offscreen", "sidePanel"]) {
       expect(manifest.permissions ?? []).not.toContain(key);
     }
-    // Runtime-only site access for always-on, same as Chromium.
-    expect(manifest.host_permissions).toBeUndefined();
+    // Same pinned Supabase host permission and runtime-only site access as Chromium.
+    expect(manifest.host_permissions).toEqual(["https://lkgcehdwasewwoieyoip.supabase.co/*"]);
     expect(manifest.optional_host_permissions).toEqual(
       expect.arrayContaining(["http://*/*", "https://*/*"])
     );

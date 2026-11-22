@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
-import { isRecord } from "./types.js";
+import { isRecord, type OwningBackend, type SupabasePairingState } from "./types.js";
 import type { FindingCategory, ScanMode, RedactionStyle } from "./types.js";
 import type { LanguageCode } from "./i18n.js";
-export type { FindingCategory, ScanMode, RedactionStyle, LanguageCode };
+export type { FindingCategory, ScanMode, RedactionStyle, LanguageCode, OwningBackend };
 
 export type FontSizeScale = "default" | "medium" | "large" | "xlarge";
 export type SessionTimeoutOption = "never" | "5m" | "15m" | "30m";
@@ -313,6 +313,10 @@ export interface Settings {
   defaultRedactionStyle: RedactionStyle;
   /** Default text stamp label for Document Studio. */
   defaultStampText: string;
+  /** When true, single-token possible_name findings are auto-selected for masking; default false (review-only). */
+  autoMaskSingleNames: boolean;
+  /** When true, lazy-loads the clinical/medical dictionary detector (A3 / D3); default false. */
+  medicalDictionaryEnabled: boolean;
 }
 
 function defaultThresholds(): Record<FindingCategory, number> {
@@ -375,6 +379,8 @@ export const DEFAULT_SETTINGS: Settings = {
   sessionTimeout: "never",
   defaultRedactionStyle: "blackout",
   defaultStampText: "[REDACTED]",
+  autoMaskSingleNames: false,
+  medicalDictionaryEnabled: false,
 };
 
 export function isCategory(value: unknown): value is FindingCategory {
@@ -476,6 +482,8 @@ export function normalizeSettings(raw: unknown): Settings {
   const defaultStampText = typeof raw.defaultStampText === "string" && raw.defaultStampText.trim().length > 0 && raw.defaultStampText.length <= 50
     ? raw.defaultStampText.trim()
     : base.defaultStampText;
+  const autoMaskSingleNames = raw.autoMaskSingleNames === true;
+  const medicalDictionaryEnabled = raw.medicalDictionaryEnabled === true;
 
   return {
     mode,
@@ -508,6 +516,8 @@ export function normalizeSettings(raw: unknown): Settings {
     sessionTimeout,
     defaultRedactionStyle,
     defaultStampText,
+    autoMaskSingleNames,
+    medicalDictionaryEnabled,
   };
 }
 
@@ -586,26 +596,153 @@ export function isHttpsOrigin(value: string): boolean {
   }
 }
 
-const ALLOWED_GATEWAY_HOSTS = new Set([
+export const ALLOWED_GATEWAY_HOSTS = new Set([
   "api.governworld.acrlogic.com",
-  "127.0.0.1",
-  "localhost",
+  "lkgcehdwasewwoieyoip.supabase.co",
 ]);
 
 export function isAllowedGatewayOrigin(value: string): boolean {
+  if (!isHttpsOrigin(value)) return false;
   try {
     const url = new URL(value);
-    const hostname = url.hostname.toLowerCase();
-    if (ALLOWED_GATEWAY_HOSTS.has(hostname)) {
-      if (hostname === "127.0.0.1" || hostname === "localhost") {
-        return (url.protocol === "http:" || url.protocol === "https:") && url.pathname === "" || url.pathname === "/";
-      }
-      return isHttpsOrigin(value);
-    }
+    return url.port === "" && ALLOWED_GATEWAY_HOSTS.has(url.hostname.toLowerCase());
   } catch {
     return false;
   }
-  return false;
+}
+
+export type PairingStatus = SupabasePairingState;
+
+export interface PairingConflictState {
+  detected: boolean;
+  existing_backend: OwningBackend;
+  incoming_backend: OwningBackend;
+  reason?: string;
+  detected_at?: string;
+}
+
+export interface PairingState {
+  status: PairingStatus;
+  seat_id: string | null;
+  organisation_id: string | null;
+  organisation_name: string | null;
+  unlocked: boolean;
+  session_ref: string | null;
+  owning_backend: OwningBackend | null;
+  conflict_state: PairingConflictState | null;
+}
+
+export const PAIRING_STATE_KEY = "gw_pairing_state";
+
+export const DEFAULT_PAIRING_STATE: PairingState = {
+  status: "local_only",
+  seat_id: null,
+  organisation_id: null,
+  organisation_name: null,
+  unlocked: false,
+  session_ref: null,
+  owning_backend: null,
+  conflict_state: null,
+};
+
+function isPairingStatus(value: unknown): value is PairingStatus {
+  return value === "local_only" || value === "redeeming" || value === "paired" || value === "paired_offline";
+}
+
+function isOwningBackend(value: unknown): value is OwningBackend {
+  return value === "supabase" || value === "azure";
+}
+
+function boundedNonEmptyString(value: unknown, maxLen: number): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (trimmed.length === 0 || trimmed.length > maxLen) return null;
+  return trimmed;
+}
+
+function normalizeConflictState(raw: unknown): PairingConflictState | null {
+  if (!isRecord(raw) || raw.detected !== true) return null;
+  if (!isOwningBackend(raw.existing_backend) || !isOwningBackend(raw.incoming_backend)) {
+    return null;
+  }
+  const reason = boundedNonEmptyString(raw.reason, 500);
+  const detectedAt = boundedNonEmptyString(raw.detected_at, 64);
+  return {
+    detected: true,
+    existing_backend: raw.existing_backend,
+    incoming_backend: raw.incoming_backend,
+    ...(reason ? { reason } : {}),
+    ...(detectedAt ? { detected_at: detectedAt } : {}),
+  };
+}
+
+/**
+ * Normalizes persisted pairing state (fail closed to `local_only` on invalid or
+ * incomplete paired states). Never stores raw pairing codes or bearer tokens.
+ */
+export function normalizePairingState(raw: unknown): PairingState {
+  if (!isRecord(raw) || !isPairingStatus(raw.status)) {
+    return { ...DEFAULT_PAIRING_STATE };
+  }
+
+  const conflictState = normalizeConflictState(raw.conflict_state);
+
+  if (raw.status === "local_only") {
+    return {
+      ...DEFAULT_PAIRING_STATE,
+      conflict_state: conflictState,
+    };
+  }
+
+  const seatId = boundedNonEmptyString(raw.seat_id, 128);
+  const orgId = boundedNonEmptyString(raw.organisation_id, 128);
+  const orgName = boundedNonEmptyString(raw.organisation_name, 200);
+  const sessionRef = boundedNonEmptyString(raw.session_ref, 128);
+  const owningBackend = isOwningBackend(raw.owning_backend) ? raw.owning_backend : null;
+  const unlocked = raw.unlocked === true;
+
+  if (raw.status === "paired" || raw.status === "paired_offline") {
+    if (!seatId || !orgId || !owningBackend) {
+      return { ...DEFAULT_PAIRING_STATE };
+    }
+  }
+
+  return {
+    status: raw.status,
+    seat_id: seatId,
+    organisation_id: orgId,
+    organisation_name: orgName,
+    unlocked,
+    session_ref: sessionRef,
+    owning_backend: owningBackend,
+    conflict_state: conflictState,
+  };
+}
+
+export async function loadPairingState(): Promise<PairingState> {
+  if (typeof chrome === "undefined" || !chrome?.storage?.local) {
+    return { ...DEFAULT_PAIRING_STATE };
+  }
+  try {
+    const raw = await chrome.storage.local.get(PAIRING_STATE_KEY);
+    return normalizePairingState(raw[PAIRING_STATE_KEY]);
+  } catch {
+    return { ...DEFAULT_PAIRING_STATE };
+  }
+}
+
+export async function savePairingState(state: unknown): Promise<PairingState> {
+  const normalized = normalizePairingState(state);
+  if (typeof chrome !== "undefined" && chrome?.storage?.local) {
+    await chrome.storage.local.set({ [PAIRING_STATE_KEY]: normalized });
+  }
+  return normalized;
+}
+
+export async function clearPairingState(): Promise<void> {
+  if (typeof chrome !== "undefined" && chrome?.storage?.local) {
+    await chrome.storage.local.remove(PAIRING_STATE_KEY);
+  }
 }
 
 export function isCategoryEnabled(settings: Settings, category: FindingCategory): boolean {

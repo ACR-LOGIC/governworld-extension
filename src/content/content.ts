@@ -6,16 +6,31 @@ import { applySelectionExcludingAttrs, attributeAt, buildAttrScan, collectAttrRe
 import type { AttrScan } from "./attrs.js";
 import { detect, detectWithCoverage, maskValue, maskContext, placeholderLabelFor, type RawMatch } from "./detect.js";
 import { parseName, type ParsedName } from "./detectors/nameParser.js";
+import { ensureNameDictionariesLoaded, isNameDictionariesLoaded } from "./detectors/nameDictionaries.js";
+import {
+  ensureMedicalDictionaryLoaded,
+  isMedicalDictionaryLoaded,
+  detectMedicalDictionaryTerms,
+} from "./detectors/medicalDictionary.js";
 import { createOverlay } from "./overlay.js";
 import type { OverlayController } from "./overlay.js";
 import { initPasteGuard } from "./pasteGuard.js";
 import { showToast } from "./toast.js";
-import { validateMessage } from "../shared/messages.js";
-import type { Finding, FindingCategory, Rect, WorkerMessage } from "../shared/types.js";
+import { validateMessage, DEFAULT_FINDINGS_CHUNK_BYTES, chunkFindingsByByteBudget } from "../shared/messages.js";
+import type { Finding, FindingCategory, IncompleteWindowInfo, Rect, WorkerMessage } from "../shared/types.js";
 import { ALL_CATEGORIES } from "../shared/settings.js";
 import type { CustomPattern } from "../shared/customPatterns.js";
-import { buildCanonicalDocument } from "./normalization/canonical.js";
-import { observeMutations, getAffectedNodeIds, type MutationObserverHandle, type MutationBatch } from "./normalization/mutation.js";
+import { buildCanonicalDocumentWindows } from "./normalization/canonical.js";
+import {
+  observeMutations,
+  getAffectedNodeIds,
+  SMALL_BATCH_NODE_THRESHOLD,
+  type MutationObserverHandle,
+  type MutationBatch,
+} from "./normalization/mutation.js";
+
+const SMALL_BATCH_RESCAN_DELAY_MS = 20;
+const BURST_RESCAN_DELAY_MS = 500;
 import { setDynamicContentMonitored, updateCoverageWithBoundaries } from "./normalization/coverage.js";
 import { traverseIframes } from "./normalization/iframe.js";
 import { extractTableStructures, annotateSegmentsWithTableStructure } from "./normalization/table.js";
@@ -70,6 +85,19 @@ if (g.__gwRedactionContentLoaded !== true) {
   let currentCustomPatterns: CustomPattern[] = [];
   /** Manual selection ranges from CONTEXT_MASK_SELECTION (selection, not scan findings). */
   let manualSelectionRanges: Array<{ range: Range; rects: DOMRectList; label: string; placeholder?: string }> = [];
+  let mutationObserver: MutationObserverHandle | null = null;
+  let pendingMutationBatch: MutationBatch | null = null;
+  let mutationDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  let nextRescanSegId = 0;
+  let nextRescanFindingSeq = 0;
+  let lastAttrChars = 0;
+  let lastTruncated = false;
+  let lastCoverageStatus: import("../shared/types.js").ScanCoverageStatus | undefined;
+  let lastDeferredMediaCount = 0;
+  let lastWindowsScanned: number | undefined;
+  let lastWindowsTotal: number | undefined;
+  let lastIncompleteWindows: IncompleteWindowInfo[] | undefined;
+  let lastCoverageWarnings: import("../shared/types.js").CoverageWarning[] | undefined;
 
   function clearSession() {
     sessionId = null;
@@ -82,6 +110,21 @@ if (g.__gwRedactionContentLoaded !== true) {
     findings = [];
     placeholdersEnabled = false;
     manualSelectionRanges = [];
+    pendingMutationBatch = null;
+    nextRescanSegId = 0;
+    nextRescanFindingSeq = 0;
+    lastAttrChars = 0;
+    lastTruncated = false;
+    lastCoverageStatus = undefined;
+    lastDeferredMediaCount = 0;
+    lastWindowsScanned = undefined;
+    lastWindowsTotal = undefined;
+    lastIncompleteWindows = undefined;
+    lastCoverageWarnings = undefined;
+    if (mutationDebounceTimer !== null) {
+      clearTimeout(mutationDebounceTimer);
+      mutationDebounceTimer = null;
+    }
     overlay?.clear();
     overlay?.destroy();
     overlay = null;
@@ -215,37 +258,7 @@ if (g.__gwRedactionContentLoaded !== true) {
     return rects;
   }
 
-  /**
-   * Findings travel to the service worker inside SCAN_RESULT, which — like every
-   * runtime message — is dropped whole past MAX_MESSAGE_BYTES (64 KB). A dense
-   * page (a long table, a log dump) can easily produce hundreds of findings and
-   * would otherwise vanish into a "Scan timed out" with no honest signal. Cap the
-   * list by serialized byte budget so the result always arrives, and report the
-   * true count so the UI can say the results are partial.
-   */
-  const MAX_SCAN_FINDINGS_BYTES = 48 * 1024;
-
-  function capFindingsForTransport(findings: Finding[]): {
-    findings: Finding[];
-    totalFindings: number;
-    findingsTruncated: boolean;
-  } {
-    const totalFindings = findings.length;
-    let capped = findings;
-    if (findings.length > 1) {
-      const probe = JSON.stringify(findings);
-      if (probe.length > MAX_SCAN_FINDINGS_BYTES) {
-        const perFinding = probe.length / findings.length;
-        const keep = Math.max(1, Math.floor(MAX_SCAN_FINDINGS_BYTES / perFinding));
-        capped = findings.slice(0, keep);
-        // Per-finding sizes vary, so confirm the slice actually fits.
-        while (capped.length > 1 && JSON.stringify(capped).length > MAX_SCAN_FINDINGS_BYTES) {
-          capped = capped.slice(0, Math.max(1, Math.floor(capped.length / 2)));
-        }
-      }
-    }
-    return { findings: capped, totalFindings, findingsTruncated: capped.length < totalFindings };
-  }
+  /** Findings travel via chunkFindingsByByteBudget so all findings survive Chrome IPC. */
 
   function buildFindings(
     rawMatches: ReturnType<typeof detect>,
@@ -272,7 +285,10 @@ if (g.__gwRedactionContentLoaded !== true) {
           rects,
           contextPreview: contextFor(match.start, match.end),
           ...(match.category === "possible_name" ? { parsedName } : {}),
-          selected: match.category !== "possible_name" || isNameStructured(parsedName),
+          selected:
+            match.category !== "possible_name" ||
+            currentSettings?.autoMaskSingleNames === true ||
+            isNameStructured(parsedName),
         } satisfies Finding;
     });
   }
@@ -282,6 +298,11 @@ if (g.__gwRedactionContentLoaded !== true) {
     for (const finding of findings) {
       if (!finding.selected) continue;
       if (finding.source !== "attr" && finding.nodeId && finding.nodeId !== "svg" && !finding.nodeId.startsWith("media")) {
+        const mappedNode = nodeIds.get(finding.nodeId);
+        if (!mappedNode || !mappedNode.isConnected) {
+          finding.rects = [];
+          continue;
+        }
         const fresh = findingRects(finding.startOffset, finding.endOffset);
         if (fresh.length > 0) {
           finding.rects = fresh;
@@ -339,12 +360,15 @@ if (g.__gwRedactionContentLoaded !== true) {
       inventory = null;
     }
 
-    // ── Layer 1: DOM canonical text (existing path, unchanged) ─────────────
-    const canonical = buildCanonicalDocument({
+    // ── Layer 1: DOM canonical text (windowed full-page scan, P6 / D4) ────
+    const canonical = buildCanonicalDocumentWindows({
       root: document,
       sourceKind: "web-dom",
       maxVisibleChars: settings.maxVisibleChars,
       maxNodeChars: settings.maxNodeChars,
+      windowChars: settings.windowChars,
+      windowOverlapChars: settings.windowOverlapChars,
+      maxTotalWindows: settings.maxTotalWindows,
       nodeIds,
     });
 
@@ -353,6 +377,9 @@ if (g.__gwRedactionContentLoaded !== true) {
       canonical.segments = annotateSegmentsWithTableStructure(canonical.segments, nodeIds);
       canonical.metadata.tableCount = tables.length;
     }
+
+    const frameGlobalStart = canonical.combined.length > 0 ? canonical.combined.length + 1 : 0;
+    const frameTextParts: string[] = [];
 
     // Frame text is appended after the top document's, so the scan string
     // contains every frame. Each frame contributes an independently offset
@@ -376,6 +403,7 @@ if (g.__gwRedactionContentLoaded !== true) {
       );
       canonical.combined += (canonical.combined.length > 0 ? "\n" : "") + frameDoc.combined;
       canonical.segmentStarts.push(...frameDoc.segmentStarts.map((s) => s + shift));
+      if (frameDoc.combined.length > 0) frameTextParts.push(frameDoc.combined);
     }
     canonical.boundaries.push(...iframeResult.boundaries);
 
@@ -417,16 +445,110 @@ if (g.__gwRedactionContentLoaded !== true) {
     currentCustomPatterns = customPatterns;
 
     const threshold = (cat: FindingCategory) => settings.confidenceThresholds?.[cat] ?? 0;
-    const detectedMain = detectWithCoverage(combined, settings.enabledCategories, customPatterns);
-    let customPatternsPartiallyScanned = detectedMain.partiallyScanned;
-    let rawMatches = detectedMain.matches;
+    let customPatternsPartiallyScanned = false;
+    let rawMatches: RawMatch[] = [];
 
-    // Name intelligence: parse every possible_name span, attach structured
-    // components, and boost structured names before the confidence gate so real
-    // PHI names are not filtered out as low-confidence.
-    if (settings.enabledCategories.includes("possible_name")) {
-      rawMatches = enrichAndBoostNames(rawMatches);
+    const totalWindows = canonical.windowsTotal;
+    const charsTotal = combined.length;
+    const incompleteWindows: IncompleteWindowInfo[] = [...canonical.incompleteWindows];
+    let windowsScanned = 0;
+    let charsScanned = 0;
+
+    if (totalWindows > 1) {
+      respond(
+        {
+          type: "SCAN_PROGRESS",
+          requestId,
+          sessionId: sessionId as string,
+          windowsCompleted: 0,
+          windowsTotal: totalWindows,
+          charsScanned: 0,
+          charsTotal,
+          findingsSoFar: 0,
+        },
+        requestId
+      );
     }
+
+    for (let wIdx = 0; wIdx < canonical.windowSlices.length; wIdx++) {
+      const slice = canonical.windowSlices[wIdx];
+      try {
+        const winDetected = detectWithCoverage(slice.combined, settings.enabledCategories, customPatterns);
+        if (winDetected.partiallyScanned) customPatternsPartiallyScanned = true;
+        let winMatches = winDetected.matches.map((m) => ({
+          ...m,
+          start: slice.globalStartOffset + m.start,
+          end: slice.globalStartOffset + m.end,
+        }));
+        if (settings.enabledCategories.includes("possible_name")) {
+          if (!isNameDictionariesLoaded() && winMatches.some((m) => m.category === "possible_name")) {
+            await ensureNameDictionariesLoaded();
+          }
+          winMatches = enrichAndBoostNames(winMatches);
+        }
+        if (settings.medicalDictionaryEnabled === true) {
+          if (!isMedicalDictionaryLoaded()) {
+            await ensureMedicalDictionaryLoaded();
+          }
+          const medMatches = detectMedicalDictionaryTerms(slice.combined).map((m) => ({
+            ...m,
+            start: slice.globalStartOffset + m.start,
+            end: slice.globalStartOffset + m.end,
+          }));
+          winMatches.push(...medMatches);
+        }
+        rawMatches.push(...winMatches);
+        windowsScanned += 1;
+      } catch (err) {
+        incompleteWindows.push({
+          windowIndex: slice.windowIndex,
+          reason: err instanceof Error && err.message ? err.message.slice(0, 120) : "Window scan failed",
+        });
+      }
+      charsScanned += slice.charCount;
+      if (totalWindows > 1) {
+        respond(
+          {
+            type: "SCAN_PROGRESS",
+            requestId,
+            sessionId: sessionId as string,
+            windowsCompleted: wIdx + 1,
+            windowsTotal: totalWindows,
+            charsScanned: Math.min(charsScanned, charsTotal),
+            charsTotal,
+            findingsSoFar: rawMatches.filter((m) => m.confidence >= threshold(m.category)).length,
+          },
+          requestId
+        );
+        if (wIdx < canonical.windowSlices.length - 1) {
+          await new Promise((r) => setTimeout(r, 0));
+        }
+      }
+    }
+
+    if (frameTextParts.length > 0) {
+      const frameCombined = frameTextParts.join("\n");
+      const frameDetected = detectWithCoverage(frameCombined, settings.enabledCategories, customPatterns);
+      if (frameDetected.partiallyScanned) customPatternsPartiallyScanned = true;
+      let frameMatches = frameDetected.matches.map((m) => ({
+        ...m,
+        start: frameGlobalStart + m.start,
+        end: frameGlobalStart + m.end,
+      }));
+      if (settings.enabledCategories.includes("possible_name")) {
+        if (!isNameDictionariesLoaded() && frameMatches.some((m) => m.category === "possible_name")) {
+          await ensureNameDictionariesLoaded();
+        }
+        frameMatches = enrichAndBoostNames(frameMatches);
+      }
+      rawMatches.push(...frameMatches);
+    }
+
+    const effectiveTruncated =
+      canonical.truncated ||
+      canonical.hardLimitReached ||
+      customPatternsPartiallyScanned ||
+      incompleteWindows.length > 0;
 
     const filteredMatches = rawMatches.filter(
       (m) => m.confidence >= threshold(m.category)
@@ -574,54 +696,139 @@ if (g.__gwRedactionContentLoaded !== true) {
           unresolvedRegions: remainingUnresolved,
           deferredMediaCount,
           visibleChars: combined.length,
-          truncated: canonical.truncated,
+          truncated: effectiveTruncated,
           customPatternsPartiallyScanned,
         });
-      } else if (canonical.truncated || customPatternsPartiallyScanned) {
+      } else if (effectiveTruncated) {
         coverageStatus = "PARTIALLY_SCANNED";
       }
     } catch {
       // Media queue is best-effort — never fail the scan.
-      if (canonical.truncated || customPatternsPartiallyScanned) {
+      if (effectiveTruncated) {
         coverageStatus = "PARTIALLY_SCANNED";
       }
     }
 
+    const coverageWarnings: import("../shared/types.js").CoverageWarning[] = [];
+    if (incompleteWindows.length > 0) {
+      coverageWarnings.push({
+        cause: "incomplete_window",
+        count: incompleteWindows.length,
+        detail: incompleteWindows.map((w) => `Window ${w.windowIndex}: ${w.reason}`).join("; "),
+      });
+    } else if (effectiveTruncated) {
+      coverageWarnings.push({
+        cause: "truncated",
+        count: 1,
+      });
+    }
+    if ((inventory?.crossOriginIframes ?? 0) > 0) {
+      coverageWarnings.push({
+        cause: "cross_origin_iframe",
+        count: inventory!.crossOriginIframes,
+      });
+    }
+    const closedShadowCount =
+      (inventory?.closedShadowRootsAccessed ?? 0) + (inventory?.closedShadowRootsBlocked ?? 0);
+    if (closedShadowCount > 0) {
+      coverageWarnings.push({
+        cause: "closed_shadow_root",
+        count: closedShadowCount,
+      });
+    }
+    if ((inventory?.canvases ?? 0) > 0 && combined.length === 0) {
+      coverageWarnings.push({
+        cause: "canvas_only",
+        count: inventory!.canvases,
+      });
+    }
+
+    lastAttrChars = attrChars;
+    lastTruncated = effectiveTruncated;
+    const rawCoverageStatus = incompleteWindows.length > 0 ? "PARTIALLY_SCANNED" : coverageStatus;
+    lastCoverageStatus =
+      coverageWarnings.length > 0 &&
+      (rawCoverageStatus === "FULLY_SCANNED" ||
+        rawCoverageStatus === "NO_SENSITIVE_DATA_DETECTED" ||
+        rawCoverageStatus === undefined)
+        ? "PARTIALLY_SCANNED"
+        : rawCoverageStatus;
+    lastDeferredMediaCount = deferredMediaCount;
+    lastWindowsScanned = windowsScanned;
+    lastWindowsTotal = totalWindows;
+    lastIncompleteWindows = incompleteWindows.length > 0 ? incompleteWindows : undefined;
+    lastCoverageWarnings = coverageWarnings.length > 0 ? coverageWarnings : undefined;
+
+    const imageCandidates = (combined.length === 0 || (combined.length < 300 && findings.length === 0)) ? collectImageCandidates() : undefined;
+
+    await emitScanResult(requestId, {
+      ...(imageCandidates ? { imageCandidates } : {}),
+      ...(visualQueue ? { visualQueue } : {}),
+      ...(pdfQueue ? { pdfQueue } : {}),
+    });
+  }
+
+  async function emitScanResult(
+    requestId: string,
+    extraStats: Record<string, unknown> = {}
+  ): Promise<void> {
+    if (!sessionId) return;
+    const currentSessionId = sessionId;
     const result: Finding[] = findings.map((f) => ({
       ...f,
       rects: f.rects.map((r) => ({ ...r })),
     }));
+    const chunks = chunkFindingsByByteBudget(result, DEFAULT_FINDINGS_CHUNK_BYTES);
+    const totalFindings = result.length;
 
-    // Bound the result to the runtime message limit; the true count travels
-    // alongside so the UI can report partial results honestly.
-    const capped = capFindingsForTransport(result);
+    if (chunks.length > 1) {
+      for (let i = 0; i < chunks.length - 1; i++) {
+        try {
+          await chrome.runtime.sendMessage({
+            type: "SCAN_RESULT_CHUNK",
+            requestId,
+            sessionId: currentSessionId,
+            chunkIndex: i,
+            totalChunks: chunks.length,
+            findings: chunks[i],
+          });
+        } catch {
+          // Best-effort chunk delivery; final SCAN_RESULT will report honest completeness.
+        }
+      }
+    }
 
-    // Collect image candidates for the popup's "Scan images" offer.
-    // Previously only fired on zero-text pages; now fires always so the popup
-    // always knows what images are present regardless of DOM text content.
-    const imageCandidates = (combined.length === 0 || (combined.length < 300 && findings.length === 0)) ? collectImageCandidates() : undefined;
-
-    respond(
-      {
-        type: "SCAN_RESULT",
-        requestId,
-        sessionId: sessionId as string,
-        findings: capped.findings,
-        stats: {
-          visibleChars: combined.length,
-          attrChars,
-          truncated: canonical.truncated || customPatternsPartiallyScanned,
-          findingsTruncated: capped.findingsTruncated,
-          totalFindings: capped.totalFindings,
-          ...(imageCandidates ? { imageCandidates } : {}),
-          ...(visualQueue ? { visualQueue } : {}),
-          ...(pdfQueue ? { pdfQueue } : {}),
-          ...(deferredMediaCount > 0 ? { deferredMediaCount } : {}),
-          ...(coverageStatus !== undefined ? { coverageStatus } : {}),
-        },
+    const lastChunk = chunks[chunks.length - 1] ?? [];
+    const payload = {
+      type: "SCAN_RESULT",
+      requestId,
+      sessionId: currentSessionId,
+      findings: lastChunk,
+      ...(chunks.length > 1 ? { chunkIndex: chunks.length - 1, totalChunks: chunks.length } : {}),
+      stats: {
+        visibleChars: combined.length,
+        attrChars: lastAttrChars,
+        truncated: lastTruncated,
+        findingsTruncated: false,
+        totalFindings,
+        ...(lastWindowsScanned !== undefined ? { windowsScanned: lastWindowsScanned } : {}),
+        ...(lastWindowsTotal !== undefined ? { windowsTotal: lastWindowsTotal } : {}),
+        ...(lastIncompleteWindows && lastIncompleteWindows.length > 0
+          ? { incompleteWindows: lastIncompleteWindows }
+          : {}),
+        ...(lastDeferredMediaCount > 0 ? { deferredMediaCount: lastDeferredMediaCount } : {}),
+        ...(lastCoverageStatus !== undefined ? { coverageStatus: lastCoverageStatus } : {}),
+        ...(lastCoverageWarnings && lastCoverageWarnings.length > 0
+          ? { coverageWarnings: lastCoverageWarnings }
+          : {}),
+        ...extraStats,
       },
-      requestId
-    );
+    };
+    try {
+      await chrome.runtime.sendMessage(payload);
+    } catch {
+      // SW may have suspended; delivery is best-effort.
+    }
   }
 
 
@@ -1001,15 +1208,75 @@ if (g.__gwRedactionContentLoaded !== true) {
     invalidateOnNavigation();
   };
 
-  let mutationObserver: MutationObserverHandle | null = null;
-  let pendingMutationBatch: MutationBatch | null = null;
-  let mutationDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+  function appendAndDetectNode(sourceNode: Element | Text, settings: ScanSettings): void {
+    const newNodeIds = new Map<string, Node>();
+    const extracted = extractVisibleText(
+      sourceNode,
+      settings.maxVisibleChars,
+      settings.maxNodeChars,
+      newNodeIds
+    );
+    if (extracted.segments.length === 0) return;
+
+    const newBuilt = buildScanText(extracted.segments);
+    const offset = combined.length > 0 ? combined.length + 1 : 0;
+    for (let i = 0; i < extracted.segments.length; i++) {
+      const seg = extracted.segments[i];
+      const uniqueNodeId = `rescan_seg_${nextRescanSegId++}`;
+      const newSeg: import("./normalization/types.js").CanonicalSegment = {
+        nodeId: uniqueNodeId,
+        startOffset: seg.startOffset,
+        endOffset: seg.endOffset,
+        text: seg.text,
+        combinedStartOffset: offset + newBuilt.segmentStarts[i],
+        combinedEndOffset: offset + newBuilt.segmentStarts[i] + seg.text.length,
+      };
+      segments.push(newSeg);
+      const targetNode = newNodeIds.get(seg.nodeId) ?? sourceNode;
+      nodeIds.set(uniqueNodeId, targetNode);
+      segmentIndexById.set(uniqueNodeId, segments.length - 1);
+    }
+    combined += (combined.length > 0 ? "\n" : "") + newBuilt.combined;
+    segmentStarts.push(...newBuilt.segmentStarts.map((s) => s + offset));
+
+    const threshold = (cat: FindingCategory) => settings.confidenceThresholds?.[cat] ?? 0;
+    let deltaMatches = detect(newBuilt.combined, settings.enabledCategories, currentCustomPatterns);
+    if (settings.enabledCategories.includes("possible_name")) {
+      if (!isNameDictionariesLoaded() && deltaMatches.some((m) => m.category === "possible_name")) {
+        void ensureNameDictionariesLoaded();
+      }
+      deltaMatches = enrichAndBoostNames(deltaMatches);
+    }
+    deltaMatches = deltaMatches.filter((m) => m.confidence >= threshold(m.category));
+    if (deltaMatches.length === 0) return;
+
+    const adjustedMatches = deltaMatches.map((m) => ({
+      ...m,
+      start: m.start + offset,
+      end: m.end + offset,
+    }));
+    const newFindings = buildFindings(adjustedMatches, settings.enabledCategories, currentCustomPatterns);
+    const existingIds = new Set(findings.map((f) => f.id));
+    for (const nf of newFindings) {
+      nf.id = `rescan_${nf.category}_${nextRescanFindingSeq++}`;
+      if (!existingIds.has(nf.id) && nf.confidence >= threshold(nf.category)) {
+        findings.push(nf);
+      }
+    }
+  }
 
   function rescanAffectedRegions(batch: MutationBatch): void {
     if (!sessionId || !currentSettings) return;
+    const settings = currentSettings;
 
     const affectedNodeIds = getAffectedNodeIds(batch, nodeIds);
-    if (affectedNodeIds.size === 0 && batch.addedNodes.length === 0) return;
+    if (
+      affectedNodeIds.size === 0 &&
+      batch.addedNodes.length === 0 &&
+      batch.mutatedTextNodes.length === 0
+    ) {
+      return;
+    }
 
     const findingsToRemove = new Set<string>();
     for (const finding of findings) {
@@ -1019,6 +1286,22 @@ if (g.__gwRedactionContentLoaded !== true) {
     }
     if (findingsToRemove.size > 0) {
       findings = findings.filter((f) => !findingsToRemove.has(f.id));
+    }
+
+    // Record surviving findings' segment-local offsets so rebuilding `combined`
+    // after splicing keeps surviving mask and copy ranges aligned.
+    const survivingOffsets = new Map<string, { nodeId: string; deltaStart: number; len: number }>();
+    for (const f of findings) {
+      if (f.source !== "attr" && f.nodeId && f.nodeId !== "svg" && f.nodeId !== "video-caption" && !f.nodeId.startsWith("media")) {
+        const oldIdx = segmentIndexById.get(f.nodeId);
+        if (oldIdx !== undefined) {
+          survivingOffsets.set(f.id, {
+            nodeId: f.nodeId,
+            deltaStart: f.startOffset - segmentStarts[oldIdx],
+            len: f.endOffset - f.startOffset,
+          });
+        }
+      }
     }
 
     const removedIndices: number[] = [];
@@ -1036,73 +1319,81 @@ if (g.__gwRedactionContentLoaded !== true) {
         segments.splice(idx, 1);
       }
       segmentIndexById.clear();
-      for (let i = 0; i < segments.length; i++) {
-        segmentIndexById.set(segments[i].nodeId, i);
-      }
       const rebuilt = buildScanText(segments);
       segmentStarts = rebuilt.segmentStarts;
       combined = rebuilt.combined;
-    }
-
-    for (const node of batch.addedNodes) {
-      if (node.nodeType === Node.ELEMENT_NODE || node.nodeType === Node.TEXT_NODE) {
-        const newNodeIds = new Map<string, Node>();
-        const extracted = extractVisibleText(
-          node as Element,
-          currentSettings.maxVisibleChars,
-          currentSettings.maxNodeChars,
-          newNodeIds
-        );
-        if (extracted.segments.length > 0) {
-          const newBuilt = buildScanText(extracted.segments);
-          const offset = combined.length > 0 ? combined.length + 1 : 0;
-          for (let i = 0; i < extracted.segments.length; i++) {
-            const seg = extracted.segments[i];
-            const newSeg: import("./normalization/types.js").CanonicalSegment = {
-              nodeId: `rescan_${seg.nodeId}`,
-              startOffset: seg.startOffset,
-              endOffset: seg.endOffset,
-              text: seg.text,
-              combinedStartOffset: offset + newBuilt.segmentStarts[i],
-              combinedEndOffset: offset + newBuilt.segmentStarts[i] + seg.text.length,
-            };
-            segments.push(newSeg);
-            const targetNode = newNodeIds.get(seg.nodeId) ?? (node as Node);
-            nodeIds.set(newSeg.nodeId, targetNode);
-            segmentIndexById.set(newSeg.nodeId, segments.length - 1);
-          }
-          combined += (combined.length > 0 ? "\n" : "") + newBuilt.combined;
-          segmentStarts.push(...newBuilt.segmentStarts.map((s) => s + offset));
-
-          // Run delta scan on newBuilt.combined only
-          if (currentSettings) {
-            const settings = currentSettings;
-            const threshold = (cat: FindingCategory) => settings.confidenceThresholds?.[cat] ?? 0;
-            const deltaMatches = detect(newBuilt.combined, settings.enabledCategories, currentCustomPatterns).filter(
-              (m) => m.confidence >= threshold(m.category)
-            );
-            if (deltaMatches.length > 0) {
-              const adjustedMatches = deltaMatches.map((m) => ({
-                ...m,
-                start: m.start + offset,
-                end: m.end + offset,
-              }));
-              const newFindings = buildFindings(adjustedMatches, settings.enabledCategories, currentCustomPatterns);
-              const existingIds = new Set(findings.map((f) => f.id));
-              for (const nf of newFindings) {
-                if (!existingIds.has(nf.id) && nf.confidence >= threshold(nf.category)) {
-                  findings.push(nf);
-                }
-              }
-            }
-          }
+      for (let i = 0; i < segments.length; i++) {
+        segmentIndexById.set(segments[i].nodeId, i);
+        segments[i].combinedStartOffset = segmentStarts[i];
+        segments[i].combinedEndOffset = segmentStarts[i] + segments[i].text.length;
+      }
+      for (const f of findings) {
+        const saved = survivingOffsets.get(f.id);
+        if (!saved) continue;
+        const newIdx = segmentIndexById.get(saved.nodeId);
+        if (newIdx !== undefined) {
+          f.startOffset = segmentStarts[newIdx] + saved.deltaStart;
+          f.endOffset = f.startOffset + saved.len;
         }
       }
     }
 
+    const connectedAdded = batch.addedNodes.filter(
+      (n): n is Element | Text =>
+        n.isConnected && (n.nodeType === Node.ELEMENT_NODE || n.nodeType === Node.TEXT_NODE)
+    );
+    for (const node of connectedAdded) {
+      appendAndDetectNode(node, settings);
+    }
+
+    // Option (a) for characterData mutations: re-extract and re-detect connected
+    // mutated Text nodes not already covered by an added ancestor node in this batch.
+    const uniqueMutatedTextNodes = new Set(batch.mutatedTextNodes);
+    for (const textNode of uniqueMutatedTextNodes) {
+      if (!textNode.isConnected) continue;
+      const coveredByAdded = connectedAdded.some(
+        (added) => added === textNode || (added.nodeType === Node.ELEMENT_NODE && added.contains(textNode))
+      );
+      if (coveredByAdded) continue;
+      appendAndDetectNode(textNode, settings);
+    }
+
     if (findings.some((f) => f.selected)) {
       recomputeOverlay(4);
+    } else {
+      overlay?.clear();
     }
+
+    // Notify service worker and popup after every incremental rescan so badge
+    // and findings count stay synchronized with on-page overlay masks (Task P3).
+    void emitScanResult(`rescan_${Date.now()}`);
+  }
+
+  function mergeMutationBatch(existing: MutationBatch | null, incoming: MutationBatch): MutationBatch {
+    if (!existing) return incoming;
+    const addedSet = new Set(existing.addedNodes);
+    for (const n of incoming.addedNodes) addedSet.add(n);
+    const removedSet = new Set(existing.removedNodes);
+    for (const n of incoming.removedNodes) removedSet.add(n);
+    const textSet = new Set(existing.mutatedTextNodes);
+    for (const t of incoming.mutatedTextNodes) textSet.add(t);
+    return {
+      addedNodes: Array.from(addedSet),
+      removedNodes: Array.from(removedSet),
+      mutatedTextNodes: Array.from(textSet),
+      timestamp: incoming.timestamp,
+    };
+  }
+
+  function isInternalUiNode(node: Node): boolean {
+    if (node.nodeType !== Node.ELEMENT_NODE) return false;
+    const el = node as Element;
+    return Boolean(
+      el.hasAttribute?.("data-gw-scan-overlay") ||
+      el.hasAttribute?.("data-gw-toast-host") ||
+      el.id?.startsWith?.("__governworld-") ||
+      el.closest?.("[data-gw-scan-overlay], [data-gw-toast-host], [id^='__governworld-']")
+    );
   }
 
   function startMutationObserver(): void {
@@ -1110,10 +1401,24 @@ if (g.__gwRedactionContentLoaded !== true) {
     mutationObserver = observeMutations(document, (batch) => {
       if (!sessionId) return;
 
-      const affectedCount = batch.addedNodes.length + batch.removedNodes.length + batch.mutatedTextNodes.length;
+      const filteredBatch: MutationBatch = {
+        addedNodes: batch.addedNodes.filter((n) => !isInternalUiNode(n)),
+        removedNodes: batch.removedNodes.filter((n) => !isInternalUiNode(n)),
+        mutatedTextNodes: batch.mutatedTextNodes,
+        timestamp: batch.timestamp,
+      };
+      const affectedCount =
+        filteredBatch.addedNodes.length +
+        filteredBatch.removedNodes.length +
+        filteredBatch.mutatedTextNodes.length;
       if (affectedCount === 0) return;
 
-      pendingMutationBatch = batch;
+      pendingMutationBatch = mergeMutationBatch(pendingMutationBatch, filteredBatch);
+      const pendingSize =
+        pendingMutationBatch.addedNodes.length +
+        pendingMutationBatch.removedNodes.length +
+        pendingMutationBatch.mutatedTextNodes.length;
+      const rescanDelayMs = pendingSize <= SMALL_BATCH_NODE_THRESHOLD ? SMALL_BATCH_RESCAN_DELAY_MS : BURST_RESCAN_DELAY_MS;
 
       if (mutationDebounceTimer !== null) clearTimeout(mutationDebounceTimer);
       mutationDebounceTimer = setTimeout(() => {
@@ -1122,13 +1427,14 @@ if (g.__gwRedactionContentLoaded !== true) {
           rescanAffectedRegions(pendingMutationBatch);
           pendingMutationBatch = null;
         }
-      }, 500);
+      }, rescanDelayMs);
     });
   }
 
   function stopMutationObserver(): void {
     mutationObserver?.disconnect();
     mutationObserver = null;
+    pendingMutationBatch = null;
     if (mutationDebounceTimer !== null) {
       clearTimeout(mutationDebounceTimer);
       mutationDebounceTimer = null;
@@ -1145,4 +1451,9 @@ interface ScanSettings {
   maskPlaceholders: boolean;
   sessionTimeoutMs: number;
   confidenceThresholds?: Record<FindingCategory, number>;
+  autoMaskSingleNames?: boolean;
+  medicalDictionaryEnabled?: boolean;
+  windowChars?: number;
+  windowOverlapChars?: number;
+  maxTotalWindows?: number;
 }

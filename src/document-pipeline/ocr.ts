@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 import { createWorker, type Worker } from "tesseract.js";
 import { assembleOcrText } from "./offsets.js";
+import { DocumentCancelledError } from "./contract.js";
 
 /**
  * Local OCR via Tesseract. Worker/core/lang assets are resolved to bundled
@@ -180,62 +181,79 @@ function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
 export async function ocrCanvas(
   canvas: HTMLCanvasElement | OffscreenCanvas,
   pageIndex: number,
-  lang = "eng"
+  lang = "eng",
+  signal?: AbortSignal
 ): Promise<OcrPageResult> {
-  const worker = await getWorker(lang);
-  const source = canvas instanceof OffscreenCanvas ? await canvas.convertToBlob() : await canvasToBlob(canvas);
-  // tesseract.js 7 restructured the result tree to
-  // page -> blocks -> paragraphs -> lines -> words, and `blocks` is NOT part of
-  // the default output. Without this request `data.blocks` is null and
-  // recognition returns zero tokens while still reporting success — the
-  // document pipeline would quietly redact nothing.
-  const result = await worker.recognize(source, undefined, { blocks: true, text: true });
-  const data = result.data;
-  const tokens: OcrToken[] = [];
-  // A flat line index across the whole page keeps the token stream comparable
-  // with the pre-v7 shape, where every line of the page was in one list.
-  let lineIndex = 0;
-  for (const block of data.blocks ?? []) {
-    for (const paragraph of block.paragraphs ?? []) {
-      for (const line of paragraph.lines ?? []) {
-        for (const w of line.words ?? []) {
-          tokens.push({
-            text: w.text,
-            confidence: w.confidence,
-            lineIndex,
-            bbox: {
-              x: w.bbox.x0,
-              y: w.bbox.y0,
-              width: w.bbox.x1 - w.bbox.x0,
-              height: w.bbox.y1 - w.bbox.y0,
-            },
-          });
+  if (signal?.aborted) throw new DocumentCancelledError();
+  const onAbort = () => {
+    void resetOcr();
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    const worker = await getWorker(lang);
+    if (signal?.aborted) throw new DocumentCancelledError();
+    const source = canvas instanceof OffscreenCanvas ? await canvas.convertToBlob() : await canvasToBlob(canvas);
+    if (signal?.aborted) throw new DocumentCancelledError();
+    // tesseract.js 7 restructured the result tree to
+    // page -> blocks -> paragraphs -> lines -> words, and `blocks` is NOT part of
+    // the default output. Without this request `data.blocks` is null and
+    // recognition returns zero tokens while still reporting success — the
+    // document pipeline would quietly redact nothing.
+    const result = await worker.recognize(source, undefined, { blocks: true, text: true });
+    if (signal?.aborted) throw new DocumentCancelledError();
+    const data = result.data;
+    const tokens: OcrToken[] = [];
+    // A flat line index across the whole page keeps the token stream comparable
+    // with the pre-v7 shape, where every line of the page was in one list.
+    let lineIndex = 0;
+    for (const block of data.blocks ?? []) {
+      for (const paragraph of block.paragraphs ?? []) {
+        for (const line of paragraph.lines ?? []) {
+          for (const w of line.words ?? []) {
+            tokens.push({
+              text: w.text,
+              confidence: w.confidence,
+              lineIndex,
+              bbox: {
+                x: w.bbox.x0,
+                y: w.bbox.y0,
+                width: w.bbox.x1 - w.bbox.x0,
+                height: w.bbox.y1 - w.bbox.y0,
+              },
+            });
+          }
+          lineIndex += 1;
         }
-        lineIndex += 1;
       }
     }
+    const fullText = assembleOcrText(tokens);
+    return {
+      pageIndex,
+      widthPx: canvas.width,
+      heightPx: canvas.height,
+      tokens,
+      // Must be the token-derived text, not Tesseract's own `data.text`: detection
+      // runs over this string and core.ts maps the resulting offsets back to page
+      // rectangles with the same function. Tesseract's text uses different
+      // spacing, so returning it here silently misplaces every redaction box.
+      fullText,
+    };
+  } catch (error) {
+    if (signal?.aborted) throw new DocumentCancelledError();
+    throw error;
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
   }
-  const fullText = assembleOcrText(tokens);
-  return {
-    pageIndex,
-    widthPx: canvas.width,
-    heightPx: canvas.height,
-    tokens,
-    // Must be the token-derived text, not Tesseract's own `data.text`: detection
-    // runs over this string and core.ts maps the resulting offsets back to page
-    // rectangles with the same function. Tesseract's text uses different
-    // spacing, so returning it here silently misplaces every redaction box.
-    fullText,
-  };
 }
 
 export async function ocrPages(
   canvases: (HTMLCanvasElement | OffscreenCanvas)[],
-  lang = "eng"
+  lang = "eng",
+  signal?: AbortSignal
 ): Promise<OcrPageResult[]> {
   const out: OcrPageResult[] = [];
   for (let i = 0; i < canvases.length; i++) {
-    out.push(await ocrCanvas(canvases[i], i, lang));
+    out.push(await ocrCanvas(canvases[i], i, lang, signal));
   }
   return out;
 }

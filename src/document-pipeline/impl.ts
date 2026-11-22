@@ -10,10 +10,12 @@ import { loadDocxPages, countDocxPages } from "./docx.js";
 import { findingsFromOcrPages } from "./core.js";
 import { applyBoxes, canvasToPngBytes, pagesToPdf } from "./render.js";
 import { pagePixelVerification, verifyCanvasRegions, verifyEncodedPng, type RedactionVerification, type RegionCoverage } from "./verify.js";
+import { DocumentCancelledError } from "./contract.js";
 import {
   previewKey as previewStoreKey,
   pageImageKey as pageImageStoreKey,
   putDocBytes,
+  deleteDocBytesByPrefix,
   redactedKey,
   redactedManifestKey,
   type RedactedDocRef,
@@ -135,49 +137,26 @@ export interface RedactOutput {
 async function loadPages(
   input: PipelineInput,
   maxPages: number,
-  pageOffset = 0
+  pageOffset = 0,
+  signal?: AbortSignal
 ): Promise<{ pages: LoadedPage[]; flattenToPdf: boolean; truncated: boolean }> {
+  if (signal?.aborted) throw new DocumentCancelledError();
   if (input.kind === "pdf") {
     // Indices come back absolute (page 20 is page 20), so a windowed pass lines
     // up with the boxes and store keys the preview produced.
-    const rendered = await renderPdfPages(input.bytes, maxPages, undefined, pageOffset);
+    const rendered = await renderPdfPages(input.bytes, maxPages, undefined, pageOffset, signal);
     return { pages: rendered, flattenToPdf: true, truncated: false };
   }
   if (input.kind === "docx") {
     const { pages: all, truncated } = await loadDocxPages(input.bytes);
+    if (signal?.aborted) throw new DocumentCancelledError();
     // The layout already carries absolute indices, so a slice is the window.
     const from = Math.min(Math.max(0, Math.floor(Number.isFinite(pageOffset) ? pageOffset : 0)), Math.max(0, all.length - 1));
     return { pages: all.slice(from, from + maxPages), flattenToPdf: true, truncated };
   }
   const page = await loadImagePage(input.bytes);
+  if (signal?.aborted) throw new DocumentCancelledError();
   return { pages: [page], flattenToPdf: false, truncated: false };
-}
-
-/**
- * Read every page, using the page's own text where it exists.
- *
- * A PDF page born digital carries its exact text, and a DOCX page is drawn from
- * known text at known coordinates, so both hand back tokens directly. Only a
- * page with no readable text of its own — a scan, a screenshot, a photo — is
- * sent to OCR, which is the slow path and the one that guesses characters.
- */
-async function readPages(pages: LoadedPage[], ocrLanguage: string): Promise<OcrPageResult[]> {
-  const out: OcrPageResult[] = [];
-  for (const page of pages) {
-    if (page.tokens && page.tokens.length > 0) {
-      // Same assembler OCR uses, so text and offsets cannot disagree.
-      out.push({
-        pageIndex: page.index,
-        widthPx: page.widthPx,
-        heightPx: page.heightPx,
-        tokens: page.tokens,
-        fullText: assembleOcrText(page.tokens),
-      });
-      continue;
-    }
-    out.push(await ocrCanvas(page.canvas, page.index, ocrLanguage));
-  }
-  return out;
 }
 
 /**
@@ -190,36 +169,79 @@ export interface PreviewOutput {
   truncated: boolean;
 }
 
-export async function runDocumentPreview(input: PreviewInput): Promise<PreviewOutput> {
-  const { pages, truncated } = await loadPages(input, input.maxPages, input.pageOffset ?? 0);
-  const ocrResults = await readPages(pages, input.ocrLanguage ?? "eng");
-  const findings = findingsFromOcrPages(ocrResults, input.enabledCategories, input.customPatterns);
+export const LOW_OCR_CONFIDENCE_THRESHOLD = 60;
+
+export function isLowOcrConfidencePage(tokens: readonly { text: string; confidence: number }[]): boolean {
+  const nonEmpty = tokens.filter((t) => t.text.trim().length > 0);
+  if (nonEmpty.length === 0) return true;
+  const mean = nonEmpty.reduce((sum, t) => sum + t.confidence, 0) / nonEmpty.length;
+  return mean < LOW_OCR_CONFIDENCE_THRESHOLD;
+}
+
+export async function runDocumentPreview(input: PreviewInput, signal?: AbortSignal): Promise<PreviewOutput> {
+  if (signal?.aborted) throw new DocumentCancelledError();
+  const { pages, truncated } = await loadPages(input, input.maxPages, input.pageOffset ?? 0, signal);
+  const ocrResults: OcrPageResult[] = [];
   const grouped = new Map<number, DocumentPage>();
-  for (const page of pages) {
-    // Persist the rendered bitmap and hand back only its key. The image cannot
-    // ride along in the reply, which crosses a runtime-message boundary.
-    const previewKey = previewStoreKey(input.previewKeyPrefix, page.index);
-    await putDocBytes(previewKey, await canvasToThumbnailBytes(page.canvas));
-    // The real-resolution copy for the review page. Best-effort by design: the
-    // review surface falls back to the thumbnail if this is absent.
-    const pageImageKey = pageImageStoreKey(input.previewKeyPrefix, page.index);
-    const pageBytes = await canvasToPageImageBytes(page.canvas);
-    if (pageBytes) await putDocBytes(pageImageKey, pageBytes);
-    grouped.set(page.index, {
-      index: page.index,
-      widthPx: page.widthPx,
-      heightPx: page.heightPx,
-      previewKey,
-      ...(pageBytes ? { pageImageKey } : {}),
-      findings: [],
-    });
+
+  try {
+    for (const page of pages) {
+      if (signal?.aborted) throw new DocumentCancelledError();
+      let pageLowOcr = false;
+      if (page.tokens && page.tokens.length > 0) {
+        // Same assembler OCR uses, so text and offsets cannot disagree.
+        ocrResults.push({
+          pageIndex: page.index,
+          widthPx: page.widthPx,
+          heightPx: page.heightPx,
+          tokens: page.tokens,
+          fullText: assembleOcrText(page.tokens),
+        });
+      } else {
+        const ocrPage = await ocrCanvas(page.canvas, page.index, input.ocrLanguage ?? "eng", signal);
+        pageLowOcr = isLowOcrConfidencePage(ocrPage.tokens);
+        ocrResults.push(ocrPage);
+      }
+      if (signal?.aborted) throw new DocumentCancelledError();
+
+      // Persist preview and page bitmaps per-page so mid-job cancellation
+      // stops key growth immediately and aborts cleanly.
+      const previewKey = previewStoreKey(input.previewKeyPrefix, page.index);
+      await putDocBytes(previewKey, await canvasToThumbnailBytes(page.canvas));
+      if (signal?.aborted) throw new DocumentCancelledError();
+
+      const pageImageKey = pageImageStoreKey(input.previewKeyPrefix, page.index);
+      const pageBytes = await canvasToPageImageBytes(page.canvas);
+      if (signal?.aborted) throw new DocumentCancelledError();
+      if (pageBytes) await putDocBytes(pageImageKey, pageBytes);
+      if (signal?.aborted) throw new DocumentCancelledError();
+
+      grouped.set(page.index, {
+        index: page.index,
+        widthPx: page.widthPx,
+        heightPx: page.heightPx,
+        previewKey,
+        ...(pageBytes ? { pageImageKey } : {}),
+        ...(pageLowOcr ? { lowOcrConfidence: true } : {}),
+        findings: [],
+      });
+    }
+
+    if (signal?.aborted) throw new DocumentCancelledError();
+    const findings = findingsFromOcrPages(ocrResults, input.enabledCategories, input.customPatterns);
+    for (const f of findings) {
+      const pageIndex = Number(f.nodeId.split(":").pop());
+      const page = grouped.get(pageIndex);
+      if (page) page.findings.push(f);
+    }
+    return { pages: [...grouped.values()], truncated };
+  } catch (error) {
+    if (signal?.aborted || error instanceof DocumentCancelledError) {
+      await deleteDocBytesByPrefix(input.previewKeyPrefix).catch(() => undefined);
+      throw error instanceof DocumentCancelledError ? error : new DocumentCancelledError();
+    }
+    throw error;
   }
-  for (const f of findings) {
-    const pageIndex = Number(f.nodeId.split(":").pop());
-    const page = grouped.get(pageIndex);
-    if (page) page.findings.push(f);
-  }
-  return { pages: [...grouped.values()], truncated };
 }
 
 /**

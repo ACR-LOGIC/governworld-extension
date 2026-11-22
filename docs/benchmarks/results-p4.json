@@ -1,0 +1,109 @@
+{
+  "generatedAt": "2026-11-21T22:02:28.489Z",
+  "mode": "p4",
+  "stage": "docs",
+  "executablePath": "C:\\Users\\omg\\AppData\\Local\\ms-playwright\\chromium-1255\\chrome-win64\\chrome.exe",
+  "browserVersion": "Chrome/159.0.8154.6",
+  "nodeVersion": "v22.22.2",
+  "scan": {},
+  "paste": {},
+  "docs": {
+    "timings": [
+      {
+        "label": "native-1p",
+        "pages": 1,
+        "stageToFindingsMs": 2060.5,
+        "perPageMs": 2060.5,
+        "findings": 2,
+        "keysBeforeStartOver": 3,
+        "keysAfterStartOver": 0
+      },
+      {
+        "label": "native-5p",
+        "pages": 5,
+        "stageToFindingsMs": 389.2,
+        "perPageMs": 77.8,
+        "findings": 10,
+        "keysBeforeStartOver": 11,
+        "keysAfterStartOver": 0
+      },
+      {
+        "label": "native-20p",
+        "pages": 20,
+        "stageToFindingsMs": 1021.8,
+        "perPageMs": 51.1,
+        "findings": 40,
+        "keysBeforeStartOver": 41,
+        "keysAfterStartOver": 0
+      },
+      {
+        "label": "scanned-5p",
+        "pages": 5,
+        "stageToFindingsMs": 3128.1,
+        "perPageMs": 625.6,
+        "findings": 0,
+        "keysBeforeStartOver": 11,
+        "keysAfterStartOver": 0
+      },
+      {
+        "label": "scanned-20p",
+        "pages": 20,
+        "stageToFindingsMs": 6410.4,
+        "perPageMs": 320.5,
+        "findings": 0,
+        "keysBeforeStartOver": 41,
+        "keysAfterStartOver": 0
+      },
+      {
+        "label": "single-png",
+        "pages": 1,
+        "stageToFindingsMs": 265.6,
+        "perPageMs": 265.6,
+        "findings": 1,
+        "keysBeforeStartOver": 3,
+        "keysAfterStartOver": 0
+      }
+    ],
+    "jsHeapBaselineMb": 2.22,
+    "jsHeapPeakMb": 12.97,
+    "cancelRuns": [
+      {
+        "label": "scanned-1p",
+        "pages": 1,
+        "keysAtCancel": 1,
+        "keysAfter1000Ms": 0,
+        "keysAfterWait": 0,
+        "workspaceHidden": true,
+        "statusText": "Document processing cancelled."
+      },
+      {
+        "label": "scanned-5p",
+        "pages": 5,
+        "keysAtCancel": 5,
+        "keysAfter1000Ms": 0,
+        "keysAfterWait": 0,
+        "workspaceHidden": true,
+        "statusText": "Document processing cancelled."
+      },
+      {
+        "label": "scanned-20p",
+        "pages": 20,
+        "keysAtCancel": 7,
+        "keysAfter1000Ms": 0,
+        "keysAfterWait": 0,
+        "workspaceHidden": true,
+        "statusText": "Document processing cancelled."
+      }
+    ],
+    "midJobCancel": {
+      "keysAtCancel": 7,
+      "keysAfter1500Ms": 0,
+      "keysAfterWait": 0,
+      "workspaceHidden": true,
+      "statusText": "Document processing cancelled."
+    }
+  },
+  "ocrNode": {},
+  "network": {},
+  "gateFailures": []
+}

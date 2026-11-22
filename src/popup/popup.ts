@@ -2,7 +2,8 @@ import { sanitizeErrorForLog } from "../shared/errorSanitizer.js";
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 import { validateMessage } from "../shared/messages.js";
 import { previewObjectUrl } from "../shared/docStore.js";
-import { docStoreFile, docDeleteFile, markDocumentStaged } from "../shared/docDb.js";
+import { docStoreFile, docDeleteByPrefix, docGetStagedStats, getStagedFileKey, markDocumentStaged, clearStagedMarker } from "../shared/docDb.js";
+import type { PurgeStagedDataResult, StagedStorageAudit } from "../shared/types.js";
 import {
   ALL_CATEGORIES,
   loadSettings,
@@ -72,6 +73,7 @@ import type {
   RedactionStyle,
 } from "../shared/types.js";
 import type { ParsedName } from "../content/detectors/nameParser.js";
+import { CURRENT_EXTENSION_VERSION } from "../api/config.js";
 import { loadCustomPatterns, saveCustomPatterns, parseCustomPattern, type CustomPattern, type CommunityAccount, type CommunityRule } from "../shared/customPatterns.js";
 import { inferLocationRule, type SelectionSample } from "../shared/locationAwareWizard.js";
 import { parseSampleLines, type WizardAnalysis } from "../shared/wizardAnalyzer.js";
@@ -149,6 +151,10 @@ export let currentWebTabUrl: string | undefined = undefined;
  * to leave the popup in a valid state rather than inventing one.
  */
 let lastState: PopupState | null = null;
+const pendingStateChunks = new Map<
+  string,
+  { sessionId: string; totalChunks: number; chunks: Map<number, Finding[]> }
+>();
 
 export const CATEGORY_LABELS: Record<string, string> = {
   email: "Email address",
@@ -248,12 +254,120 @@ function requestId(): string {
  * sees a staged document and skips, whichever of the two runs first.
  */
 async function storeFile(fileKey: string, bytes: ArrayBuffer): Promise<void> {
-  await markDocumentStaged();
+  await markDocumentStaged(fileKey);
   await docStoreFile(fileKey, bytes);
+  void refreshStagedStorageAudit();
 }
 
-async function deleteFile(fileKey: string): Promise<void> {
-  await docDeleteFile(fileKey);
+async function deleteFile(fileKey: string, options?: { keepRedacted?: boolean }): Promise<void> {
+  await docDeleteByPrefix(fileKey, options);
+  void refreshStagedStorageAudit();
+}
+
+function formatStagedByteSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+let lastStagedStats: StagedStorageAudit = {
+  totalKeys: 0,
+  totalBytes: 0,
+  liveKeys: 0,
+  liveBytes: 0,
+  orphanKeys: 0,
+  orphanBytes: 0,
+  hasInFlightJob: false,
+};
+
+function renderStagedStorageAudit(stats: StagedStorageAudit, purged?: PurgeStagedDataResult): void {
+  lastStagedStats = stats;
+  const summaryEl = document.getElementById("doc-staged-summary");
+  const confirmMsgEl = document.getElementById("doc-staged-confirm-msg");
+  if (summaryEl) {
+    summaryEl.setAttribute("data-total-keys", String(stats.totalKeys));
+    summaryEl.setAttribute("data-total-bytes", String(stats.totalBytes));
+    summaryEl.setAttribute("data-live-keys", String(stats.liveKeys));
+    summaryEl.setAttribute("data-orphan-keys", String(stats.orphanKeys));
+    if (stats.totalKeys <= 0) {
+      summaryEl.textContent = t(currentLang, "doc_staged_zero");
+    } else if (stats.liveKeys > 0 && stats.orphanKeys <= 0) {
+      summaryEl.textContent = t(currentLang, "doc_staged_live_only", {
+        keys: String(stats.totalKeys),
+        size: formatStagedByteSize(stats.totalBytes),
+      });
+    } else if (stats.liveKeys <= 0 && stats.orphanKeys > 0) {
+      summaryEl.textContent = t(currentLang, "doc_staged_orphan_only", {
+        keys: String(stats.totalKeys),
+        size: formatStagedByteSize(stats.totalBytes),
+      });
+    } else {
+      summaryEl.textContent = t(currentLang, "doc_staged_mixed", {
+        keys: String(stats.totalKeys),
+        size: formatStagedByteSize(stats.totalBytes),
+        liveKeys: String(stats.liveKeys),
+        liveSize: formatStagedByteSize(stats.liveBytes),
+        orphanKeys: String(stats.orphanKeys),
+        orphanSize: formatStagedByteSize(stats.orphanBytes),
+      });
+    }
+  }
+  if (confirmMsgEl && purged) {
+    confirmMsgEl.hidden = false;
+    if (purged.remaining.totalKeys <= 0) {
+      confirmMsgEl.textContent = t(currentLang, "doc_purge_done_zero", {
+        deletedKeys: String(purged.deletedKeys),
+        deletedSize: formatStagedByteSize(purged.deletedBytes),
+      });
+    } else {
+      confirmMsgEl.textContent = t(currentLang, "doc_purge_done_live_kept", {
+        deletedKeys: String(purged.deletedKeys),
+        deletedSize: formatStagedByteSize(purged.deletedBytes),
+        liveKeys: String(purged.remaining.liveKeys),
+        liveSize: formatStagedByteSize(purged.remaining.liveBytes),
+      });
+    }
+  }
+}
+
+async function refreshStagedStorageAudit(): Promise<void> {
+  try {
+    const [rawStats, stagedMarkerKey] = await Promise.all([
+      docGetStagedStats().catch(() => ({ keyCount: 0, totalBytes: 0, byPrefix: {} })),
+      getStagedFileKey().catch(() => null),
+    ]);
+    const liveSet = new Set<string>();
+    if (stagedMarkerKey) liveSet.add(stagedMarkerKey);
+    let liveKeys = 0;
+    let liveBytes = 0;
+    let orphanKeys = 0;
+    let orphanBytes = 0;
+    for (const [prefix, entry] of Object.entries(rawStats.byPrefix)) {
+      if (liveSet.has(prefix)) {
+        liveKeys += entry.keyCount;
+        liveBytes += entry.bytes;
+      } else {
+        orphanKeys += entry.keyCount;
+        orphanBytes += entry.bytes;
+      }
+    }
+    renderStagedStorageAudit({
+      totalKeys: rawStats.keyCount,
+      totalBytes: rawStats.totalBytes,
+      liveKeys,
+      liveBytes,
+      orphanKeys,
+      orphanBytes,
+      hasInFlightJob: false,
+    });
+  } catch {
+    // best-effort local snapshot before SW authoritative response
+  }
+  void sendMessage({
+    type: "POPUP_GET_STAGED_STATS",
+    requestId: requestId(),
+  }).catch(() => undefined);
 }
 
 /** Web Speech API Speech Synthesis and Screen Reader Live Region for audio announcements */
@@ -896,6 +1010,80 @@ function syncProfilePopoverSummary(): void {
   }
 }
 
+function renderPinnedTarget(state: PopupState): void {
+  const titleEl = document.getElementById("pinned-target-title");
+  const domainEl = document.getElementById("pinned-target-domain");
+  const selectEl = document.getElementById("pinned-tab-select") as HTMLSelectElement | null;
+  const warningEl = document.getElementById("pinned-target-warning");
+  const warningTextEl = document.getElementById("pinned-target-warning-text");
+  const scanBtn = document.getElementById("scan-btn") as HTMLButtonElement | null;
+  const applyMasksBtn = document.getElementById("apply-masks-btn") as HTMLButtonElement | null;
+
+  const pt = state.pinnedTarget;
+  if (!pt) return;
+
+  if (pt.url) {
+    currentWebTabUrl = pt.url;
+  }
+
+  if (titleEl && domainEl) {
+    if (pt.pinnedTabId !== null && pt.title) {
+      titleEl.textContent = pt.title;
+      domainEl.textContent = pt.domain ? `(${pt.domain})` : "";
+    } else {
+      titleEl.textContent = t(currentLang, "pinned_target_none");
+      domainEl.textContent = "";
+    }
+  }
+
+  if (selectEl) {
+    selectEl.replaceChildren();
+    const placeholderOpt = document.createElement("option");
+    placeholderOpt.value = "";
+    placeholderOpt.textContent = t(currentLang, "pinned_target_select_placeholder");
+    selectEl.appendChild(placeholderOpt);
+    for (const tab of pt.availableTabs) {
+      const opt = document.createElement("option");
+      opt.value = String(tab.tabId);
+      opt.textContent = tab.domain ? `${tab.title} (${tab.domain})` : tab.title;
+      selectEl.appendChild(opt);
+    }
+    selectEl.value = pt.pinnedTabId !== null ? String(pt.pinnedTabId) : "";
+  }
+
+  if (warningEl && warningTextEl) {
+    if (pt.status === "unpinned") {
+      warningEl.hidden = false;
+      warningEl.setAttribute("data-reason", "unpinned");
+      warningTextEl.textContent = t(currentLang, "pinned_warn_unpinned");
+    } else if (pt.status === "navigated") {
+      warningEl.hidden = false;
+      warningEl.setAttribute("data-reason", "navigated");
+      warningTextEl.textContent = t(currentLang, "pinned_warn_navigated", {
+        domain: pt.domain || pt.url || "new page",
+      });
+    } else if (pt.status === "closed") {
+      warningEl.hidden = false;
+      warningEl.setAttribute("data-reason", "closed");
+      warningTextEl.textContent = t(currentLang, "pinned_warn_closed", {
+        title: pt.closedTitle || pt.closedDomain || "previous tab",
+      });
+    } else {
+      warningEl.hidden = true;
+      warningEl.removeAttribute("data-reason");
+      warningTextEl.textContent = "";
+    }
+  }
+
+  const noTargetPinned = pt.pinnedTabId === null;
+  if (scanBtn) {
+    scanBtn.disabled = state.scanning || noTargetPinned;
+  }
+  if (applyMasksBtn) {
+    applyMasksBtn.disabled = noTargetPinned;
+  }
+}
+
 function renderState(state: PopupState): void {
   const status = document.getElementById("status") as HTMLParagraphElement | null;
   const scanBtn = document.getElementById("scan-btn") as HTMLButtonElement | null;
@@ -906,6 +1094,7 @@ function renderState(state: PopupState): void {
 
   lastOperatingMode = state.operatingMode === "MANAGE" ? "MANAGE" : "LOCAL";
   syncProfilePopoverSummary();
+  renderPinnedTarget(state);
 
   const liveScanVal = document.getElementById("live-scan-value");
   if (liveScanVal) {
@@ -929,7 +1118,8 @@ function renderState(state: PopupState): void {
     }
   }
   if (scanBtn) {
-    scanBtn.disabled = state.scanning;
+    const noTargetPinned = state.pinnedTarget !== undefined && state.pinnedTarget.pinnedTabId === null;
+    scanBtn.disabled = state.scanning || noTargetPinned;
     scanBtn.textContent = state.scanning ? t(currentLang, "scanning_btn") : t(currentLang, "scan_page_btn");
   }
 
@@ -953,9 +1143,10 @@ function renderState(state: PopupState): void {
       // a document full of PII, and the user has no way to guess that "0
       // characters" means "nothing was checked". Point them at OCR instead.
       const nothingToRead = state.visibleChars === 0;
+      const hasCoverageWarnings = Boolean(state.coverageWarnings && state.coverageWarnings.length > 0);
       status.textContent = nothingToRead
         ? t(currentLang, "status_no_text_found")
-        : state.truncated
+        : state.truncated || hasCoverageWarnings
           ? t(currentLang, "status_partial_results")
           : t(currentLang, "status_completed_securely");
       status.classList.toggle("status--error", nothingToRead);
@@ -1140,6 +1331,11 @@ async function refreshReviewTelemetry(currentState?: PopupState | null): Promise
 function renderCoverage(state: PopupState): void {
   const el = document.getElementById("coverage-status");
   const deferred = document.getElementById("coverage-deferred");
+  const scanCoverageEl = document.getElementById("scan-coverage-statement");
+  const windowsDetailEl = document.getElementById("coverage-windows-detail");
+  const warningsBannerEl = document.getElementById("coverage-warnings-banner");
+  const warningsListEl = document.getElementById("coverage-warnings-list");
+  const warningsCountEl = document.getElementById("coverage-warnings-findings-count");
 
   if (deferred) {
     const count = state.deferredMediaCount ?? 0;
@@ -1154,6 +1350,22 @@ function renderCoverage(state: PopupState): void {
     el.hidden = true;
     el.textContent = "";
     el.removeAttribute("data-tone");
+    if (scanCoverageEl) {
+      scanCoverageEl.hidden = true;
+      scanCoverageEl.textContent = "";
+      scanCoverageEl.classList.remove("status--error");
+    }
+    if (windowsDetailEl) {
+      windowsDetailEl.hidden = true;
+      windowsDetailEl.textContent = "";
+      windowsDetailEl.removeAttribute("data-tone");
+    }
+    if (warningsBannerEl) {
+      warningsBannerEl.hidden = true;
+    }
+    if (warningsListEl) {
+      warningsListEl.replaceChildren();
+    }
     return;
   }
 
@@ -1161,6 +1373,95 @@ function renderCoverage(state: PopupState): void {
   const verdict = coverageVerdict(state);
   el.textContent = verdict.text;
   el.setAttribute("data-tone", verdict.tone);
+
+  let statement = "";
+  let statementWarn = false;
+  if (state.incompleteWindows && state.incompleteWindows.length > 0) {
+    const reasons = state.incompleteWindows.map((w) => `Window ${w.windowIndex}: ${w.reason}`).join("; ");
+    statement = t(currentLang, "coverage_windows_incomplete", {
+      scanned: String(state.windowsScanned ?? 0),
+      total: String(state.windowsTotal ?? 0),
+      reasons,
+    });
+    statementWarn = true;
+  } else if ((state.windowsTotal ?? 0) > 0 && !state.truncated) {
+    statement = t(currentLang, "coverage_windows_complete", {
+      scanned: String(state.windowsScanned ?? state.windowsTotal),
+      total: String(state.windowsTotal),
+      chars: state.visibleChars.toLocaleString(),
+    });
+  } else if (state.truncated) {
+    statement = t(currentLang, "status_partial_results");
+    statementWarn = true;
+  }
+
+  if (scanCoverageEl) {
+    scanCoverageEl.hidden = statement.length === 0;
+    scanCoverageEl.textContent = statement;
+    scanCoverageEl.classList.toggle("status--error", statementWarn);
+  }
+  if (windowsDetailEl) {
+    windowsDetailEl.hidden = statement.length === 0;
+    windowsDetailEl.textContent = statement;
+    if (statementWarn) windowsDetailEl.setAttribute("data-tone", "warn");
+    else windowsDetailEl.removeAttribute("data-tone");
+  }
+
+  const effectiveWarnings: import("../shared/types.js").CoverageWarning[] =
+    state.coverageWarnings && state.coverageWarnings.length > 0
+      ? [...state.coverageWarnings]
+      : state.incompleteWindows && state.incompleteWindows.length > 0
+        ? [
+            {
+              cause: "incomplete_window",
+              count: state.incompleteWindows.length,
+              detail: state.incompleteWindows.map((w) => `Window ${w.windowIndex}: ${w.reason}`).join("; "),
+            },
+          ]
+        : state.truncated
+          ? [{ cause: "truncated", count: 1 }]
+          : [];
+
+  if (warningsBannerEl && warningsListEl) {
+    warningsListEl.replaceChildren();
+    if (effectiveWarnings.length === 0) {
+      warningsBannerEl.hidden = true;
+    } else {
+      warningsBannerEl.hidden = false;
+      if (warningsCountEl) {
+        const findingTotal = state.totalFindings ?? state.findings.length;
+        warningsCountEl.textContent = t(currentLang, "coverage_warning_findings_badge", {
+          count: String(findingTotal),
+        });
+      }
+      for (const w of effectiveWarnings) {
+        const li = document.createElement("li");
+        li.className = "coverage-warning-banner__item";
+        li.setAttribute("data-cause", w.cause);
+        if (w.cause === "incomplete_window") {
+          li.textContent = t(currentLang, "coverage_warn_incomplete_window", {
+            count: String(w.count),
+            detail: w.detail || "",
+          });
+        } else if (w.cause === "truncated") {
+          li.textContent = t(currentLang, "coverage_warn_truncated");
+        } else if (w.cause === "cross_origin_iframe") {
+          li.textContent = t(currentLang, "coverage_warn_cross_origin_iframe", {
+            count: String(w.count),
+          });
+        } else if (w.cause === "closed_shadow_root") {
+          li.textContent = t(currentLang, "coverage_warn_closed_shadow_root", {
+            count: String(w.count),
+          });
+        } else if (w.cause === "canvas_only") {
+          li.textContent = t(currentLang, "coverage_warn_canvas_only", {
+            count: String(w.count),
+          });
+        }
+        warningsListEl.appendChild(li);
+      }
+    }
+  }
 }
 
 type CoverageTone = "ok" | "warn" | "error";
@@ -1564,12 +1865,20 @@ let windowTotalPages = 1;
  * renders nothing - and it is also a fail-fast, so a corrupt or encrypted file
  * is rejected in about a second instead of after a minute of work.
  */
+let activeDocFileKey: string | null = null;
+let activeDocRequestId: string | null = null;
+const cancelledDocTokens = new Set<string>();
+
 function startCount(fileKey: string, name: string, mimeType: string, kind: DocKind, degraded = false): void {
   pendingCountFile = { fileKey, name, mimeType, kind, degraded };
+  activeDocFileKey = fileKey;
+  cancelledDocTokens.delete(fileKey);
   resetDocStages();
   setDocStatus("Scanning document on this device…", false);
   showDocProgress();
-  void sendDocMessage({ type: "POPUP_DOC_COUNT", requestId: requestId(), fileKey, name, mimeType, kind });
+  const reqId = requestId();
+  activeDocRequestId = reqId;
+  void sendDocMessage({ type: "POPUP_DOC_COUNT", requestId: reqId, fileKey, name, mimeType, kind });
 }
 
 /** Scan one window of the staged document. */
@@ -1578,12 +1887,16 @@ function startPreview(pageOffset: number, totalPages?: number): void {
   pendingCountFile = null;
   if (!pending) return;
   const { fileKey, name, mimeType, kind, degraded } = pending;
+  activeDocFileKey = fileKey;
+  cancelledDocTokens.delete(fileKey);
   resetDocStages();
   showDocProgress();
   beginDocSession({ fileKey, name, mimeType, kind, degraded });
+  const reqId = requestId();
+  activeDocRequestId = reqId;
   void sendDocMessage({
     type: "POPUP_DOC_PREVIEW",
-    requestId: requestId(),
+    requestId: reqId,
     fileKey,
     name,
     mimeType,
@@ -2068,12 +2381,18 @@ function buildDocBoxes(): { pageIndex: number; rects: Rect[] }[] {
   return Array.from(byPage.entries()).map(([pageIndex, rects]) => ({ pageIndex, rects }));
 }
 
-function clearDocUi(): void {
+function clearDocUi(options?: { keepRedacted?: boolean }): void {
   const workspace = document.getElementById("doc-workspace") as HTMLElement | null;
   const thumbs = document.getElementById("doc-thumbs") as HTMLElement | null;
   const list = document.getElementById("doc-findings") as HTMLUListElement | null;
   const redactBtn = document.getElementById("doc-redact-btn") as HTMLButtonElement | null;
-  if (lastDoc) void deleteFile(lastDoc.fileKey).catch(() => undefined);
+  const fileKeyToDelete = lastDoc?.fileKey ?? activeDocFileKey;
+  if (fileKeyToDelete) void deleteFile(fileKeyToDelete, options).catch(() => undefined);
+  if (!options?.keepRedacted) {
+    activeDocFileKey = null;
+    activeDocRequestId = null;
+    void clearStagedMarker().catch(() => undefined);
+  }
   lastDoc = null;
   selectedDocFindingIds.clear();
   overlayRedrawers.length = 0;
@@ -2317,6 +2636,11 @@ export async function refreshProtectionStatus(): Promise<ProtectionStatusSnapsho
     if (diagDocVal) diagDocVal.textContent = t(lang, "status_val_chromium_only");
     if (diagOcrVal) diagOcrVal.textContent = t(lang, "status_val_chromium_only");
   }
+  const diagVersionVal = document.getElementById("diag-version-value");
+  if (diagVersionVal) {
+    const manifestVer = typeof chrome !== "undefined" ? chrome.runtime?.getManifest?.()?.version : undefined;
+    diagVersionVal.textContent = manifestVer || CURRENT_EXTENSION_VERSION;
+  }
 
   const managedNotice = document.getElementById("managed-lock-notice");
   if (managedNotice) {
@@ -2359,8 +2683,8 @@ export async function refreshProtectionStatus(): Promise<ProtectionStatusSnapsho
     }
   }
 
-  for (const elId of ["threshold-category-select", "threshold-value-select", "threshold-apply-all-btn"]) {
-    const el = document.getElementById(elId) as HTMLSelectElement | HTMLButtonElement | null;
+  for (const elId of ["threshold-category-select", "threshold-value-select", "threshold-apply-all-btn", "auto-mask-single-names-toggle"]) {
+    const el = document.getElementById(elId) as HTMLSelectElement | HTMLButtonElement | HTMLInputElement | null;
     if (el) {
       el.disabled = isLocked;
       if (isLocked) el.title = t(lang, "managed_lock_notice");
@@ -2556,10 +2880,42 @@ export async function initPopup(): Promise<void> {
   /** Store key of the last verified redaction, if one is still staged. */
   let lastPrintFileKey: string | null = null;
 
+  const pinnedTabSelect = document.getElementById("pinned-tab-select") as HTMLSelectElement | null;
+  const pinCurrentTabBtn = document.getElementById("pin-current-tab-btn") as HTMLButtonElement | null;
+
+  pinnedTabSelect?.addEventListener("change", () => {
+    const rawVal = pinnedTabSelect.value;
+    const nextTabId = rawVal ? Number(rawVal) : null;
+    void sendMessage({
+      type: "POPUP_PIN_TAB",
+      requestId: requestId(),
+      tabId: nextTabId && Number.isSafeInteger(nextTabId) && nextTabId > 0 ? nextTabId : null,
+    });
+  });
+
+  pinCurrentTabBtn?.addEventListener("click", () => {
+    void sendMessage({
+      type: "POPUP_PIN_TAB",
+      requestId: requestId(),
+      tabId: null,
+      pinCurrent: true,
+    });
+  });
+
   scanBtn?.addEventListener("click", async () => {
+    const pt = lastState?.pinnedTarget;
+    if (pt && pt.pinnedTabId === null) {
+      return;
+    }
+    scanBtn.disabled = true;
     const current = await loadSettings();
     speakAnnouncement(t(current.language, "speech_scan_start"), current);
     const mode: ScanMode = lastState?.mode ?? current.mode;
+    if (pt && typeof pt.pinnedTabId === "number") {
+      if (pt.url) currentWebTabUrl = pt.url;
+      void sendMessage({ type: "POPUP_SCAN", requestId: requestId(), mode, tabId: pt.pinnedTabId });
+      return;
+    }
     const targetTab = await getActiveWebTab();
     if (targetTab?.id) {
       if (targetTab.url) currentWebTabUrl = targetTab.url;
@@ -2916,8 +3272,16 @@ export async function initPopup(): Promise<void> {
   });
 
   docClearBtn?.addEventListener("click", () => {
-    if (!lastDoc) return;
-    void sendDocMessage({ type: "POPUP_DOC_CLEAR", requestId: requestId(), docId: lastDoc.docId });
+    const targetDocId = lastDoc?.docId || undefined;
+    const targetFileKey = lastDoc?.fileKey ?? activeDocFileKey ?? undefined;
+    if (targetDocId || targetFileKey) {
+      void sendDocMessage({
+        type: "POPUP_DOC_CLEAR",
+        requestId: requestId(),
+        ...(targetDocId ? { docId: targetDocId } : {}),
+        ...(targetFileKey ? { fileKey: targetFileKey } : {}),
+      });
+    }
     clearDocUi();
     setDocStatus("", false);
   });
@@ -2925,22 +3289,67 @@ export async function initPopup(): Promise<void> {
   const docCancelBtn = document.getElementById("doc-cancel-btn") as HTMLButtonElement | null;
 
   docCancelBtn?.addEventListener("click", () => {
-    // Before the count reply arrives there is no session to cancel at the
-    // worker, and POPUP_DOC_CANCEL needs a real docId - a placeholder "" is
-    // refused by validation, which would surface as a confusing error. Stopping
-    // the wait locally is the whole of the action in that state.
-    if (!lastDoc || !lastDoc.docId) {
-      pendingCountFile = null;
-      hideDocProgress();
-      clearDocUi();
-      setDocStatus("Document processing cancelled.", false);
-      return;
+    const targetFileKey = lastDoc?.fileKey || pendingCountFile?.fileKey || activeDocFileKey || undefined;
+    const targetDocId = lastDoc?.docId || undefined;
+    const targetRequestId = activeDocRequestId || undefined;
+    if (targetFileKey) cancelledDocTokens.add(targetFileKey);
+    if (targetDocId) cancelledDocTokens.add(targetDocId);
+    if (targetRequestId) cancelledDocTokens.add(targetRequestId);
+    pendingCountFile = null;
+    if (targetDocId || targetFileKey) {
+      void sendDocMessage({
+        type: "POPUP_DOC_CANCEL",
+        requestId: requestId(),
+        ...(targetDocId ? { docId: targetDocId } : {}),
+        ...(targetFileKey ? { fileKey: targetFileKey } : {}),
+      });
     }
-    void sendDocMessage({ type: "POPUP_DOC_CANCEL", requestId: requestId(), docId: lastDoc.docId });
     hideDocProgress();
     clearDocUi();
     setDocStatus("Document processing cancelled.", false);
+    void refreshStagedStorageAudit();
   });
+
+  const docPurgeStagedBtn = document.getElementById("doc-purge-staged-btn") as HTMLButtonElement | null;
+  const docPurgeConfirmBar = document.getElementById("doc-purge-confirm-bar") as HTMLElement | null;
+  const docPurgeConfirmYes = document.getElementById("doc-purge-confirm-yes") as HTMLButtonElement | null;
+  const docPurgeConfirmNo = document.getElementById("doc-purge-confirm-no") as HTMLButtonElement | null;
+  const docStagedConfirmMsg = document.getElementById("doc-staged-confirm-msg") as HTMLElement | null;
+
+  docPurgeStagedBtn?.addEventListener("click", () => {
+    if (docStagedConfirmMsg) {
+      docStagedConfirmMsg.hidden = true;
+      docStagedConfirmMsg.textContent = "";
+    }
+    if (docPurgeConfirmBar) {
+      docPurgeConfirmBar.hidden = false;
+    }
+  });
+
+  docPurgeConfirmNo?.addEventListener("click", () => {
+    if (docPurgeConfirmBar) {
+      docPurgeConfirmBar.hidden = true;
+    }
+  });
+
+  docPurgeConfirmYes?.addEventListener("click", () => {
+    if (docPurgeConfirmBar) {
+      docPurgeConfirmBar.hidden = true;
+    }
+    const docProgressEl = document.getElementById("doc-progress");
+    const isInFlight = Boolean(docProgressEl && !docProgressEl.hidden);
+    if (!isInFlight) {
+      clearDocUi();
+      setDocStatus("", false);
+    }
+    void sendDocMessage({
+      type: "POPUP_PURGE_STAGED_DATA",
+      requestId: requestId(),
+      includeIdleSession: !isInFlight,
+    });
+  });
+
+  void refreshStagedStorageAudit();
 
   // ── Page-window chooser (documents longer than one pass) ────────────────
   const windowDialog = document.getElementById("doc-window-dialog") as HTMLDialogElement | null;
@@ -3105,6 +3514,28 @@ export async function initPopup(): Promise<void> {
       placeholderToggle.setAttribute("aria-checked", placeholderToggle.checked ? "true" : "false");
       const current = await loadSettings();
       await saveSettings({ ...current, maskPlaceholders: placeholderToggle.checked });
+    });
+  }
+
+  const autoMaskSingleNamesToggle = document.getElementById("auto-mask-single-names-toggle") as HTMLInputElement | null;
+  if (autoMaskSingleNamesToggle) {
+    autoMaskSingleNamesToggle.checked = settings.autoMaskSingleNames;
+    autoMaskSingleNamesToggle.setAttribute("aria-checked", autoMaskSingleNamesToggle.checked ? "true" : "false");
+    autoMaskSingleNamesToggle.addEventListener("change", async () => {
+      autoMaskSingleNamesToggle.setAttribute("aria-checked", autoMaskSingleNamesToggle.checked ? "true" : "false");
+      const current = await loadSettings();
+      await saveSettings({ ...current, autoMaskSingleNames: autoMaskSingleNamesToggle.checked });
+    });
+  }
+
+  const medicalDictionaryToggle = document.getElementById("medical-dictionary-toggle") as HTMLInputElement | null;
+  if (medicalDictionaryToggle) {
+    medicalDictionaryToggle.checked = settings.medicalDictionaryEnabled;
+    medicalDictionaryToggle.setAttribute("aria-checked", medicalDictionaryToggle.checked ? "true" : "false");
+    medicalDictionaryToggle.addEventListener("change", async () => {
+      medicalDictionaryToggle.setAttribute("aria-checked", medicalDictionaryToggle.checked ? "true" : "false");
+      const current = await loadSettings();
+      await saveSettings({ ...current, medicalDictionaryEnabled: medicalDictionaryToggle.checked });
     });
   }
 
@@ -3465,6 +3896,14 @@ export async function initPopup(): Promise<void> {
     if (placeholderToggle) {
       placeholderToggle.checked = defaults.maskPlaceholders;
       placeholderToggle.setAttribute("aria-checked", "false");
+    }
+    if (autoMaskSingleNamesToggle) {
+      autoMaskSingleNamesToggle.checked = defaults.autoMaskSingleNames;
+      autoMaskSingleNamesToggle.setAttribute("aria-checked", "false");
+    }
+    if (medicalDictionaryToggle) {
+      medicalDictionaryToggle.checked = defaults.medicalDictionaryEnabled;
+      medicalDictionaryToggle.setAttribute("aria-checked", "false");
     }
     // Mode toggles, banner, categories, and lock notice are synced by the
     // refreshProtectionStatus() call above.
@@ -4898,9 +5337,67 @@ export async function initPopup(): Promise<void> {
     const validation = validateMessage(raw);
     if (!validation.ok) return;
     const message = validation.message;
+    if (message.type === "POPUP_SCAN_PROGRESS") {
+      const summary = document.getElementById("scan-summary") as HTMLDivElement | null;
+      const status = document.getElementById("status") as HTMLParagraphElement | null;
+      const summaryChars = document.getElementById("summary-chars") as HTMLParagraphElement | null;
+      if (!lastState || lastState.scanning || !lastState.sessionId || lastState.sessionId === message.sessionId) {
+        if (summary) summary.hidden = false;
+        if (status) {
+          status.textContent = t(currentLang, "status_scanning_window", {
+            current: String(message.windowsCompleted),
+            total: String(message.windowsTotal),
+          });
+          status.classList.remove("status--error");
+        }
+        if (summaryChars) {
+          summaryChars.textContent = t(currentLang, "status_scanning_chars_progress", {
+            scanned: message.charsScanned.toLocaleString(),
+            total: message.charsTotal.toLocaleString(),
+            findings: String(message.findingsSoFar),
+          });
+        }
+      }
+      return;
+    }
+    if (message.type === "POPUP_STATE_CHUNK") {
+      const key = `${message.requestId}:${message.sessionId}`;
+      let entry = pendingStateChunks.get(key);
+      if (!entry) {
+        entry = { sessionId: message.sessionId, totalChunks: message.totalChunks, chunks: new Map() };
+        pendingStateChunks.set(key, entry);
+      }
+      entry.chunks.set(message.chunkIndex, message.findings);
+      return;
+    }
     if (message.type === "POPUP_STATE") {
       const priorState = lastState;
-      lastState = message.state;
+      let nextState = message.state;
+      if (message.totalChunks && message.totalChunks > 1) {
+        const key = `${message.requestId}:${message.state.sessionId ?? "state"}`;
+        const entry = pendingStateChunks.get(key);
+        pendingStateChunks.delete(key);
+        const combinedFindings: Finding[] = [];
+        const finalIdx = message.chunkIndex ?? message.totalChunks - 1;
+        let missing = false;
+        for (let i = 0; i < message.totalChunks; i++) {
+          if (i === finalIdx) {
+            combinedFindings.push(...message.state.findings);
+          } else {
+            const chunk = entry?.chunks.get(i);
+            if (!chunk) missing = true;
+            else combinedFindings.push(...chunk);
+          }
+        }
+        nextState = {
+          ...message.state,
+          findings: combinedFindings,
+          findingsTruncated: missing ? true : false,
+          totalFindings: missing ? message.state.totalFindings : combinedFindings.length,
+          ...(missing ? { truncated: true, coverageStatus: "PARTIALLY_SCANNED" } : {}),
+        };
+      }
+      lastState = nextState;
       renderState(lastState);
       if (priorState?.scanning && !lastState.scanning && lastState.scanned) {
         void (async () => {
@@ -4996,6 +5493,7 @@ export async function initPopup(): Promise<void> {
       return;
     }
     if (message.type === "POPUP_DOC_COUNT_RESULT") {
+      if (cancelledDocTokens.has(message.requestId)) return;
       // The document's real length, known before anything slow ran. One pass
       // covers it: scan from the top. Longer: let the user choose which window,
       // rather than silently dropping everything past the cap.
@@ -5026,6 +5524,13 @@ export async function initPopup(): Promise<void> {
       return;
     }
     if (message.type === "POPUP_DOC_STATE") {
+      if (
+        cancelledDocTokens.has(message.requestId) ||
+        cancelledDocTokens.has(message.fileKey) ||
+        cancelledDocTokens.has(message.docId)
+      ) {
+        return;
+      }
       hideDocProgress();
       // Match on fileKey so the first reply can land on the placeholder session
       // created by beginDocSession(), which has no docId yet. Fall back to docId
@@ -5060,6 +5565,7 @@ export async function initPopup(): Promise<void> {
       doc.pageOffset = message.pageOffset ?? 0;
       doc.truncated = message.truncated === true;
       renderDoc(doc);
+      void refreshStagedStorageAudit();
       const found = message.pages.reduce((n, p) => n + p.findings.length, 0);
       // The preview is finished, so the progress row must stay down. Calling
       // renderDocStage() unconditionally re-showed it with "Processing
@@ -5067,8 +5573,21 @@ export async function initPopup(): Promise<void> {
       // on an already-processed document. The studio itself now carries the
       // result (page count, per-page findings, and the findings badge).
       hideDocProgress();
+      const hasLowOcrConfidence = message.pages.some((p) => p.lowOcrConfidence === true);
       if (found === 0) {
-        setDocStatus("No sensitive values were found in this document.", true);
+        if (hasLowOcrConfidence) {
+          setDocStatus(
+            "Scan uncertain — low OCR confidence on one or more pages; review manually before sharing.",
+            true
+          );
+        } else {
+          setDocStatus("No sensitive values were found in this document.", true);
+        }
+      } else if (hasLowOcrConfidence) {
+        setDocStatus(
+          "Some pages had low OCR confidence — review manually for missed items.",
+          true
+        );
       } else {
         setDocStatus("", false);
       }
@@ -5167,18 +5686,26 @@ export async function initPopup(): Promise<void> {
           lastPrintFileKey = null;
         }
       }
-      clearDocUi();
+      clearDocUi({ keepRedacted: Boolean(message.printFileKey) });
+      void refreshStagedStorageAudit();
       return;
     }
     if (message.type === "POPUP_DOC_STATUS") {
+      if (cancelledDocTokens.has(message.requestId)) return;
       renderDocStage(message);
       return;
     }
     if (message.type === "POPUP_DOC_ERROR") {
+      if (cancelledDocTokens.has(message.requestId)) return;
       // The run is over, so the spinner has to stop; leaving it up would show
       // "Processing document..." next to an error.
       hideDocProgress();
       setDocStatus(message.userMessage, true);
+      void refreshStagedStorageAudit();
+      return;
+    }
+    if (message.type === "POPUP_STAGED_STATS_STATE") {
+      renderStagedStorageAudit(message.stats, message.purged);
       return;
     }
     if (message.type === "POPUP_NOTIFICATIONS_STATE") {

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GovernWorld Redaction",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Local-first PII/PHI detection and redaction for pages and documents you choose to scan. Content stays on this device.",
   "browser_specific_settings": {
     "gecko": {
@@ -37,6 +37,9 @@
   "optional_host_permissions": [
     "http://*/*",
     "https://*/*"
+  ],
+  "host_permissions": [
+    "https://lkgcehdwasewwoieyoip.supabase.co/*"
   ],
   "commands": {
     "_execute_action": {

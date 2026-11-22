@@ -83,6 +83,8 @@ export interface DocumentPage {
    * this one degrades the review surface instead of failing the preview.
    */
   pageImageKey?: string;
+  /** True when OCR ran on this page with low/empty token confidence (uncertain, never clean). */
+  lowOcrConfidence?: boolean;
 }
 
 export interface RedactedDocumentResult {

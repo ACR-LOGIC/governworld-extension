@@ -1,0 +1,141 @@
+{
+  "generatedAt": "2026-11-21T21:45:45.877Z",
+  "mode": "p1",
+  "stage": "scan",
+  "executablePath": "C:\\Users\\omg\\AppData\\Local\\ms-playwright\\chromium-1255\\chrome-win64\\chrome.exe",
+  "browserVersion": "Chrome/159.0.8154.6",
+  "nodeVersion": "v22.22.2",
+  "scan": {
+    "charData": {
+      "trials": 5,
+      "detectedCount": 5,
+      "latencies": {
+        "n": 5,
+        "p50": 679.2,
+        "p95": 694.1,
+        "min": 669.2,
+        "max": 694.1,
+        "samples": [
+          690.5,
+          669.2,
+          694.1,
+          674,
+          679.2
+        ]
+      },
+      "details": [
+        {
+          "trial": 1,
+          "detected": true,
+          "latencyMs": 690.5
+        },
+        {
+          "trial": 2,
+          "detected": true,
+          "latencyMs": 669.2
+        },
+        {
+          "trial": 3,
+          "detected": true,
+          "latencyMs": 694.1
+        },
+        {
+          "trial": 4,
+          "detected": true,
+          "latencyMs": 674
+        },
+        {
+          "trial": 5,
+          "detected": true,
+          "latencyMs": 679.2
+        }
+      ]
+    },
+    "addedNodeControl": {
+      "trials": 3,
+      "detectedCount": 3,
+      "latencies": {
+        "n": 3,
+        "p50": 684.2,
+        "p95": 687.2,
+        "min": 671.7,
+        "max": 687.2,
+        "samples": [
+          687.2,
+          684.2,
+          671.7
+        ]
+      }
+    },
+    "batchRemoval": {
+      "trials": 3,
+      "ghostCount": 3,
+      "details": [
+        {
+          "trial": 1,
+          "beforeCount": 3,
+          "afterCount": 3,
+          "ghostNpiRemains": true
+        },
+        {
+          "trial": 2,
+          "beforeCount": 3,
+          "afterCount": 3,
+          "ghostNpiRemains": true
+        },
+        {
+          "trial": 3,
+          "beforeCount": 3,
+          "afterCount": 3,
+          "ghostNpiRemains": true
+        }
+      ]
+    },
+    "popupBadgeSync": {
+      "trials": 5,
+      "syncedCount": 0,
+      "details": [
+        {
+          "trial": 1,
+          "sessionFindings": 0,
+          "badgeText": "",
+          "popupCount": 0,
+          "synced": false
+        },
+        {
+          "trial": 2,
+          "sessionFindings": 0,
+          "badgeText": "",
+          "popupCount": 0,
+          "synced": false
+        },
+        {
+          "trial": 3,
+          "sessionFindings": 0,
+          "badgeText": "",
+          "popupCount": 0,
+          "synced": false
+        },
+        {
+          "trial": 4,
+          "sessionFindings": 0,
+          "badgeText": "",
+          "popupCount": 0,
+          "synced": false
+        },
+        {
+          "trial": 5,
+          "sessionFindings": 0,
+          "badgeText": "",
+          "popupCount": 0,
+          "synced": false
+        }
+      ]
+    }
+  },
+  "paste": {},
+  "docs": {},
+  "ocrNode": {},
+  "network": {},
+  "gateFailures": []
+}

@@ -4,13 +4,13 @@ import {
   MAX_MESSAGE_BYTES,
   MESSAGE_TYPES,
 } from "./types.js";
-import type { DocKind, ExtensionMessage, Finding, ScanMode, DocPageMeta, RedactionOptions, RedactionStyle, DocRedactionStage, ScanSettingsMessage } from "./types.js";
+import type { DocKind, ExtensionMessage, Finding, ScanMode, DocPageMeta, RedactionOptions, RedactionStyle, DocRedactionStage, ScanSettingsMessage, OwningBackend, SupabasePairingState } from "./types.js";
 import type { RedactionVerifyMethod } from "../document-pipeline/verify.js";
 import { isAllowedGatewayOrigin, isCategory } from "./settings.js";
 import { isPageImageKey, isPreviewKey } from "./docStore.js";
 import { parseCustomPattern } from "./customPatterns.js";
 import type { CustomPattern } from "./customPatterns.js";
-import type { FindingCategory, PopupState } from "./types.js";
+import type { FindingCategory, IncompleteWindowInfo, PopupState, ScanStats } from "./types.js";
 import type { AccountView } from "./account.js";
 import { parseAccountView } from "./account.js";
 import type { PatternTestResult, WizardAnalysis } from "./wizardAnalyzer.js";
@@ -107,7 +107,7 @@ function isMaskedPreview(category: FindingCategory, preview: string): boolean {
   if (preview.length === 0 || preview.length > 256) return false;
   switch (category) {
     case "email":
-      return /^(?:[A-Za-z0-9._%+-]{0,2}\*{3,}@[A-Za-z0-9.-]{1,190}|[\s*]+)$/.test(preview);
+      return /^(?:[\p{L}\p{N}._%+-]{0,2}\*{3,}@[\p{L}\p{N}.-]{1,190}|[\s*]+)$/u.test(preview);
     case "phone":
       return /^(?:\*{3}-\*{3}-\d{4}|[\s*]+)$/.test(preview);
     case "ssn":
@@ -160,6 +160,7 @@ function isDocPageMeta(value: unknown): value is DocPageMeta {
   // and the review page falls back to the thumbnail), but when present it must
   // still be a well-formed store key rather than an arbitrary string.
   if (value.pageImageKey !== undefined && !isPageImageKey(value.pageImageKey)) return false;
+  if (value.lowOcrConfidence !== undefined && typeof value.lowOcrConfidence !== "boolean") return false;
   return (
     typeof value.index === "number" &&
     typeof value.widthPx === "number" &&
@@ -317,19 +318,95 @@ function normalizePdfQueue(value: unknown): import("../shared/types.js").PdfExtr
   return out.length > 0 ? out : undefined;
 }
 
-function normalizeScanStats(value: unknown): { visibleChars: number; attrChars?: number; truncated: boolean; findingsTruncated?: boolean; totalFindings?: number; startedAt?: number; finishedAt?: number; imageCandidates?: ImageCandidate[] } | null {
+export const DEFAULT_FINDINGS_CHUNK_BYTES = 48 * 1024;
+
+/**
+ * Partition findings into byte-bounded chunks so every IPC message stays
+ * comfortably under Chrome's 64 KB MAX_MESSAGE_BYTES limit without dropping findings.
+ */
+export function chunkFindingsByByteBudget(
+  findings: Finding[],
+  budgetBytes: number = DEFAULT_FINDINGS_CHUNK_BYTES
+): Finding[][] {
+  if (findings.length <= 1) return [findings];
+  const full = JSON.stringify(findings);
+  if (full.length <= budgetBytes) return [findings];
+
+  const chunks: Finding[][] = [];
+  let current: Finding[] = [];
+  let currentBytes = 2; // "[]"
+  for (const finding of findings) {
+    const serializedLen = JSON.stringify(finding).length;
+    const addition = current.length > 0 ? serializedLen + 1 : serializedLen;
+    if (current.length > 0 && currentBytes + addition > budgetBytes) {
+      chunks.push(current);
+      current = [finding];
+      currentBytes = 2 + serializedLen;
+    } else {
+      current.push(finding);
+      currentBytes += addition;
+    }
+  }
+  if (current.length > 0) chunks.push(current);
+  return chunks.length > 0 ? chunks : [[]];
+}
+
+function normalizeIncompleteWindows(value: unknown): IncompleteWindowInfo[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out: IncompleteWindowInfo[] = [];
+  for (const entry of value) {
+    if (out.length >= 256) break;
+    if (!isRecord(entry)) continue;
+    if (typeof entry.windowIndex !== "number" || !Number.isSafeInteger(entry.windowIndex) || entry.windowIndex < 1) continue;
+    if (typeof entry.reason !== "string" || entry.reason.length === 0 || entry.reason.length > 256) continue;
+    out.push({ windowIndex: entry.windowIndex, reason: entry.reason });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+const COVERAGE_WARNING_CAUSES = new Set<string>([
+  "incomplete_window",
+  "truncated",
+  "cross_origin_iframe",
+  "closed_shadow_root",
+  "canvas_only",
+]);
+
+function normalizeCoverageWarnings(value: unknown): import("./types.js").CoverageWarning[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out: import("./types.js").CoverageWarning[] = [];
+  for (const entry of value) {
+    if (out.length >= 16) break;
+    if (!isRecord(entry)) continue;
+    if (typeof entry.cause !== "string" || !COVERAGE_WARNING_CAUSES.has(entry.cause)) continue;
+    if (typeof entry.count !== "number" || !Number.isSafeInteger(entry.count) || entry.count < 1) continue;
+    if (entry.detail !== undefined && (typeof entry.detail !== "string" || entry.detail.length > 512)) continue;
+    out.push({
+      cause: entry.cause as import("./types.js").CoverageWarningCause,
+      count: entry.count,
+      ...(typeof entry.detail === "string" && entry.detail.length > 0 ? { detail: entry.detail } : {}),
+    });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+function normalizeScanStats(value: unknown): ScanStats | null {
   if (!isRecord(value) || typeof value.visibleChars !== "number" || !Number.isSafeInteger(value.visibleChars) || value.visibleChars < 0) return null;
   if (value.attrChars !== undefined && (typeof value.attrChars !== "number" || !Number.isSafeInteger(value.attrChars) || value.attrChars < 0)) return null;
   if (typeof value.truncated !== "boolean") return null;
+  if (value.windowsScanned !== undefined && (typeof value.windowsScanned !== "number" || !Number.isSafeInteger(value.windowsScanned) || value.windowsScanned < 0)) return null;
+  if (value.windowsTotal !== undefined && (typeof value.windowsTotal !== "number" || !Number.isSafeInteger(value.windowsTotal) || value.windowsTotal < 0)) return null;
   if (value.findingsTruncated !== undefined && typeof value.findingsTruncated !== "boolean") return null;
   if (value.totalFindings !== undefined && (typeof value.totalFindings !== "number" || !Number.isSafeInteger(value.totalFindings) || value.totalFindings < 0)) return null;
   if (value.startedAt !== undefined && (typeof value.startedAt !== "number" || !Number.isFinite(value.startedAt))) return null;
   if (value.finishedAt !== undefined && (typeof value.finishedAt !== "number" || !Number.isFinite(value.finishedAt))) return null;
   const imageCandidates = value.imageCandidates === undefined ? undefined : normalizeImageCandidates(value.imageCandidates);
-  // Advisory fields (visualQueue, pdfQueue, deferredMediaCount, coverageStatus) are dropped
+  // Advisory fields (visualQueue, pdfQueue, deferredMediaCount, coverageStatus, incompleteWindows) are dropped
   // rather than failing the whole scan when malformed. Findings remain valid.
   const visualQueue = value.visualQueue === undefined ? undefined : normalizeVisualQueue(value.visualQueue);
   const pdfQueue = value.pdfQueue === undefined ? undefined : normalizePdfQueue(value.pdfQueue);
+  const incompleteWindows = value.incompleteWindows === undefined ? undefined : normalizeIncompleteWindows(value.incompleteWindows);
+  const coverageWarnings = value.coverageWarnings === undefined ? undefined : normalizeCoverageWarnings(value.coverageWarnings);
   const deferredMediaCount =
     typeof value.deferredMediaCount === "number" &&
     Number.isSafeInteger(value.deferredMediaCount) &&
@@ -344,6 +421,9 @@ function normalizeScanStats(value: unknown): { visibleChars: number; attrChars?:
     visibleChars: value.visibleChars,
     ...(value.attrChars !== undefined ? { attrChars: value.attrChars } : {}),
     truncated: value.truncated,
+    ...(value.windowsScanned !== undefined ? { windowsScanned: value.windowsScanned } : {}),
+    ...(value.windowsTotal !== undefined ? { windowsTotal: value.windowsTotal } : {}),
+    ...(incompleteWindows ? { incompleteWindows } : {}),
     ...(value.findingsTruncated !== undefined ? { findingsTruncated: value.findingsTruncated } : {}),
     ...(value.totalFindings !== undefined ? { totalFindings: value.totalFindings } : {}),
     ...(value.startedAt !== undefined ? { startedAt: value.startedAt } : {}),
@@ -353,6 +433,7 @@ function normalizeScanStats(value: unknown): { visibleChars: number; attrChars?:
     ...(pdfQueue ? { pdfQueue } : {}),
     ...(deferredMediaCount !== undefined ? { deferredMediaCount } : {}),
     ...(coverageStatus !== undefined ? { coverageStatus } : {}),
+    ...(coverageWarnings ? { coverageWarnings } : {}),
   };
 }
 
@@ -446,8 +527,53 @@ export function isScanSettings(value: unknown): value is ScanSettingsMessage {
     typeof value.maskPlaceholders === "boolean" &&
     typeof value.sessionTimeoutMs === "number" &&
     value.sessionTimeoutMs >= 0 &&
-    (value.confidenceThresholds === undefined || isConfidenceThresholds(value.confidenceThresholds))
+    (value.confidenceThresholds === undefined || isConfidenceThresholds(value.confidenceThresholds)) &&
+    (value.autoMaskSingleNames === undefined || typeof value.autoMaskSingleNames === "boolean") &&
+    (value.medicalDictionaryEnabled === undefined || typeof value.medicalDictionaryEnabled === "boolean") &&
+    (value.windowChars === undefined || (typeof value.windowChars === "number" && Number.isSafeInteger(value.windowChars) && value.windowChars >= 100)) &&
+    (value.windowOverlapChars === undefined || (typeof value.windowOverlapChars === "number" && Number.isSafeInteger(value.windowOverlapChars) && value.windowOverlapChars >= 0)) &&
+    (value.maxTotalWindows === undefined || (typeof value.maxTotalWindows === "number" && Number.isSafeInteger(value.maxTotalWindows) && value.maxTotalWindows >= 1))
   );
+}
+
+const PINNED_TARGET_STATUSES = new Set<string>(["unpinned", "pinned", "navigated", "closed"]);
+
+function normalizePinnedTargetInfo(value: unknown): import("./types.js").PinnedTargetInfo | undefined {
+  if (!isRecord(value)) return undefined;
+  if (typeof value.status !== "string" || !PINNED_TARGET_STATUSES.has(value.status)) return undefined;
+  const pinnedTabId =
+    value.pinnedTabId === null
+      ? null
+      : typeof value.pinnedTabId === "number" && Number.isSafeInteger(value.pinnedTabId) && value.pinnedTabId > 0
+        ? value.pinnedTabId
+        : null;
+  const availableTabs: import("./types.js").ScannableTabSummary[] = [];
+  if (Array.isArray(value.availableTabs)) {
+    for (const item of value.availableTabs) {
+      if (availableTabs.length >= 64) break;
+      if (!isRecord(item)) continue;
+      if (typeof item.tabId !== "number" || !Number.isSafeInteger(item.tabId) || item.tabId <= 0) continue;
+      if (typeof item.title !== "string" || typeof item.url !== "string" || typeof item.domain !== "string") continue;
+      availableTabs.push({
+        tabId: item.tabId,
+        title: item.title.slice(0, 200),
+        url: item.url.slice(0, 1024),
+        domain: item.domain.slice(0, 256),
+        active: item.active === true,
+      });
+    }
+  }
+  return {
+    status: value.status as import("./types.js").PinnedTargetStatus,
+    pinnedTabId,
+    ...(typeof value.title === "string" ? { title: value.title.slice(0, 200) } : {}),
+    ...(typeof value.url === "string" ? { url: value.url.slice(0, 1024) } : {}),
+    ...(typeof value.domain === "string" ? { domain: value.domain.slice(0, 256) } : {}),
+    ...(typeof value.scannedUrl === "string" ? { scannedUrl: value.scannedUrl.slice(0, 1024) } : {}),
+    ...(typeof value.closedTitle === "string" ? { closedTitle: value.closedTitle.slice(0, 200) } : {}),
+    ...(typeof value.closedDomain === "string" ? { closedDomain: value.closedDomain.slice(0, 256) } : {}),
+    availableTabs,
+  };
 }
 
 function normalizePopupState(value: unknown): PopupState | null {
@@ -473,6 +599,24 @@ function normalizePopupState(value: unknown): PopupState | null {
     value.deferredMediaCount >= 0
       ? value.deferredMediaCount
       : undefined;
+  const windowsScanned =
+    typeof value.windowsScanned === "number" &&
+    Number.isSafeInteger(value.windowsScanned) &&
+    value.windowsScanned >= 0
+      ? value.windowsScanned
+      : undefined;
+  const windowsTotal =
+    typeof value.windowsTotal === "number" &&
+    Number.isSafeInteger(value.windowsTotal) &&
+    value.windowsTotal >= 0
+      ? value.windowsTotal
+      : undefined;
+  const incompleteWindows =
+    value.incompleteWindows === undefined ? undefined : normalizeIncompleteWindows(value.incompleteWindows);
+  const coverageWarnings =
+    value.coverageWarnings === undefined ? undefined : normalizeCoverageWarnings(value.coverageWarnings);
+  const pinnedTarget =
+    value.pinnedTarget === undefined ? undefined : normalizePinnedTargetInfo(value.pinnedTarget);
   return {
     mode: value.mode,
     ...(value.operatingMode === "MANAGE" || value.operatingMode === "LOCAL" ? { operatingMode: value.operatingMode } : {}),
@@ -489,6 +633,11 @@ function normalizePopupState(value: unknown): PopupState | null {
     ...(value.sessionId !== undefined ? { sessionId: value.sessionId } : {}),
     ...(coverageStatus ? { coverageStatus } : {}),
     ...(deferredMediaCount !== undefined ? { deferredMediaCount } : {}),
+    ...(windowsScanned !== undefined ? { windowsScanned } : {}),
+    ...(windowsTotal !== undefined ? { windowsTotal } : {}),
+    ...(incompleteWindows ? { incompleteWindows } : {}),
+    ...(coverageWarnings ? { coverageWarnings } : {}),
+    ...(pinnedTarget ? { pinnedTarget } : {}),
   };
 }
 
@@ -548,6 +697,24 @@ export function validateMessage(raw: unknown): ValidationResult {
       if (raw.tabId !== undefined && (typeof raw.tabId !== "number" || !Number.isSafeInteger(raw.tabId) || raw.tabId <= 0)) return { ok: false, error: "Invalid tabId" };
       return { ok: true, message: { type, requestId, mode: raw.mode, ...(typeof raw.tabId === "number" ? { tabId: raw.tabId } : {}) } };
     }
+    case "POPUP_PIN_TAB": {
+      const tabId = raw.tabId;
+      if (tabId !== null && (typeof tabId !== "number" || !Number.isSafeInteger(tabId) || tabId <= 0)) {
+        return { ok: false, error: "Invalid tabId" };
+      }
+      if (raw.pinCurrent !== undefined && typeof raw.pinCurrent !== "boolean") {
+        return { ok: false, error: "Invalid pinCurrent" };
+      }
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          tabId,
+          ...(typeof raw.pinCurrent === "boolean" ? { pinCurrent: raw.pinCurrent } : {}),
+        },
+      };
+    }
     case "POPUP_APPLY_MASKS": {
       if (!isStringArray(raw.findingIds)) return { ok: false, error: "Invalid findingIds" };
       if (raw.tabId !== undefined && (typeof raw.tabId !== "number" || !Number.isSafeInteger(raw.tabId) || raw.tabId <= 0)) return { ok: false, error: "Invalid tabId" };
@@ -560,7 +727,8 @@ export function validateMessage(raw: unknown): ValidationResult {
       return { ok: true, message: { type, requestId, ...(typeof raw.tabId === "number" ? { tabId: raw.tabId } : {}) } };
     case "POPUP_COPY_REDACTED": {
       if (!isStringArray(raw.findingIds)) return { ok: false, error: "Invalid findingIds" };
-      return { ok: true, message: { type, requestId, findingIds: raw.findingIds } };
+      if (raw.tabId !== undefined && (typeof raw.tabId !== "number" || !Number.isSafeInteger(raw.tabId) || raw.tabId <= 0)) return { ok: false, error: "Invalid tabId" };
+      return { ok: true, message: { type, requestId, findingIds: raw.findingIds, ...(typeof raw.tabId === "number" ? { tabId: raw.tabId } : {}) } };
     }
     case "POPUP_SET_MODE": {
       if (!isMode(raw.mode)) return { ok: false, error: "Invalid mode" };
@@ -627,8 +795,20 @@ export function validateMessage(raw: unknown): ValidationResult {
       return { ok: true, message: { type, requestId, delivered: raw.delivered } };
     }
     case "POPUP_DOC_CANCEL": {
-      if (typeof raw.docId !== "string" || !raw.docId) return { ok: false, error: "Invalid docId" };
-      return { ok: true, message: { type, requestId, docId: raw.docId } };
+      const hasDocId = raw.docId !== undefined;
+      const hasFileKey = raw.fileKey !== undefined;
+      if (hasDocId && (typeof raw.docId !== "string" || !raw.docId)) return { ok: false, error: "Invalid docId" };
+      if (hasFileKey && !isFileKey(raw.fileKey)) return { ok: false, error: "Invalid fileKey" };
+      if (!hasDocId && !hasFileKey) return { ok: false, error: "Missing docId or fileKey" };
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          ...(typeof raw.docId === "string" && raw.docId ? { docId: raw.docId } : {}),
+          ...(isFileKey(raw.fileKey) ? { fileKey: raw.fileKey } : {}),
+        },
+      };
     }
     case "SCAN_PAGE": {
       if (!isMode(raw.mode)) return { ok: false, error: "Invalid mode" };
@@ -636,19 +816,77 @@ export function validateMessage(raw: unknown): ValidationResult {
       if (!isScanSettings(raw.settings)) return { ok: false, error: "Invalid settings" };
       return { ok: true, message: { type, requestId, mode: raw.mode, sessionId: raw.sessionId, settings: raw.settings } };
     }
+    case "SCAN_PROGRESS":
+    case "POPUP_SCAN_PROGRESS": {
+      if (typeof raw.sessionId !== "string" || !raw.sessionId) return { ok: false, error: "Invalid sessionId" };
+      if (typeof raw.windowsCompleted !== "number" || !Number.isSafeInteger(raw.windowsCompleted) || raw.windowsCompleted < 0) return { ok: false, error: "Invalid windowsCompleted" };
+      if (typeof raw.windowsTotal !== "number" || !Number.isSafeInteger(raw.windowsTotal) || raw.windowsTotal < 0) return { ok: false, error: "Invalid windowsTotal" };
+      if (typeof raw.charsScanned !== "number" || !Number.isSafeInteger(raw.charsScanned) || raw.charsScanned < 0) return { ok: false, error: "Invalid charsScanned" };
+      if (typeof raw.charsTotal !== "number" || !Number.isSafeInteger(raw.charsTotal) || raw.charsTotal < 0) return { ok: false, error: "Invalid charsTotal" };
+      if (typeof raw.findingsSoFar !== "number" || !Number.isSafeInteger(raw.findingsSoFar) || raw.findingsSoFar < 0) return { ok: false, error: "Invalid findingsSoFar" };
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          sessionId: raw.sessionId,
+          windowsCompleted: raw.windowsCompleted,
+          windowsTotal: raw.windowsTotal,
+          charsScanned: raw.charsScanned,
+          charsTotal: raw.charsTotal,
+          findingsSoFar: raw.findingsSoFar,
+        },
+      };
+    }
+    case "SCAN_RESULT_CHUNK":
+    case "POPUP_STATE_CHUNK": {
+      if (typeof raw.sessionId !== "string" || !raw.sessionId) return { ok: false, error: "Invalid sessionId" };
+      if (typeof raw.totalChunks !== "number" || !Number.isSafeInteger(raw.totalChunks) || raw.totalChunks < 1 || raw.totalChunks > 200) return { ok: false, error: "Invalid totalChunks" };
+      if (typeof raw.chunkIndex !== "number" || !Number.isSafeInteger(raw.chunkIndex) || raw.chunkIndex < 0 || raw.chunkIndex >= raw.totalChunks) return { ok: false, error: "Invalid chunkIndex" };
+      const chunkFindings = normalizeFindingArray(raw.findings);
+      if (!chunkFindings) return { ok: false, error: "Invalid findings" };
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          sessionId: raw.sessionId,
+          chunkIndex: raw.chunkIndex,
+          totalChunks: raw.totalChunks,
+          findings: chunkFindings,
+        },
+      };
+    }
     case "SCAN_RESULT": {
       if (typeof raw.sessionId !== "string" || !raw.sessionId) return { ok: false, error: "Invalid sessionId" };
       const findings = normalizeFindingArray(raw.findings);
       if (!findings) return { ok: false, error: "Invalid findings" };
       const stats = normalizeScanStats(raw.stats);
       if (!stats) return { ok: false, error: "Invalid stats" };
-      return { ok: true, message: { type, requestId, sessionId: raw.sessionId, findings, stats } };
+      if (raw.totalChunks !== undefined && (typeof raw.totalChunks !== "number" || !Number.isSafeInteger(raw.totalChunks) || raw.totalChunks < 1 || raw.totalChunks > 200)) return { ok: false, error: "Invalid totalChunks" };
+      if (raw.chunkIndex !== undefined && (typeof raw.chunkIndex !== "number" || !Number.isSafeInteger(raw.chunkIndex) || raw.chunkIndex < 0 || (typeof raw.totalChunks === "number" && raw.chunkIndex >= raw.totalChunks))) return { ok: false, error: "Invalid chunkIndex" };
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          sessionId: raw.sessionId,
+          findings,
+          stats,
+          ...(typeof raw.chunkIndex === "number" ? { chunkIndex: raw.chunkIndex } : {}),
+          ...(typeof raw.totalChunks === "number" ? { totalChunks: raw.totalChunks } : {}),
+        },
+      };
     }
     case "CONTENT_ERROR": {
       if (typeof raw.sessionId !== "string" || !raw.sessionId) return { ok: false, error: "Invalid sessionId" };
       if (typeof raw.code !== "string") return { ok: false, error: "Invalid error code" };
       if (typeof raw.userMessage !== "string") return { ok: false, error: "Invalid userMessage" };
       return { ok: true, message: { type, requestId, sessionId: raw.sessionId, code: raw.code, userMessage: raw.userMessage } };
+    }
+    case "CONTENT_GET_NAME_DICTIONARIES":
+    case "CONTENT_GET_MEDICAL_DICTIONARY": {
+      return { ok: true, message: { type, requestId } };
     }
     case "APPLY_MASKS":
     case "COPY_REDACTED_TEXT": {
@@ -686,7 +924,18 @@ export function validateMessage(raw: unknown): ValidationResult {
     case "POPUP_STATE": {
       const state = normalizePopupState(raw.state);
       if (!state) return { ok: false, error: "Invalid state" };
-      return { ok: true, message: { type, requestId, state } };
+      if (raw.totalChunks !== undefined && (typeof raw.totalChunks !== "number" || !Number.isSafeInteger(raw.totalChunks) || raw.totalChunks < 1 || raw.totalChunks > 200)) return { ok: false, error: "Invalid totalChunks" };
+      if (raw.chunkIndex !== undefined && (typeof raw.chunkIndex !== "number" || !Number.isSafeInteger(raw.chunkIndex) || raw.chunkIndex < 0 || (typeof raw.totalChunks === "number" && raw.chunkIndex >= raw.totalChunks))) return { ok: false, error: "Invalid chunkIndex" };
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          state,
+          ...(typeof raw.chunkIndex === "number" ? { chunkIndex: raw.chunkIndex } : {}),
+          ...(typeof raw.totalChunks === "number" ? { totalChunks: raw.totalChunks } : {}),
+        },
+      };
     }
     case "POPUP_COPY_RESULT": {
       if (typeof raw.text !== "string") return { ok: false, error: "Invalid text" };
@@ -727,8 +976,20 @@ export function validateMessage(raw: unknown): ValidationResult {
       return { ok: true, message: { type, requestId, totalPages: raw.totalPages } };
     }
     case "POPUP_DOC_CLEAR": {
-      if (typeof raw.docId !== "string" || !raw.docId) return { ok: false, error: "Invalid docId" };
-      return { ok: true, message: { type, requestId, docId: raw.docId } };
+      const hasDocId = raw.docId !== undefined;
+      const hasFileKey = raw.fileKey !== undefined;
+      if (hasDocId && (typeof raw.docId !== "string" || !raw.docId)) return { ok: false, error: "Invalid docId" };
+      if (hasFileKey && !isFileKey(raw.fileKey)) return { ok: false, error: "Invalid fileKey" };
+      if (!hasDocId && !hasFileKey) return { ok: false, error: "Missing docId or fileKey" };
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          ...(typeof raw.docId === "string" && raw.docId ? { docId: raw.docId } : {}),
+          ...(isFileKey(raw.fileKey) ? { fileKey: raw.fileKey } : {}),
+        },
+      };
     }
     case "POPUP_DOC_CAPTURE_IMAGE": {
       if (typeof raw.src !== "string" || !raw.src) return { ok: false, error: "Invalid src" };
@@ -1077,6 +1338,322 @@ export function validateMessage(raw: unknown): ValidationResult {
       if (typeof raw.coverageStatus !== "string" || !COVERAGE_STATUSES.has(raw.coverageStatus)) return { ok: false, error: "Invalid coverageStatus" };
       if (typeof raw.deferredMediaCount !== "number" || !Number.isSafeInteger(raw.deferredMediaCount) || raw.deferredMediaCount < 0) return { ok: false, error: "Invalid deferredMediaCount" };
       return { ok: true, message: { type, requestId, coverageStatus: raw.coverageStatus as string, deferredMediaCount: raw.deferredMediaCount as number } };
+    }
+    case "POPUP_GET_STAGED_STATS":
+      return { ok: true, message: { type, requestId } };
+    case "POPUP_PURGE_STAGED_DATA": {
+      if (raw.includeIdleSession !== undefined && typeof raw.includeIdleSession !== "boolean") {
+        return { ok: false, error: "Invalid includeIdleSession" };
+      }
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          ...(typeof raw.includeIdleSession === "boolean" ? { includeIdleSession: raw.includeIdleSession } : {}),
+        },
+      };
+    }
+    case "POPUP_STAGED_STATS_STATE": {
+      const isStats = (s: unknown): s is import("./types.js").StagedStorageAudit =>
+        isRecord(s) &&
+        typeof s.totalKeys === "number" &&
+        Number.isSafeInteger(s.totalKeys) &&
+        s.totalKeys >= 0 &&
+        typeof s.totalBytes === "number" &&
+        Number.isFinite(s.totalBytes) &&
+        s.totalBytes >= 0 &&
+        typeof s.liveKeys === "number" &&
+        Number.isSafeInteger(s.liveKeys) &&
+        s.liveKeys >= 0 &&
+        typeof s.liveBytes === "number" &&
+        Number.isFinite(s.liveBytes) &&
+        s.liveBytes >= 0 &&
+        typeof s.orphanKeys === "number" &&
+        Number.isSafeInteger(s.orphanKeys) &&
+        s.orphanKeys >= 0 &&
+        typeof s.orphanBytes === "number" &&
+        Number.isFinite(s.orphanBytes) &&
+        s.orphanBytes >= 0 &&
+        typeof s.hasInFlightJob === "boolean";
+      if (!isStats(raw.stats)) return { ok: false, error: "Invalid stats" };
+      let purged: import("./types.js").PurgeStagedDataResult | undefined;
+      if (raw.purged !== undefined) {
+        if (
+          !isRecord(raw.purged) ||
+          typeof raw.purged.deletedKeys !== "number" ||
+          !Number.isSafeInteger(raw.purged.deletedKeys) ||
+          raw.purged.deletedKeys < 0 ||
+          typeof raw.purged.deletedBytes !== "number" ||
+          !Number.isFinite(raw.purged.deletedBytes) ||
+          raw.purged.deletedBytes < 0 ||
+          typeof raw.purged.preservedLiveSession !== "boolean" ||
+          !isStats(raw.purged.remaining)
+        ) {
+          return { ok: false, error: "Invalid purged result" };
+        }
+        purged = {
+          deletedKeys: raw.purged.deletedKeys,
+          deletedBytes: raw.purged.deletedBytes,
+          preservedLiveSession: raw.purged.preservedLiveSession,
+          remaining: raw.purged.remaining,
+        };
+      }
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          stats: raw.stats,
+          ...(purged ? { purged } : {}),
+        },
+      };
+    }
+    case "POPUP_MANAGEMENT_GET_STATUS":
+    case "POPUP_MANAGEMENT_UNENROLL": {
+      return { ok: true, message: { type, requestId } };
+    }
+    case "POPUP_SYNC_MANAGED_POLICY": {
+      if (raw.force !== undefined && typeof raw.force !== "boolean") {
+        return { ok: false, error: "Invalid force flag" };
+      }
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          ...(typeof raw.force === "boolean" ? { force: raw.force } : {}),
+        },
+      };
+    }
+    case "POPUP_MANAGEMENT_ENROLL": {
+      const isBounded = (v: unknown, max: number): v is string =>
+        typeof v === "string" && v.trim().length > 0 && v.length <= max;
+      if (!isBounded(raw.organizationId, 128)) return { ok: false, error: "Invalid organizationId" };
+      if (!isBounded(raw.employeeId, 128)) return { ok: false, error: "Invalid employeeId" };
+      if (raw.organizationName !== undefined && !isBounded(raw.organizationName, 200)) {
+        return { ok: false, error: "Invalid organizationName" };
+      }
+      if (raw.employeeEmail !== undefined && !isBounded(raw.employeeEmail, 254)) {
+        return { ok: false, error: "Invalid employeeEmail" };
+      }
+      if (raw.coordinatorUrl !== undefined) {
+        if (typeof raw.coordinatorUrl !== "string" || raw.coordinatorUrl.length === 0 || raw.coordinatorUrl.length > 512) {
+          return { ok: false, error: "Invalid coordinatorUrl" };
+        }
+        let parsed: URL;
+        try {
+          parsed = new URL(raw.coordinatorUrl);
+        } catch {
+          return { ok: false, error: "Invalid coordinatorUrl" };
+        }
+        if (parsed.username !== "" || parsed.password !== "" || !parsed.hostname) {
+          return { ok: false, error: "Invalid coordinatorUrl" };
+        }
+        const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+        const isLoopback = host === "127.0.0.1" || host === "localhost" || host === "::1";
+        if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && isLoopback)) {
+          return { ok: false, error: "Invalid coordinatorUrl" };
+        }
+      }
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          organizationId: raw.organizationId.trim(),
+          employeeId: raw.employeeId.trim(),
+          ...(typeof raw.organizationName === "string" ? { organizationName: raw.organizationName.trim() } : {}),
+          ...(typeof raw.employeeEmail === "string" ? { employeeEmail: raw.employeeEmail.trim() } : {}),
+          ...(typeof raw.coordinatorUrl === "string" ? { coordinatorUrl: raw.coordinatorUrl } : {}),
+        },
+      };
+    }
+    case "POPUP_MANAGEMENT_STATUS_STATE": {
+      if (raw.mode !== "LOCAL" && raw.mode !== "MANAGE") return { ok: false, error: "Invalid mode" };
+      if (typeof raw.enrolled !== "boolean") return { ok: false, error: "Invalid enrolled flag" };
+      const checkOptStr = (v: unknown, max: number): boolean =>
+        v === undefined || (typeof v === "string" && v.length <= max);
+      if (!checkOptStr(raw.organizationId, 128)) return { ok: false, error: "Invalid organizationId" };
+      if (!checkOptStr(raw.organizationName, 200)) return { ok: false, error: "Invalid organizationName" };
+      if (!checkOptStr(raw.employeeId, 128)) return { ok: false, error: "Invalid employeeId" };
+      if (!checkOptStr(raw.employeeEmail, 254)) return { ok: false, error: "Invalid employeeEmail" };
+      if (!checkOptStr(raw.deviceId, 128)) return { ok: false, error: "Invalid deviceId" };
+      if (!checkOptStr(raw.appliedPolicyId, 128)) return { ok: false, error: "Invalid appliedPolicyId" };
+      if (!checkOptStr(raw.lastSyncStatus, 128)) return { ok: false, error: "Invalid lastSyncStatus" };
+      if (!checkOptStr(raw.error, 500)) return { ok: false, error: "Invalid error" };
+      if (
+        raw.appliedPolicyVersion !== undefined &&
+        (typeof raw.appliedPolicyVersion !== "number" ||
+          !Number.isSafeInteger(raw.appliedPolicyVersion) ||
+          raw.appliedPolicyVersion < 0)
+      ) {
+        return { ok: false, error: "Invalid appliedPolicyVersion" };
+      }
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          mode: raw.mode,
+          enrolled: raw.enrolled,
+          ...(typeof raw.organizationId === "string" ? { organizationId: raw.organizationId } : {}),
+          ...(typeof raw.organizationName === "string" ? { organizationName: raw.organizationName } : {}),
+          ...(typeof raw.employeeId === "string" ? { employeeId: raw.employeeId } : {}),
+          ...(typeof raw.employeeEmail === "string" ? { employeeEmail: raw.employeeEmail } : {}),
+          ...(typeof raw.deviceId === "string" ? { deviceId: raw.deviceId } : {}),
+          ...(typeof raw.appliedPolicyId === "string" ? { appliedPolicyId: raw.appliedPolicyId } : {}),
+          ...(typeof raw.appliedPolicyVersion === "number" ? { appliedPolicyVersion: raw.appliedPolicyVersion } : {}),
+          ...(typeof raw.lastSyncStatus === "string" ? { lastSyncStatus: raw.lastSyncStatus } : {}),
+          ...(typeof raw.error === "string" ? { error: raw.error } : {}),
+        },
+      };
+    }
+    case "SUPABASE_PAIR_REDEEM": {
+      if (typeof raw.code !== "string" || !/^\d{8}$/.test(raw.code)) {
+        return { ok: false, error: "Invalid pairing code format" };
+      }
+      return { ok: true, message: { type, requestId, code: raw.code } };
+    }
+    case "SUPABASE_PAIR_STATUS":
+    case "SUPABASE_PAIR_UNPAIR": {
+      return { ok: true, message: { type, requestId } };
+    }
+    case "SUPABASE_POLICY_SYNC": {
+      if (raw.force !== undefined && typeof raw.force !== "boolean") {
+        return { ok: false, error: "Invalid force flag" };
+      }
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          ...(typeof raw.force === "boolean" ? { force: raw.force } : {}),
+        },
+      };
+    }
+    case "SUPABASE_PAIR_STATUS_STATE": {
+      const isPairingState = (v: unknown): v is SupabasePairingState =>
+        v === "local_only" || v === "redeeming" || v === "paired" || v === "paired_offline";
+      const isBackend = (v: unknown): v is OwningBackend => v === "supabase" || v === "azure";
+      const checkOptStr = (v: unknown, max: number): boolean =>
+        v === undefined || (typeof v === "string" && v.length <= max);
+
+      if (!isPairingState(raw.pairingState)) return { ok: false, error: "Invalid pairingState" };
+      if (raw.owningBackend !== undefined && raw.owningBackend !== null && !isBackend(raw.owningBackend)) {
+        return { ok: false, error: "Invalid owningBackend" };
+      }
+      if (!checkOptStr(raw.organisationId, 128)) return { ok: false, error: "Invalid organisationId" };
+      if (!checkOptStr(raw.organisationName, 200)) return { ok: false, error: "Invalid organisationName" };
+      if (!checkOptStr(raw.seatId, 128)) return { ok: false, error: "Invalid seatId" };
+      if (raw.unlocked !== undefined && typeof raw.unlocked !== "boolean") return { ok: false, error: "Invalid unlocked" };
+      if (!checkOptStr(raw.policyId, 128)) return { ok: false, error: "Invalid policyId" };
+      if (
+        raw.policyVersion !== undefined &&
+        (typeof raw.policyVersion !== "number" || !Number.isSafeInteger(raw.policyVersion) || raw.policyVersion < 0)
+      ) {
+        return { ok: false, error: "Invalid policyVersion" };
+      }
+      if (raw.policyEnforced !== undefined && typeof raw.policyEnforced !== "boolean") {
+        return { ok: false, error: "Invalid policyEnforced" };
+      }
+      if (raw.hasDrift !== undefined && typeof raw.hasDrift !== "boolean") return { ok: false, error: "Invalid hasDrift" };
+      if (raw.driftedKeys !== undefined) {
+        if (
+          !Array.isArray(raw.driftedKeys) ||
+          raw.driftedKeys.length > 32 ||
+          !raw.driftedKeys.every((k) => typeof k === "string" && k.length > 0 && k.length <= 64)
+        ) {
+          return { ok: false, error: "Invalid driftedKeys" };
+        }
+      }
+      let conflict:
+        | { detected: boolean; existingBackend: OwningBackend; incomingBackend: OwningBackend; message: string }
+        | undefined;
+      if (raw.conflict !== undefined) {
+        if (
+          !isRecord(raw.conflict) ||
+          typeof raw.conflict.detected !== "boolean" ||
+          !isBackend(raw.conflict.existingBackend) ||
+          !isBackend(raw.conflict.incomingBackend) ||
+          typeof raw.conflict.message !== "string" ||
+          raw.conflict.message.length > 500
+        ) {
+          return { ok: false, error: "Invalid conflict object" };
+        }
+        conflict = {
+          detected: raw.conflict.detected,
+          existingBackend: raw.conflict.existingBackend,
+          incomingBackend: raw.conflict.incomingBackend,
+          message: raw.conflict.message,
+        };
+      }
+      if (raw.revoked !== undefined && typeof raw.revoked !== "boolean") return { ok: false, error: "Invalid revoked" };
+      if (!checkOptStr(raw.revokedNotice, 500)) return { ok: false, error: "Invalid revokedNotice" };
+      if (!checkOptStr(raw.lastSyncAt, 64)) return { ok: false, error: "Invalid lastSyncAt" };
+      if (!checkOptStr(raw.lastHeartbeatAt, 64)) return { ok: false, error: "Invalid lastHeartbeatAt" };
+      if (!checkOptStr(raw.error, 500)) return { ok: false, error: "Invalid error" };
+
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          pairingState: raw.pairingState,
+          ...(raw.owningBackend !== undefined ? { owningBackend: raw.owningBackend } : {}),
+          ...(typeof raw.organisationId === "string" ? { organisationId: raw.organisationId } : {}),
+          ...(typeof raw.organisationName === "string" ? { organisationName: raw.organisationName } : {}),
+          ...(typeof raw.seatId === "string" ? { seatId: raw.seatId } : {}),
+          ...(typeof raw.unlocked === "boolean" ? { unlocked: raw.unlocked } : {}),
+          ...(typeof raw.policyId === "string" ? { policyId: raw.policyId } : {}),
+          ...(typeof raw.policyVersion === "number" ? { policyVersion: raw.policyVersion } : {}),
+          ...(typeof raw.policyEnforced === "boolean" ? { policyEnforced: raw.policyEnforced } : {}),
+          ...(typeof raw.hasDrift === "boolean" ? { hasDrift: raw.hasDrift } : {}),
+          ...(Array.isArray(raw.driftedKeys) ? { driftedKeys: [...(raw.driftedKeys as string[])] } : {}),
+          ...(conflict ? { conflict } : {}),
+          ...(typeof raw.revoked === "boolean" ? { revoked: raw.revoked } : {}),
+          ...(typeof raw.revokedNotice === "string" ? { revokedNotice: raw.revokedNotice } : {}),
+          ...(typeof raw.lastSyncAt === "string" ? { lastSyncAt: raw.lastSyncAt } : {}),
+          ...(typeof raw.lastHeartbeatAt === "string" ? { lastHeartbeatAt: raw.lastHeartbeatAt } : {}),
+          ...(typeof raw.error === "string" ? { error: raw.error } : {}),
+        },
+      };
+    }
+    case "SUPABASE_PAIR_REDEEM_RESULT": {
+      const isPairingState = (v: unknown): v is SupabasePairingState =>
+        v === "local_only" || v === "redeeming" || v === "paired" || v === "paired_offline";
+      const checkOptStr = (v: unknown, max: number): boolean =>
+        v === undefined || (typeof v === "string" && v.length <= max);
+
+      if (typeof raw.ok !== "boolean") return { ok: false, error: "Invalid ok flag" };
+      if (!isPairingState(raw.pairingState)) return { ok: false, error: "Invalid pairingState" };
+      if (!checkOptStr(raw.organisationId, 128)) return { ok: false, error: "Invalid organisationId" };
+      if (!checkOptStr(raw.organisationName, 200)) return { ok: false, error: "Invalid organisationName" };
+      if (!checkOptStr(raw.seatId, 128)) return { ok: false, error: "Invalid seatId" };
+      if (raw.unlocked !== undefined && typeof raw.unlocked !== "boolean") return { ok: false, error: "Invalid unlocked" };
+      if (
+        raw.policyVersion !== undefined &&
+        (typeof raw.policyVersion !== "number" || !Number.isSafeInteger(raw.policyVersion) || raw.policyVersion < 0)
+      ) {
+        return { ok: false, error: "Invalid policyVersion" };
+      }
+      if (!checkOptStr(raw.error, 500)) return { ok: false, error: "Invalid error" };
+
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          ok: raw.ok,
+          pairingState: raw.pairingState,
+          ...(typeof raw.organisationId === "string" ? { organisationId: raw.organisationId } : {}),
+          ...(typeof raw.organisationName === "string" ? { organisationName: raw.organisationName } : {}),
+          ...(typeof raw.seatId === "string" ? { seatId: raw.seatId } : {}),
+          ...(typeof raw.unlocked === "boolean" ? { unlocked: raw.unlocked } : {}),
+          ...(typeof raw.policyVersion === "number" ? { policyVersion: raw.policyVersion } : {}),
+          ...(typeof raw.error === "string" ? { error: raw.error } : {}),
+        },
+      };
     }
     default:
       return { ok: false, error: "Unhandled message type" };

@@ -1,0 +1,273 @@
+{
+  "generatedAt": "2026-11-21T21:28:45.168Z",
+  "mode": "baseline",
+  "stage": "all",
+  "executablePath": "C:\\Users\\omg\\AppData\\Local\\ms-playwright\\chromium-1255\\chrome-win64\\chrome.exe",
+  "browserVersion": "Chrome/159.0.8154.6",
+  "nodeVersion": "v22.22.2",
+  "scan": {
+    "charData": {
+      "trials": 5,
+      "detectedCount": 0,
+      "latencies": {
+        "n": 0,
+        "p50": 0,
+        "p95": 0,
+        "min": null,
+        "max": null,
+        "samples": []
+      },
+      "details": [
+        {
+          "trial": 1,
+          "detected": false,
+          "latencyMs": null
+        },
+        {
+          "trial": 2,
+          "detected": false,
+          "latencyMs": null
+        },
+        {
+          "trial": 3,
+          "detected": false,
+          "latencyMs": null
+        },
+        {
+          "trial": 4,
+          "detected": false,
+          "latencyMs": null
+        },
+        {
+          "trial": 5,
+          "detected": false,
+          "latencyMs": null
+        }
+      ]
+    },
+    "addedNodeControl": {
+      "trials": 3,
+      "detectedCount": 3,
+      "latencies": {
+        "n": 3,
+        "p50": 683.6,
+        "p95": 684.6,
+        "min": 670.7,
+        "max": 684.6,
+        "samples": [
+          683.6,
+          684.6,
+          670.7
+        ]
+      }
+    },
+    "batchRemoval": {
+      "trials": 3,
+      "ghostCount": 3,
+      "details": [
+        {
+          "trial": 1,
+          "beforeCount": 3,
+          "afterCount": 3,
+          "ghostNpiRemains": true
+        },
+        {
+          "trial": 2,
+          "beforeCount": 3,
+          "afterCount": 3,
+          "ghostNpiRemains": true
+        },
+        {
+          "trial": 3,
+          "beforeCount": 3,
+          "afterCount": 3,
+          "ghostNpiRemains": true
+        }
+      ]
+    },
+    "popupBadgeSync": {
+      "trials": 5,
+      "syncedCount": 0,
+      "details": [
+        {
+          "trial": 1,
+          "sessionFindings": 0,
+          "badgeText": "",
+          "popupCount": 0,
+          "synced": false
+        },
+        {
+          "trial": 2,
+          "sessionFindings": 0,
+          "badgeText": "",
+          "popupCount": 0,
+          "synced": false
+        },
+        {
+          "trial": 3,
+          "sessionFindings": 0,
+          "badgeText": "",
+          "popupCount": 0,
+          "synced": false
+        },
+        {
+          "trial": 4,
+          "sessionFindings": 0,
+          "badgeText": "",
+          "popupCount": 0,
+          "synced": false
+        },
+        {
+          "trial": 5,
+          "sessionFindings": 0,
+          "badgeText": "",
+          "popupCount": 0,
+          "synced": false
+        }
+      ]
+    }
+  },
+  "paste": {
+    "trialsPerSize": 5,
+    "totalTrials": 15,
+    "totalEscapes": 0,
+    "bySize": {
+      "short": {
+        "n": 5,
+        "p50": 24.19,
+        "p95": 131.58,
+        "min": 16.92,
+        "max": 131.58,
+        "samples": [
+          131.58,
+          25.54,
+          24.19,
+          16.92,
+          18.69
+        ],
+        "escapes": 0
+      },
+      "10KB": {
+        "n": 5,
+        "p50": 17.65,
+        "p95": 27.6,
+        "min": 17.24,
+        "max": 27.6,
+        "samples": [
+          17.6,
+          27.6,
+          17.65,
+          17.24,
+          25.9
+        ],
+        "escapes": 0
+      },
+      "68KB": {
+        "n": 5,
+        "p50": 33.26,
+        "p95": 40.8,
+        "min": 31.18,
+        "max": 40.8,
+        "samples": [
+          33.28,
+          32.38,
+          33.26,
+          31.18,
+          40.8
+        ],
+        "escapes": 0
+      }
+    }
+  },
+  "docs": {
+    "timings": [
+      {
+        "label": "native-1p",
+        "pages": 1,
+        "stageToFindingsMs": 2251,
+        "perPageMs": 2251,
+        "findings": 2,
+        "keysBeforeStartOver": 3,
+        "keysAfterStartOver": 2
+      },
+      {
+        "label": "native-5p",
+        "pages": 5,
+        "stageToFindingsMs": 635.2,
+        "perPageMs": 127,
+        "findings": 10,
+        "keysBeforeStartOver": 11,
+        "keysAfterStartOver": 10
+      },
+      {
+        "label": "native-20p",
+        "pages": 20,
+        "stageToFindingsMs": 41109.2,
+        "perPageMs": 2055.5,
+        "findings": 40,
+        "keysBeforeStartOver": 41,
+        "keysAfterStartOver": 40
+      },
+      {
+        "label": "scanned-5p",
+        "pages": 5,
+        "stageToFindingsMs": 18067.6,
+        "perPageMs": 3613.5,
+        "findings": 0,
+        "keysBeforeStartOver": 11,
+        "keysAfterStartOver": 10
+      },
+      {
+        "label": "scanned-20p",
+        "pages": 20,
+        "stageToFindingsMs": 61341.4,
+        "perPageMs": 3067.1,
+        "findings": 0,
+        "keysBeforeStartOver": 41,
+        "keysAfterStartOver": 40
+      },
+      {
+        "label": "single-png",
+        "pages": 1,
+        "stageToFindingsMs": 3966.5,
+        "perPageMs": 3966.5,
+        "findings": 1,
+        "keysBeforeStartOver": 3,
+        "keysAfterStartOver": 2
+      }
+    ],
+    "jsHeapBaselineMb": 2.72,
+    "jsHeapPeakMb": 12.02,
+    "midJobCancel": {
+      "keysAtCancel": 1,
+      "keysAfter1500Ms": 0,
+      "keysAfterWait": 0,
+      "workspaceHidden": true,
+      "statusText": "Document processing cancelled."
+    }
+  },
+  "ocrNode": {
+    "initMs": 374.9,
+    "recognition": {
+      "n": 5,
+      "p50": 54.64,
+      "p95": 117.39,
+      "min": 52.26,
+      "max": 117.39,
+      "samples": [
+        117.39,
+        63.75,
+        54.64,
+        53.33,
+        52.26
+      ]
+    },
+    "sampleBitmapText": "AELLO 213-893-3333"
+  },
+  "network": {
+    "driverTotalRequests": 101,
+    "driverExternalRequests": 52,
+    "verifyNetworkInspectionPassed": true
+  },
+  "gateFailures": []
+}

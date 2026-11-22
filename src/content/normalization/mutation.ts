@@ -16,8 +16,14 @@ export interface MutationObserverHandle {
   isPaused(): boolean;
 }
 
-const DEBOUNCE_MS = 150;
+export const SMALL_BATCH_NODE_THRESHOLD = 10;
+export const FAST_DEBOUNCE_MS = 16;
+export const BURST_DEBOUNCE_MS = 150;
 const MAX_BATCH_SIZE = 500;
+
+export function selectObserverDebounceMs(batchSize: number): number {
+  return batchSize <= SMALL_BATCH_NODE_THRESHOLD ? FAST_DEBOUNCE_MS : BURST_DEBOUNCE_MS;
+}
 
 export function observeMutations(
   root: Node,
@@ -44,7 +50,11 @@ export function observeMutations(
 
   const scheduleFlush = () => {
     if (debounceTimer !== null) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(flush, DEBOUNCE_MS);
+    const batchSize =
+      pendingBatch.addedNodes.length +
+      pendingBatch.removedNodes.length +
+      pendingBatch.mutatedTextNodes.length;
+    debounceTimer = setTimeout(flush, selectObserverDebounceMs(batchSize));
   };
 
   const observer = new MutationObserver((mutations) => {

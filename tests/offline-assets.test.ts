@@ -29,10 +29,7 @@ describeOfflineAssets("offline OCR model asset", () => {
 
   it("exposes exactly one traineddata file so langPath resolution is unambiguous", () => {
     const tessdataDir = join(distAssets, "tessdata");
-    if (!existsSync(tessdataDir)) {
-      expect(true).toBe(false);
-      return;
-    }
+    expect(existsSync(tessdataDir), `run \`npm run build\` first (missing ${tessdataDir})`).toBe(true);
     const files = readdirSync(tessdataDir);
     expect(files).toHaveLength(1);
     expect(files[0]).toBe("eng.traineddata.gz");

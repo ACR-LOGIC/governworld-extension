@@ -1,0 +1,53 @@
+{
+  "generatedAt": "2026-11-22T21:26:45.978Z",
+  "M1_realScanOcr": {
+    "ocrMs": 342.53,
+    "confidenceMean": 86,
+    "matchedCount": 4,
+    "totalExpected": 5,
+    "matchedTokens": [
+      "Maria Gonzalez",
+      "04/22/1990",
+      "jane.doe@example.test",
+      "555-234-5678"
+    ]
+  },
+  "M2_liveSubmitEnter": {
+    "enterLatencyMs": 228.73,
+    "interceptedByGuard": true,
+    "shadowGuardCount": 0,
+    "submittedAfterEnter": false
+  },
+  "M3_docxTiming": {
+    "1p": {
+      "extractMs": 15.17,
+      "chars": 63,
+      "ssnCount": 1,
+      "emailCount": 1
+    },
+    "5p": {
+      "extractMs": 2.85,
+      "chars": 315,
+      "ssnCount": 5,
+      "emailCount": 5
+    },
+    "20p": {
+      "extractMs": 3.65,
+      "chars": 1271,
+      "ssnCount": 20,
+      "emailCount": 20
+    }
+  },
+  "M4_spaAndIframe": {
+    "scanAck": true,
+    "overlayHostsAfterSpa": 0,
+    "crossOriginIframePresent": true
+  },
+  "M5_memorySeparate": {
+    "note": "Native OS RSS and JS Heap are strictly separate metrics",
+    "nodeProcessRssMB": 108.71,
+    "nodeJsHeapUsedMB": 51.13,
+    "chromeRendererJsHeapMB": 5.94,
+    "chromeProcessesTotalWorkingSetMB": 1871.56
+  }
+}

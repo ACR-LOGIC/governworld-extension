@@ -91,6 +91,14 @@ copyFileSync(
   join(root, "node_modules/tesseract.js-core/tesseract-core.wasm"),
   join(assetsDir, "tesseract-core.wasm")
 );
+copyFileSync(
+  join(root, "vendor/name-dictionaries.json"),
+  join(assetsDir, "name-dictionaries.json")
+);
+copyFileSync(
+  join(root, "vendor/medical-dictionary.json"),
+  join(assetsDir, "medical-dictionary.json")
+);
 
 // Vendor OCR language data.
 //

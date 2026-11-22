@@ -50,11 +50,20 @@ jobs:
       - name: Verify Sidepanel Is In Sync
         run: npm run sync:sidepanel:check
 
+      - name: Verify Single-Source Version Parity
+        run: npm run sync:version:check
+
       - name: Verify Release Digests
         run: npm run verify:digests
 
       - name: Run Test Suite
         run: npm test
+
+      - name: Install Playwright Chromium for Live CI Hard Gates (G1-G9)
+        run: npx playwright install chromium --with-deps
+
+      - name: Run Section 4 Hard CI Gates (G1-G9)
+        run: xvfb-run --auto-servernum npm run gates:ci
 
       # --- Multi-Target Production Builds ---
       - name: Build Extension (Chromium)

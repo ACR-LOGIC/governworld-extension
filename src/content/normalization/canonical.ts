@@ -1,6 +1,12 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
-import type { CanonicalDocument, CanonicalSegment, CanonicalBoundary, CoverageInfo, BoundaryInfo } from "./types.js";
-import { extractVisibleText, buildScanText, type TextSegment } from "../extract.js";
+import type { CanonicalDocument, CanonicalSegment, CanonicalBoundary, CoverageInfo } from "./types.js";
+import type { IncompleteWindowInfo } from "../../shared/types.js";
+import {
+  extractVisibleText,
+  extractVisibleTextWindows,
+  buildScanText,
+  type TextSegment,
+} from "../extract.js";
 import { getAccessibleShadowRoot } from "./shadow.js";
 import { updateCoverageWithBoundaries } from "./coverage.js";
 
@@ -10,46 +16,52 @@ function generateBoundaryId(): string {
   return `boundary_${++boundaryCounter}`;
 }
 
-export function buildCanonicalDocument(options: {
-  root: Document | Element | ShadowRoot;
-  sourceKind?: CanonicalDocument["sourceKind"];
-  maxVisibleChars?: number;
-  maxNodeChars?: number;
-  nodeIds: Map<string, Node>;
-}): CanonicalDocument {
-  const startTime = performance.now();
-  const maxVisibleChars = options.maxVisibleChars ?? 250_000;
-  const maxNodeChars = options.maxNodeChars ?? 10_000;
-  const sourceKind = options.sourceKind ?? "web-dom";
-
-  const boundaries: CanonicalBoundary[] = [];
-
-  const { segments: rawSegments, truncated } = extractVisibleText(
-    options.root,
-    maxVisibleChars,
-    maxNodeChars,
-    options.nodeIds
-  );
-
-  const { combined, segmentStarts } = buildScanText(rawSegments);
-
+function toCanonicalSegments(
+  rawSegments: TextSegment[],
+  segmentStarts: number[],
+  nodeIds: Map<string, Node>
+): { canonicalSegments: CanonicalSegment[]; textNodeCount: number } {
   let textNodeCount = 0;
-  for (const seg of rawSegments) {
-    const node = options.nodeIds.get(seg.nodeId);
+  const canonicalSegments: CanonicalSegment[] = rawSegments.map((seg, i) => {
+    const segStart = segmentStarts[i] ?? 0;
+    const node = nodeIds.get(seg.nodeId);
+    const isInput = node && (node.nodeName === "INPUT" || node.nodeName === "TEXTAREA");
     if (node && node.nodeType === Node.TEXT_NODE) {
       textNodeCount++;
     }
-  }
 
-  // Boundary inventory only. This function extracts ONE document; it does not
-  // descend into frames. traverseIframes owns frame extraction and reports its
-  // own boundaries, so recording an "iframe/complete" boundary here would claim
-  // coverage no code path in this function delivered.
-  const shadowRoots = collectShadowRoots(options.root);
+    return {
+      nodeId: seg.nodeId,
+      startOffset: seg.startOffset,
+      endOffset: seg.endOffset,
+      text: seg.text,
+      sourceNodeId: seg.nodeId,
+      sourceType: isInput ? (node.nodeName === "TEXTAREA" ? "textarea" : "input") : "text",
+      sourceStartOffset: seg.startOffset,
+      sourceEndOffset: seg.endOffset,
+      combinedStartOffset: segStart,
+      combinedEndOffset: segStart + seg.text.length,
+    };
+  });
+  return { canonicalSegments, textNodeCount };
+}
+
+function finalizeCanonicalDocument(
+  root: Document | Element | ShadowRoot,
+  sourceKind: CanonicalDocument["sourceKind"],
+  rawSegments: TextSegment[],
+  combined: string,
+  segmentStarts: number[],
+  truncated: boolean,
+  nodeIds: Map<string, Node>,
+  startTime: number
+): CanonicalDocument {
+  const { canonicalSegments, textNodeCount } = toCanonicalSegments(rawSegments, segmentStarts, nodeIds);
+  const boundaries: CanonicalBoundary[] = [];
+
+  const shadowRoots = collectShadowRoots(root);
   for (const shadow of shadowRoots) {
     boundaries.push({
-      // A root reached through chrome.dom.openOrClosedShadowRoot is closed, and
-      // saying otherwise hides the fact that reading it needed a privilege.
       kind: shadow.mode === "closed" ? "closed-shadow-root" : "shadow-root",
       status: "complete",
       nodeId: generateBoundaryId(),
@@ -57,13 +69,10 @@ export function buildCanonicalDocument(options: {
     });
   }
 
-  const iframeCount = countIframes(options.root);
+  const iframeCount = countIframes(root);
   const shadowRootCount = shadowRoots.length;
-  const tableCount = countTables(options.root);
+  const tableCount = countTables(root);
 
-  // Frames present, zero read: this function reads one document, so every
-  // frame it found is still unread. The caller upgrades this once
-  // traverseIframes has reported what it actually extracted.
   const coverage: CoverageInfo = updateCoverageWithBoundaries(
     {
       dom: "complete",
@@ -81,25 +90,6 @@ export function buildCanonicalDocument(options: {
     truncated
   );
 
-  const canonicalSegments: CanonicalSegment[] = rawSegments.map((seg, i) => {
-    const segStart = segmentStarts[i] ?? 0;
-    const node = options.nodeIds.get(seg.nodeId);
-    const isInput = node && (node.nodeName === "INPUT" || node.nodeName === "TEXTAREA");
-
-    return {
-      nodeId: seg.nodeId,
-      startOffset: seg.startOffset,
-      endOffset: seg.endOffset,
-      text: seg.text,
-      sourceNodeId: seg.nodeId,
-      sourceType: isInput ? (node.nodeName === "TEXTAREA" ? "textarea" : "input") : "text",
-      sourceStartOffset: seg.startOffset,
-      sourceEndOffset: seg.endOffset,
-      combinedStartOffset: segStart,
-      combinedEndOffset: segStart + seg.text.length,
-    };
-  });
-
   const durationMs = performance.now() - startTime;
 
   return {
@@ -112,13 +102,128 @@ export function buildCanonicalDocument(options: {
     coverage,
     boundaries,
     metadata: {
-      nodeCount: options.nodeIds.size,
+      nodeCount: nodeIds.size,
       textNodeCount,
       shadowRootCount,
       iframeCount,
       tableCount,
       durationMs: Math.round(durationMs),
     },
+  };
+}
+
+export interface CanonicalWindowSlice {
+  windowIndex: number;
+  combined: string;
+  globalStartOffset: number;
+  charCount: number;
+  nodeTruncated: boolean;
+}
+
+export interface WindowedCanonicalDocument extends CanonicalDocument {
+  windowSlices: CanonicalWindowSlice[];
+  windowsTotal: number;
+  incompleteWindows: IncompleteWindowInfo[];
+  hardLimitReached: boolean;
+}
+
+export function buildCanonicalDocument(options: {
+  root: Document | Element | ShadowRoot;
+  sourceKind?: CanonicalDocument["sourceKind"];
+  maxVisibleChars?: number;
+  maxNodeChars?: number;
+  nodeIds: Map<string, Node>;
+}): CanonicalDocument {
+  const startTime = performance.now();
+  const maxVisibleChars = options.maxVisibleChars ?? 250_000;
+  const maxNodeChars = options.maxNodeChars ?? 10_000;
+  const sourceKind = options.sourceKind ?? "web-dom";
+
+  const { segments: rawSegments, truncated } = extractVisibleText(
+    options.root,
+    maxVisibleChars,
+    maxNodeChars,
+    options.nodeIds
+  );
+  const { combined, segmentStarts } = buildScanText(rawSegments);
+  return finalizeCanonicalDocument(
+    options.root,
+    sourceKind,
+    rawSegments,
+    combined,
+    segmentStarts,
+    truncated,
+    options.nodeIds,
+    startTime
+  );
+}
+
+/**
+ * Windowed canonical extraction for whole-page scanning (Decision D4 / Task P6).
+ * Keeps `maxVisibleChars` as a per-window memory safeguard rather than a whole-page cut-off.
+ */
+export function buildCanonicalDocumentWindows(options: {
+  root: Document | Element | ShadowRoot;
+  sourceKind?: CanonicalDocument["sourceKind"];
+  maxVisibleChars?: number;
+  maxNodeChars?: number;
+  windowChars?: number;
+  windowOverlapChars?: number;
+  maxTotalWindows?: number;
+  nodeIds: Map<string, Node>;
+}): WindowedCanonicalDocument {
+  const startTime = performance.now();
+  const maxVisibleChars = options.windowChars ?? options.maxVisibleChars ?? 250_000;
+  const maxNodeChars = options.maxNodeChars ?? 10_000;
+  const sourceKind = options.sourceKind ?? "web-dom";
+
+  const extracted = extractVisibleTextWindows(
+    options.root,
+    maxVisibleChars,
+    maxNodeChars,
+    options.nodeIds,
+    { maxTotalWindows: options.maxTotalWindows }
+  );
+
+  const rawSegments: TextSegment[] = [];
+  const windowSlices: CanonicalWindowSlice[] = [];
+  let globalOffset = 0;
+
+  for (const win of extracted.windows) {
+    const winBuilt = buildScanText(win.segments);
+    windowSlices.push({
+      windowIndex: win.windowIndex,
+      combined: winBuilt.combined,
+      globalStartOffset: globalOffset,
+      charCount: win.charCount,
+      nodeTruncated: win.nodeTruncated,
+    });
+    if (winBuilt.combined.length > 0 || win.segments.length > 0) {
+      globalOffset += winBuilt.combined.length + 1;
+    }
+    for (const seg of win.segments) {
+      rawSegments.push(seg);
+    }
+  }
+
+  const { combined, segmentStarts } = buildScanText(rawSegments);
+  const base = finalizeCanonicalDocument(
+    options.root,
+    sourceKind,
+    rawSegments,
+    combined,
+    segmentStarts,
+    extracted.truncated,
+    options.nodeIds,
+    startTime
+  );
+
+  return {
+    ...base,
+    windowSlices,
+    windowsTotal: extracted.windowsTotal,
+    incompleteWindows: extracted.incompleteWindows,
+    hardLimitReached: extracted.hardLimitReached,
   };
 }
 

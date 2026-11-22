@@ -18,19 +18,30 @@
 // The invariant is asserted rather than left to review, because nothing at
 // runtime compares them.
 import { describe, expect, it } from "vitest";
-import { DEFAULT_PROD_API_URL, DEFAULT_DEV_API_URL, validateApiUrl } from "../src/api/config.js";
+import {
+  DEFAULT_PROD_API_URL,
+  SUPABASE_URL,
+  validateApiUrl,
+  validateSupabaseUrl,
+} from "../src/api/config.js";
 import { isAllowedGatewayOrigin } from "../src/shared/settings.js";
 
 describe("the default API URL is one the extension will accept", () => {
   it("is an origin the gateway allowlist permits", () => {
     expect(DEFAULT_PROD_API_URL).toBe("https://api.governworld.acrlogic.com");
     expect(isAllowedGatewayOrigin(DEFAULT_PROD_API_URL)).toBe(true);
+    expect(SUPABASE_URL).toBe("https://lkgcehdwasewwoieyoip.supabase.co");
+    expect(isAllowedGatewayOrigin(SUPABASE_URL)).toBe(true);
   });
 
   it("survives transport validation", () => {
     const check = validateApiUrl(DEFAULT_PROD_API_URL);
     expect(check.valid).toBe(true);
     expect(check.normalizedUrl).toBe(DEFAULT_PROD_API_URL);
+
+    const sbCheck = validateSupabaseUrl(SUPABASE_URL);
+    expect(sbCheck.valid).toBe(true);
+    expect(sbCheck.normalizedUrl).toBe(SUPABASE_URL);
   });
 
   it("is https, with no path, query or fragment", () => {
@@ -46,9 +57,9 @@ describe("the default API URL is one the extension will accept", () => {
     expect(DEFAULT_PROD_API_URL).not.toContain("api.governworld.com");
   });
 
-  it("keeps a localhost dev default that transport validation permits", () => {
-    // Dev stays http for loopback, which `validateApiUrl` allows by design.
-    expect(DEFAULT_DEV_API_URL).toBe("http://127.0.0.1:8000");
-    expect(validateApiUrl(DEFAULT_DEV_API_URL).valid).toBe(true);
+  it("rejects plaintext localhost/loopback HTTP fail-closed in production runtime", () => {
+    expect(validateApiUrl("http://127.0.0.1:8000").valid).toBe(false);
+    expect(validateApiUrl("http://localhost:8000").valid).toBe(false);
+    expect(validateSupabaseUrl("http://lkgcehdwasewwoieyoip.supabase.co").valid).toBe(false);
   });
 });

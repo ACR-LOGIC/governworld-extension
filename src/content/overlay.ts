@@ -173,7 +173,11 @@ export function createOverlay(
   return {
     render(items) {
       rects = items;
-      schedule();
+      if (raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
+      paint();
     },
     setBlocking(value: boolean) {
       blocking = value;

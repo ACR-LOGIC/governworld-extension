@@ -76,6 +76,36 @@ vi.mock('../src/service-worker/documents.js', () => ({
     };
   },
   getLastSession: () => null,
+  restoreLastSession: async () => null,
+  countDocument: async () => 1,
+  storeFile: async () => undefined,
+  deleteFile: async () => undefined,
+  hasStagedDocument: async () => false,
+  cancelDocument: async () => undefined,
+  purgeOrphanedStagedKeys: async () => 0,
+  getStagedStorageAudit: async () => ({
+    totalKeys: 0,
+    totalBytes: 0,
+    liveKeys: 0,
+    liveBytes: 0,
+    orphanKeys: 0,
+    orphanBytes: 0,
+    hasInFlightJob: false,
+  }),
+  purgeStagedData: async () => ({
+    deletedKeys: 0,
+    deletedBytes: 0,
+    preservedLiveSession: false,
+    remaining: {
+      totalKeys: 0,
+      totalBytes: 0,
+      liveKeys: 0,
+      liveBytes: 0,
+      orphanKeys: 0,
+      orphanBytes: 0,
+      hasInFlightJob: false,
+    },
+  }),
   clearSession: async () => undefined,
   clearAllFiles: async () => {
     clearAllFilesCalls += 1;

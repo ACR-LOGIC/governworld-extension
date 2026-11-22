@@ -20,8 +20,7 @@ import type { ProtectionMode } from "./settings.js";
 import type { NetworkDestinationPolicy } from "./networkGuard.js";
 import { ALL_CATEGORIES, isCategory, isProtectionMode } from "./settings.js";
 import type { EnterprisePolicy } from "./enterprisePolicy.js";
-import { FAIL_CLOSED_ENTERPRISE_POLICY, NO_ENTERPRISE_POLICY } from "./enterprisePolicy.js";
-import { TRUSTED_POLICY_PUBLIC_KEY_JWK } from "../api/config.js";
+import { isTrustedPolicyPublicKeyConfigured, TRUSTED_POLICY_PUBLIC_KEY_JWK } from "../api/config.js";
 import type { PolicyRule } from "../api/types.js";
 import { canonicalizePolicyRules, computeSha256Hex } from "../api/policies.js";
 
@@ -46,8 +45,10 @@ export interface ManagedPolicySettings {
   confidenceThresholds?: Partial<Record<FindingCategory, number>>;
   defaultRedactionStyle?: RedactionStyle;
   defaultStampText?: string;
+  autoMaskSingleNames?: boolean;
   maxVisibleChars?: number;
   maxNodeChars?: number;
+  customRules?: PolicyRule[];
 }
 
 export interface ManagedPolicyEnvelope {
@@ -114,7 +115,9 @@ export function canonicalizeManagedPolicySettings(settings: ManagedPolicySetting
   for (const k of sortedKeys) {
     const val = (settings as Record<string, unknown>)[k];
     if (val !== undefined) {
-      if (Array.isArray(val)) {
+      if (k === "customRules" && Array.isArray(val)) {
+        obj[k] = JSON.parse(canonicalizePolicyRules(val as PolicyRule[]));
+      } else if (Array.isArray(val)) {
         obj[k] = [...val].sort();
       } else if (typeof val === "object" && val !== null) {
         const subKeys = Object.keys(val).sort();
@@ -187,6 +190,12 @@ export async function verifyManagedPolicySignature(
   if (envelope.signature_algorithm !== "Ed25519") {
     return false;
   }
+  if (!isTrustedPolicyPublicKeyConfigured(trustedKey)) {
+    return false;
+  }
+  if (typeof crypto === "undefined" || !crypto.subtle) {
+    return false;
+  }
 
   const canonical = canonicalizeManagedPolicyEnvelope(envelope);
   const data = new TextEncoder().encode(canonical);
@@ -217,14 +226,14 @@ export interface VerifyManagedPolicyResult {
 
 /**
  * Validates and verifies an incoming administrator-approved policy payload against:
- * 1. Schema & Structure
+ * 1. Schema & Structure (including mandatory valid `expires_at` and `Ed25519`)
  * 2. Organization Assignment (Unauthorized check)
  * 3. Target Employee & Device (Target mismatch check)
- * 4. Version Monotonicity (Anti-downgrade / Anti-rollback check)
- * 5. Replay Nonce & Timestamp (Anti-replay check)
- * 6. Expiration (Validity window)
- * 7. Content Hash Integrity (SHA-256)
- * 8. Cryptographic Signature (Ed25519 against pinned public key)
+ * 4. Expiration (Validity window)
+ * 5. Settings Schema Validation
+ * 6. Content Hash Integrity (SHA-256)
+ * 7. Cryptographic Signature (Ed25519 against pinned public key)
+ * 8. Post-verification Version Monotonicity (Anti-downgrade) & Nonce Replay check
  */
 export async function verifyAndValidateManagedPolicy(
   raw: unknown,
@@ -242,19 +251,35 @@ export async function verifyAndValidateManagedPolicy(
   // 1. Structural check
   if (
     typeof pkg.policy_id !== "string" ||
+    pkg.policy_id.trim().length === 0 ||
     typeof pkg.organization_id !== "string" ||
+    pkg.organization_id.trim().length === 0 ||
     !pkg.target ||
+    typeof pkg.target !== "object" ||
+    Array.isArray(pkg.target) ||
     typeof pkg.target.organization_id !== "string" ||
+    pkg.target.organization_id.trim().length === 0 ||
     typeof pkg.policy_version !== "number" ||
     !Number.isInteger(pkg.policy_version) ||
     pkg.policy_version <= 0 ||
     typeof pkg.nonce !== "string" ||
     pkg.nonce.length < 8 ||
     typeof pkg.policy_hash !== "string" ||
+    pkg.policy_hash.trim().length === 0 ||
     !Array.isArray(pkg.rules) ||
     !pkg.settings ||
     typeof pkg.settings !== "object" ||
-    typeof pkg.policy_signature !== "string" || pkg.policy_signature.trim().length === 0
+    Array.isArray(pkg.settings) ||
+    typeof pkg.policy_signature !== "string" ||
+    pkg.policy_signature.trim().length === 0 ||
+    pkg.signature_algorithm !== "Ed25519" ||
+    typeof pkg.effective_at !== "string" ||
+    !Number.isFinite(Date.parse(pkg.effective_at)) ||
+    typeof pkg.created_at !== "string" ||
+    !Number.isFinite(Date.parse(pkg.created_at)) ||
+    typeof pkg.expires_at !== "string" ||
+    pkg.expires_at.trim().length === 0 ||
+    !Number.isFinite(Date.parse(pkg.expires_at))
   ) {
     return { valid: false, code: "MALFORMED", reason: "Policy payload has invalid or missing required envelope fields." };
   }
@@ -287,48 +312,96 @@ export async function verifyAndValidateManagedPolicy(
     };
   }
 
-  // 4. Anti-rollback / Anti-downgrade check
-  if (lastAppliedPolicy) {
-    if (pkg.policy_version < lastAppliedPolicy.policy_version) {
-      return {
-        valid: false,
-        code: "DOWNGRADE",
-        reason: `Rollback attack detected: incoming policy version (${pkg.policy_version}) is lower than currently applied version (${lastAppliedPolicy.policy_version}).`,
-      };
-    }
-
-    // 5. Anti-replay check
-    if (pkg.policy_version === lastAppliedPolicy.policy_version && pkg.nonce === lastAppliedPolicy.nonce) {
-      // Identical policy already applied; idempotent safe re-verification
-      return { valid: true, policy: pkg as ManagedPolicyEnvelope };
-    }
+  // 4. Expiration check (mandatory valid timestamp verified in step 1)
+  const expiresMs = Date.parse(pkg.expires_at);
+  if (nowMs > expiresMs) {
+    return {
+      valid: false,
+      code: "EXPIRED",
+      reason: `Policy expired at ${pkg.expires_at}.`,
+    };
   }
 
-  // 6. Expiration check
-  if (pkg.expires_at) {
-    const expiresMs = new Date(pkg.expires_at).getTime();
-    if (!isNaN(expiresMs) && nowMs > expiresMs) {
-      return {
-        valid: false,
-        code: "EXPIRED",
-        reason: `Policy expired at ${pkg.expires_at}.`,
-      };
-    }
-  }
-
-  // Schema checks on settings
+  // 5. Schema checks on settings
   const settings = pkg.settings;
   if (settings.protectionMode !== undefined && !isProtectionMode(settings.protectionMode)) {
     return { valid: false, code: "SCHEMA_INVALID", reason: `Invalid protectionMode: ${settings.protectionMode}` };
+  }
+  if (settings.userCanDisable !== undefined && typeof settings.userCanDisable !== "boolean") {
+    return { valid: false, code: "SCHEMA_INVALID", reason: "Invalid userCanDisable flag." };
   }
   if (settings.enforcedCategories !== undefined) {
     if (!Array.isArray(settings.enforcedCategories) || !settings.enforcedCategories.every(isCategory)) {
       return { valid: false, code: "SCHEMA_INVALID", reason: "Invalid enforcedCategories list." };
     }
   }
+  if (settings.confidenceThresholds !== undefined) {
+    if (typeof settings.confidenceThresholds !== "object" || settings.confidenceThresholds === null || Array.isArray(settings.confidenceThresholds)) {
+      return { valid: false, code: "SCHEMA_INVALID", reason: "Invalid confidenceThresholds object." };
+    }
+    for (const [k, v] of Object.entries(settings.confidenceThresholds)) {
+      if (!isCategory(k) || typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 1) {
+        return { valid: false, code: "SCHEMA_INVALID", reason: `Invalid confidenceThreshold entry for ${k}.` };
+      }
+    }
+  }
+  if (
+    settings.defaultRedactionStyle !== undefined &&
+    settings.defaultRedactionStyle !== "blackout" &&
+    settings.defaultRedactionStyle !== "whiteout" &&
+    settings.defaultRedactionStyle !== "stamp"
+  ) {
+    return { valid: false, code: "SCHEMA_INVALID", reason: "Invalid defaultRedactionStyle." };
+  }
+  if (
+    settings.defaultStampText !== undefined &&
+    (typeof settings.defaultStampText !== "string" || settings.defaultStampText.trim().length === 0 || settings.defaultStampText.length > 50)
+  ) {
+    return { valid: false, code: "SCHEMA_INVALID", reason: "Invalid defaultStampText." };
+  }
+  if (settings.autoMaskSingleNames !== undefined && typeof settings.autoMaskSingleNames !== "boolean") {
+    return { valid: false, code: "SCHEMA_INVALID", reason: "Invalid autoMaskSingleNames flag." };
+  }
+  if (
+    settings.maxVisibleChars !== undefined &&
+    (typeof settings.maxVisibleChars !== "number" || !Number.isFinite(settings.maxVisibleChars) || settings.maxVisibleChars < 100)
+  ) {
+    return { valid: false, code: "SCHEMA_INVALID", reason: "Invalid maxVisibleChars." };
+  }
+  if (
+    settings.maxNodeChars !== undefined &&
+    (typeof settings.maxNodeChars !== "number" || !Number.isFinite(settings.maxNodeChars) || settings.maxNodeChars < 10)
+  ) {
+    return { valid: false, code: "SCHEMA_INVALID", reason: "Invalid maxNodeChars." };
+  }
+  if (
+    settings.networkDestinationPolicy !== undefined &&
+    settings.networkDestinationPolicy !== "public_only" &&
+    settings.networkDestinationPolicy !== "managed_intranet" &&
+    settings.networkDestinationPolicy !== "disabled"
+  ) {
+    return { valid: false, code: "SCHEMA_INVALID", reason: "Invalid networkDestinationPolicy." };
+  }
+  if (settings.networkAllowlist !== undefined) {
+    if (!Array.isArray(settings.networkAllowlist) || !settings.networkAllowlist.every((s) => typeof s === "string" && s.length <= 512)) {
+      return { valid: false, code: "SCHEMA_INVALID", reason: "Invalid networkAllowlist." };
+    }
+  }
+  if (settings.customRules !== undefined && !Array.isArray(settings.customRules)) {
+    return { valid: false, code: "SCHEMA_INVALID", reason: "Invalid customRules." };
+  }
 
-  // 7. Content Hash Check
-  const computedHash = await computeManagedPolicyContentHash(pkg.rules, settings);
+  // 6. Content Hash Check
+  let computedHash: string;
+  try {
+    computedHash = await computeManagedPolicyContentHash(pkg.rules, settings);
+  } catch {
+    return {
+      valid: false,
+      code: "HASH_MISMATCH",
+      reason: "Integrity check failed: cryptographic hash verification is unavailable.",
+    };
+  }
   if (computedHash.toLowerCase() !== pkg.policy_hash.toLowerCase()) {
     return {
       valid: false,
@@ -337,7 +410,7 @@ export async function verifyAndValidateManagedPolicy(
     };
   }
 
-  // 8. Cryptographic Signature Verification (Ed25519)
+  // 7. Cryptographic Signature Verification (Ed25519)
   const fullEnvelope = pkg as ManagedPolicyEnvelope;
   const signatureOk = await verifyManagedPolicySignature(fullEnvelope, trustedKey);
   if (!signatureOk) {
@@ -348,6 +421,32 @@ export async function verifyAndValidateManagedPolicy(
     };
   }
 
+  // 8. Post-verification Anti-rollback & Anti-replay checks
+  if (lastAppliedPolicy) {
+    if (pkg.policy_version < lastAppliedPolicy.policy_version) {
+      return {
+        valid: false,
+        code: "DOWNGRADE",
+        reason: `Rollback attack detected: incoming policy version (${pkg.policy_version}) is lower than currently applied version (${lastAppliedPolicy.policy_version}).`,
+      };
+    }
+
+    if (pkg.policy_version === lastAppliedPolicy.policy_version && pkg.nonce === lastAppliedPolicy.nonce) {
+      const sameEnvelope =
+        pkg.policy_id === lastAppliedPolicy.policy_id &&
+        pkg.policy_hash.toLowerCase() === lastAppliedPolicy.policy_hash.toLowerCase() &&
+        pkg.policy_signature === lastAppliedPolicy.policy_signature;
+      if (!sameEnvelope) {
+        return {
+          valid: false,
+          code: "REPLAY",
+          reason: "Policy replay detected: nonce reused with differing policy payload.",
+        };
+      }
+      return { valid: true, policy: fullEnvelope };
+    }
+  }
+
   return { valid: true, policy: fullEnvelope };
 }
 
@@ -356,6 +455,7 @@ export async function verifyAndValidateManagedPolicy(
  */
 export function managedPolicyToEnterprisePolicy(envelope: ManagedPolicyEnvelope): EnterprisePolicy {
   const settings = envelope.settings;
+  const customRules = settings.customRules ?? (envelope.rules.length > 0 ? envelope.rules : undefined);
   return {
     managed: true,
     valid: true,
@@ -364,6 +464,13 @@ export function managedPolicyToEnterprisePolicy(envelope: ManagedPolicyEnvelope)
     enforcedCategories: settings.enforcedCategories ?? [...ALL_CATEGORIES],
     networkDestinationPolicy: settings.networkDestinationPolicy ?? "public_only",
     networkAllowlist: settings.networkAllowlist ?? [],
+    ...(settings.confidenceThresholds ? { confidenceThresholds: { ...settings.confidenceThresholds } } : {}),
+    ...(settings.defaultRedactionStyle ? { defaultRedactionStyle: settings.defaultRedactionStyle } : {}),
+    ...(settings.defaultStampText !== undefined ? { defaultStampText: settings.defaultStampText } : {}),
+    ...(settings.autoMaskSingleNames !== undefined ? { autoMaskSingleNames: settings.autoMaskSingleNames } : {}),
+    ...(settings.maxVisibleChars !== undefined ? { maxVisibleChars: settings.maxVisibleChars } : {}),
+    ...(settings.maxNodeChars !== undefined ? { maxNodeChars: settings.maxNodeChars } : {}),
+    ...(customRules ? { customRules: [...customRules] } : {}),
     coordinatorOrigin: envelope.organization_id,
     organizationName: envelope.organization_name || envelope.organization_id,
     policyVersion: envelope.policy_version,

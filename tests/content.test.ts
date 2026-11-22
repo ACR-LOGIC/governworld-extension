@@ -4,7 +4,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { extractVisibleText, buildScanText } from "../src/content/extract.js";
 import { detect } from "../src/content/detect.js";
 import { resolveScanCoverageStatus } from "../src/content/normalization/pageInventory.js";
-import type { Finding, FindingCategory } from "../src/shared/types.js";
+import { ALL_CATEGORIES } from "../src/shared/settings.js";
+import type { Finding, FindingCategory, WorkerMessage } from "../src/shared/types.js";
+
+type ScanResultMessage = Extract<WorkerMessage, { type: "SCAN_RESULT" }>;
 
 describe("Content Script Runtime & DOM Integration (M2 Features)", () => {
   beforeEach(() => {
@@ -91,33 +94,113 @@ describe("Content Script Runtime & DOM Integration (M2 Features)", () => {
   });
 
   describe("Feature 7: Mutation Batch Limits (>50)", () => {
-    it("processes batch of 100 mutations without destroying session or stripping findings", () => {
-      const findings: Finding[] = [
-        {
-          id: "ssn_0_11_0",
-          category: "ssn",
-          confidence: 0.95,
-          source: "local-rules",
-          preview: "***-**-6789",
-          nodeId: "seg_0",
-          startOffset: 0,
-          endOffset: 11,
-          rects: [{ x: 10, y: 10, width: 80, height: 20 }],
-          contextPreview: "",
-          selected: true,
-        },
-      ];
+    let cleanupRuntime: (() => void) | null = null;
 
-      // Mutate 100 nodes in DOM
+    afterEach(() => {
+      cleanupRuntime?.();
+      cleanupRuntime = null;
+    });
+
+    it("processes batch of 100 mutations without destroying session or stripping findings", async () => {
+      delete (globalThis as Record<string, unknown>).__gwRedactionContentLoaded;
+      const listeners: Array<(msg: unknown, sender: chrome.runtime.MessageSender, sendResponse: (r?: unknown) => void) => boolean | void> = [];
+      const sentMessages: WorkerMessage[] = [];
+      const createdObservers: MutationObserver[] = [];
+      const OrigMutationObserver = globalThis.MutationObserver;
+      globalThis.MutationObserver = class TrackedMutationObserver extends OrigMutationObserver {
+        constructor(cb: MutationCallback) {
+          super(cb);
+          createdObservers.push(this);
+        }
+      } as typeof MutationObserver;
+
+      const origGetClientRects = Range.prototype.getClientRects;
+      Range.prototype.getClientRects = function (): DOMRectList {
+        const rect = { x: 10, y: 10, width: 100, height: 18, top: 10, left: 10, right: 110, bottom: 28, toJSON: () => ({}) } as DOMRect;
+        const list = [rect] as unknown as DOMRectList & { item: (i: number) => DOMRect | null };
+        list.item = (i: number) => (i === 0 ? rect : null);
+        return list;
+      };
+
+      const prevChrome = (globalThis as Record<string, unknown>).chrome;
+      (globalThis as Record<string, unknown>).chrome = {
+        runtime: {
+          id: "test-extension-id",
+          onMessage: {
+            addListener(fn: (typeof listeners)[number]) { listeners.push(fn); },
+            removeListener(fn: (typeof listeners)[number]) {
+              const idx = listeners.indexOf(fn);
+              if (idx >= 0) listeners.splice(idx, 1);
+            },
+          },
+          sendMessage(msg: WorkerMessage) {
+            sentMessages.push(msg);
+            return Promise.resolve({ ok: true });
+          },
+        },
+        storage: {
+          local: { get: vi.fn().mockResolvedValue({}), set: vi.fn().mockResolvedValue(undefined) },
+        },
+      };
+
+      cleanupRuntime = () => {
+        for (const obs of createdObservers) obs.disconnect();
+        globalThis.MutationObserver = OrigMutationObserver;
+        Range.prototype.getClientRects = origGetClientRects;
+        (globalThis as Record<string, unknown>).chrome = prevChrome;
+        delete (globalThis as Record<string, unknown>).__gwRedactionContentLoaded;
+      };
+
+      document.body.innerHTML = `<p id="initial-ssn">Patient SSN: 219-09-9999 verified.</p>`;
+      vi.resetModules();
+      await import("../src/content/content.js");
+
+      const handler = listeners[listeners.length - 1];
+      expect(handler).toBeDefined();
+      await new Promise((resolve) => {
+        handler(
+          {
+            type: "SCAN_PAGE",
+            requestId: "req-f7-1",
+            sessionId: "sess-f7-1",
+            mode: "local",
+            settings: {
+              enabledCategories: [...ALL_CATEGORIES],
+              maxVisibleChars: 250_000,
+              maxNodeChars: 20_000,
+              maskPlaceholders: false,
+              sessionTimeoutMs: 900_000,
+            },
+          },
+          { id: "test-extension-id" } as chrome.runtime.MessageSender,
+          resolve
+        );
+      });
+
+      const initialScan = sentMessages.find((m): m is ScanResultMessage => m.type === "SCAN_RESULT");
+      expect(initialScan?.findings.some((f) => f.category === "ssn")).toBe(true);
+
+      // Mutate 100 nodes in DOM, including new PII in node #99
       for (let i = 0; i < 100; i++) {
         const div = document.createElement("div");
-        div.textContent = `Item ${i}`;
+        div.textContent = i === 99 ? "On-call doctor: dr.house@hospital.test" : `Item ${i}`;
         document.body.appendChild(div);
       }
 
-      // Assert findings are preserved
-      expect(findings.length).toBe(1);
-      expect(findings[0].id).toBe("ssn_0_11_0");
+      await vi.waitFor(
+        () => {
+          const results = sentMessages.filter((m): m is ScanResultMessage => m.type === "SCAN_RESULT");
+          const latest = results[results.length - 1];
+          expect(latest?.findings.length).toBeGreaterThanOrEqual(2);
+        },
+        { timeout: 2500, interval: 40 }
+      );
+
+      const results = sentMessages.filter((m): m is ScanResultMessage => m.type === "SCAN_RESULT");
+      const latest = results[results.length - 1];
+      expect(latest.sessionId).toBe("sess-f7-1");
+      expect(latest.findings.some((f) => f.category === "ssn")).toBe(true);
+      expect(latest.findings.some((f) => f.category === "email")).toBe(true);
     });
   });
 

@@ -1,6 +1,14 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
-import { OFFSCREEN_CHANNEL, isOffscreenRequest, base64ToBytes, bytesToBase64, MAX_DOC_PAGES } from "../document-pipeline/contract.js";
+import {
+  OFFSCREEN_CHANNEL,
+  DocumentCancelledError,
+  isOffscreenRequest,
+  base64ToBytes,
+  bytesToBase64,
+  MAX_DOC_PAGES,
+} from "../document-pipeline/contract.js";
 import { runDocumentPreview, runDocumentRedact, runDocumentCount } from "../document-pipeline/impl.js";
+import { resetOcr } from "../document-pipeline/ocr.js";
 
 /**
  * Offscreen document entry point. This page exists only to host pdf.js +
@@ -19,8 +27,12 @@ function normalizeBytes(raw: unknown): ArrayBuffer {
 }
 
 const port = chrome.runtime.connect({ name: OFFSCREEN_CHANNEL });
+const activeJobs = new Map<string, { controller: AbortController; fileKey?: string }>();
 
 function toError(error: unknown): { code: string; userMessage: string } {
+  if (error instanceof DocumentCancelledError || (error instanceof Error && error.name === "DocumentCancelledError")) {
+    return { code: "DOC_CANCELLED", userMessage: "Document processing cancelled." };
+  }
   const message = error instanceof Error ? error.message : String(error);
   const lower = message.toLowerCase();
   if (lower.includes("password") || lower.includes("encrypted")) {
@@ -42,9 +54,31 @@ port.onMessage.addListener((raw: unknown) => {
   if (!isOffscreenRequest(raw)) return;
   const jobId = raw.jobId;
   const op = raw.op;
+  if (op === "cancel") {
+    let abortedAny = false;
+    for (const [id, entry] of activeJobs) {
+      if (
+        (raw.targetJobId && id === raw.targetJobId) ||
+        (raw.fileKey && entry.fileKey === raw.fileKey) ||
+        (!raw.targetJobId && !raw.fileKey)
+      ) {
+        entry.controller.abort();
+        abortedAny = true;
+      }
+    }
+    void resetOcr().catch(() => undefined);
+    port.postMessage({ channel: OFFSCREEN_CHANNEL, op: "cancel", jobId, ok: true, cancelled: abortedAny });
+    return;
+  }
+
+  const controller = new AbortController();
+  const fileKey = op === "preview" ? raw.previewKeyPrefix : op === "redact" ? raw.fileKey : undefined;
+  activeJobs.set(jobId, { controller, fileKey });
+
   void (async () => {
     try {
       const bytes = normalizeBytes(raw.bytes);
+      if (controller.signal.aborted) throw new DocumentCancelledError();
       if (op === "count") {
         // The cheap pass: a page count the studio shows the user so they can
         // choose which window to scan. Renders nothing, so it fails fast on a
@@ -59,18 +93,22 @@ port.onMessage.addListener((raw: unknown) => {
         return;
       }
       if (op === "preview") {
-        const { pages, truncated } = await runDocumentPreview({
-          kind: raw.kind,
-          bytes,
-          name: raw.name,
-          mimeType: raw.mimeType,
-          enabledCategories: raw.enabledCategories,
-          maxPages: raw.maxPages,
-          pageOffset: raw.pageOffset ?? 0,
-          ocrLanguage: raw.ocrLanguage,
-          customPatterns: raw.customPatterns,
-          previewKeyPrefix: raw.previewKeyPrefix,
-        });
+        const { pages, truncated } = await runDocumentPreview(
+          {
+            kind: raw.kind,
+            bytes,
+            name: raw.name,
+            mimeType: raw.mimeType,
+            enabledCategories: raw.enabledCategories,
+            maxPages: raw.maxPages,
+            pageOffset: raw.pageOffset ?? 0,
+            ocrLanguage: raw.ocrLanguage,
+            customPatterns: raw.customPatterns,
+            previewKeyPrefix: raw.previewKeyPrefix,
+          },
+          controller.signal
+        );
+        if (controller.signal.aborted) throw new DocumentCancelledError();
         port.postMessage({ channel: OFFSCREEN_CHANNEL, op: "preview", jobId, ok: true, pages, truncated });
         return;
       }
@@ -85,6 +123,7 @@ port.onMessage.addListener((raw: unknown) => {
         // paints the right pages by the wrong address.
         raw.pageOffset ?? 0
       );
+      if (controller.signal.aborted) throw new DocumentCancelledError();
       port.postMessage({
         channel: OFFSCREEN_CHANNEL,
         op: "redact",
@@ -100,6 +139,8 @@ port.onMessage.addListener((raw: unknown) => {
     } catch (error) {
       const e = toError(error);
       port.postMessage({ channel: OFFSCREEN_CHANNEL, op, jobId, ok: false, ...e });
+    } finally {
+      activeJobs.delete(jobId);
     }
   })();
 });

@@ -219,6 +219,8 @@ npm run build:safari
 3. **Sidepanel Sync Check**: `npm run sync:sidepanel:check`
 4. **Test Suite Execution**: `npm test`
 5. **Manifest Validation**: Offline asset verification
+6. **Single-Source Version Parity (`P11`)**: `npm run sync:version:check`
+7. **Section 4 Measured Hard CI Gates (`C1 / G1–G9`)**: `npm run gates:ci` (enforces `G1` 100% exact-span recall, `G2` 0 input-guard escapes, `G3` live Chrome `characterData` 5/5 masking, `G4` golden redaction output parity, `G5` finished-PDF re-decode secret non-recovery, `G6` 1 MB detect `< 200 ms` p50, `G7` 1,000-node scan `< 75 ms` p50 + 10,000-node `300/300` completeness, `G8` live paste dialog `< 100 ms` p50, and `G9` `<= 20%` regression against `docs/benchmarks/ci-baselines.json`; any failure exits `1`)
 
 ### Store Compliance
 - **Chrome Web Store**: Manifest V3 compliance, permissions justification
@@ -253,7 +255,7 @@ npm run build:safari
 
 ## Project Status
 
-Current release version: `0.4.0`. The repository is actively maintained with continuous improvements in:
+Current release version: `0.4.1`. The repository is actively maintained with continuous improvements in:
 - Detection algorithm accuracy
 - Security hardening
 - Accessibility compliance

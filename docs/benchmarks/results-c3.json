@@ -1,0 +1,66 @@
+{
+  "generatedAt": "2026-11-22T00:10:57.362Z",
+  "mode": "c3",
+  "stage": "c3",
+  "executablePath": "C:\\Users\\omg\\AppData\\Local\\ms-playwright\\chromium-1255\\chrome-win64\\chrome.exe",
+  "browserVersion": "Chrome/159.0.8154.6",
+  "nodeVersion": "v22.22.2",
+  "scan": {},
+  "paste": {},
+  "docs": {},
+  "ocrNode": {},
+  "network": {},
+  "gateFailures": [],
+  "c3": {
+    "incompleteWindowUi": {
+      "bannerHidden": false,
+      "findingsNoteText": "199 finding(s) in scanned regions",
+      "items": [
+        {
+          "cause": "incomplete_window",
+          "text": "Incomplete window scan (1 window(s) not scanned — Window 201: Technical window ceiling reached (200 windows)): content beyond the scanned windows was not inspected."
+        }
+      ],
+      "coverageBannerText": ""
+    },
+    "crossOriginIframeUi": {
+      "bannerHidden": false,
+      "findingsNoteText": "1 finding(s) in scanned regions",
+      "items": [
+        {
+          "cause": "cross_origin_iframe",
+          "text": "Cross-origin iframe (1) not scanned: browser origin isolation prevents reading embedded cross-origin frame DOM."
+        }
+      ],
+      "coverageBannerText": ""
+    },
+    "closedShadowRootUi": {
+      "bannerHidden": false,
+      "findingsNoteText": "1 finding(s) in scanned regions",
+      "items": [
+        {
+          "cause": "closed_shadow_root",
+          "text": "Closed shadow root (1) detected: encapsulated closed shadow DOM is isolated from standard DOM mutation tracking and cross-browser inspection."
+        }
+      ],
+      "coverageBannerText": ""
+    },
+    "canvasOnlyUi": {
+      "bannerHidden": false,
+      "findingsNoteText": "0 finding(s) in scanned regions",
+      "items": [
+        {
+          "cause": "canvas_only",
+          "text": "Canvas-only content (1 canvas element(s), 0 readable DOM text characters): pixel-drawn canvas graphics are not read by the DOM text scanner and require OCR or manual review."
+        }
+      ],
+      "coverageBannerText": ""
+    },
+    "cleanPageUi": {
+      "bannerHidden": true,
+      "findingsNoteText": "0 finding(s) in scanned regions",
+      "items": [],
+      "coverageBannerText": ""
+    }
+  }
+}

@@ -139,11 +139,35 @@ export type ScanCoverageStatus =
   | "NO_SENSITIVE_DATA_DETECTED"
   | "SCAN_FAILED";
 
+export interface IncompleteWindowInfo {
+  windowIndex: number;
+  reason: string;
+}
+
+export type CoverageWarningCause =
+  | "incomplete_window"
+  | "truncated"
+  | "cross_origin_iframe"
+  | "closed_shadow_root"
+  | "canvas_only";
+
+export interface CoverageWarning {
+  cause: CoverageWarningCause;
+  count: number;
+  detail?: string;
+}
+
 export interface ScanStats {
   visibleChars: number;
   /** Characters of accessibility-attribute text also analyzed. */
   attrChars?: number;
   truncated: boolean;
+  /** Number of content windows actually scanned (chunked full-page scanning, P6/D4). */
+  windowsScanned?: number;
+  /** Total content windows extracted for the page (P6/D4). */
+  windowsTotal?: number;
+  /** Windows that could not be scanned (with 1-based index and plain-language reason). */
+  incompleteWindows?: IncompleteWindowInfo[];
   /**
    * The findings list was capped to fit the runtime message limit.
    * totalFindings is the true match count; the popup reports partial results.
@@ -167,6 +191,8 @@ export interface ScanStats {
   deferredMediaCount?: number;
   /** Honest coverage classification based on what was and was not inspected. */
   coverageStatus?: ScanCoverageStatus;
+  /** Explicit unscannable or partially scanned region causes surfaced in the popup (C3). */
+  coverageWarnings?: CoverageWarning[];
 }
 
 
@@ -175,8 +201,34 @@ export interface ScanStats {
  * every message is validated at runtime on arrival.
  */
 
+export type PinnedTargetStatus = "unpinned" | "pinned" | "navigated" | "closed";
+
+export interface ScannableTabSummary {
+  tabId: number;
+  title: string;
+  url: string;
+  domain: string;
+  active: boolean;
+}
+
+export interface PinnedTargetInfo {
+  status: PinnedTargetStatus;
+  pinnedTabId: number | null;
+  title?: string;
+  url?: string;
+  domain?: string;
+  scannedUrl?: string;
+  closedTitle?: string;
+  closedDomain?: string;
+  availableTabs: ScannableTabSummary[];
+}
+
+export type SupabasePairingState = "local_only" | "redeeming" | "paired" | "paired_offline";
+export type OwningBackend = "supabase" | "azure";
+
 export type PopupMessage =
   | { type: "POPUP_SCAN"; requestId: string; mode: ScanMode; tabId?: number }
+  | { type: "POPUP_PIN_TAB"; requestId: string; tabId: number | null; pinCurrent?: boolean }
   | { type: "POPUP_APPLY_MASKS"; requestId: string; findingIds: string[]; tabId?: number }
   | { type: "POPUP_REMOVE_MASKS"; requestId: string; tabId?: number }
   | { type: "POPUP_COPY_REDACTED"; requestId: string; findingIds: string[]; tabId?: number }
@@ -190,13 +242,15 @@ export type PopupMessage =
    */
   | { type: "POPUP_DOC_COUNT"; requestId: string; fileKey: string; name: string; mimeType: string; kind: DocKind }
   | { type: "POPUP_DOC_REDACT"; requestId: string; docId: string; fileKey: string; name: string; mimeType: string; kind: DocKind; boxes: { pageIndex: number; rects: Rect[] }[]; findingIds: string[]; options?: RedactionOptions }
-  | { type: "POPUP_DOC_CLEAR"; requestId: string; docId: string }
+  | { type: "POPUP_DOC_CLEAR"; requestId: string; docId?: string; fileKey?: string }
   /**
    * Lift an image off the active page into the Document Studio. Used when a page
    * scan finds no text to read, which is what an image-only page looks like.
    */
   | { type: "POPUP_DOC_CAPTURE_IMAGE"; requestId: string; src: string; name: string }
-  | { type: "POPUP_DOC_CANCEL"; requestId: string; docId: string }
+  | { type: "POPUP_DOC_CANCEL"; requestId: string; docId?: string; fileKey?: string }
+  | { type: "POPUP_GET_STAGED_STATS"; requestId: string }
+  | { type: "POPUP_PURGE_STAGED_DATA"; requestId: string; includeIdleSession?: boolean }
   /**
    * Opens the read-only print/PDF view for an already-redacted document. The
    * fileKey names a manifest in the shared store; the page loads the page
@@ -264,7 +318,11 @@ export type PopupMessage =
       coordinatorUrl?: string;
     }
   | { type: "POPUP_MANAGEMENT_UNENROLL"; requestId: string }
-  | { type: "POPUP_SYNC_MANAGED_POLICY"; requestId: string; force?: boolean };
+  | { type: "POPUP_SYNC_MANAGED_POLICY"; requestId: string; force?: boolean }
+  | { type: "SUPABASE_PAIR_REDEEM"; requestId: string; code: string }
+  | { type: "SUPABASE_PAIR_STATUS"; requestId: string }
+  | { type: "SUPABASE_PAIR_UNPAIR"; requestId: string }
+  | { type: "SUPABASE_POLICY_SYNC"; requestId: string; force?: boolean };
 
 export interface ScanSettingsMessage {
   enabledCategories: FindingCategory[];
@@ -274,12 +332,45 @@ export interface ScanSettingsMessage {
   /** Session timeout in milliseconds, or 0 for "never". */
   sessionTimeoutMs: number;
   confidenceThresholds?: Record<FindingCategory, number>;
+  autoMaskSingleNames?: boolean;
+  medicalDictionaryEnabled?: boolean;
+  windowChars?: number;
+  windowOverlapChars?: number;
+  maxTotalWindows?: number;
 }
 
 export type WorkerMessage =
   | { type: "SCAN_PAGE"; requestId: string; mode: ScanMode; sessionId: string; settings: ScanSettingsMessage }
-  | { type: "SCAN_RESULT"; requestId: string; sessionId: string; findings: Finding[]; stats: ScanStats }
+  | {
+      type: "SCAN_PROGRESS";
+      requestId: string;
+      sessionId: string;
+      windowsCompleted: number;
+      windowsTotal: number;
+      charsScanned: number;
+      charsTotal: number;
+      findingsSoFar: number;
+    }
+  | {
+      type: "SCAN_RESULT_CHUNK";
+      requestId: string;
+      sessionId: string;
+      chunkIndex: number;
+      totalChunks: number;
+      findings: Finding[];
+    }
+  | {
+      type: "SCAN_RESULT";
+      requestId: string;
+      sessionId: string;
+      findings: Finding[];
+      stats: ScanStats;
+      chunkIndex?: number;
+      totalChunks?: number;
+    }
   | { type: "CONTENT_ERROR"; requestId: string; sessionId: string; code: string; userMessage: string }
+  | { type: "CONTENT_GET_NAME_DICTIONARIES"; requestId: string }
+  | { type: "CONTENT_GET_MEDICAL_DICTIONARY"; requestId: string }
   | { type: "APPLY_MASKS"; requestId: string; sessionId: string; findingIds: string[] }
   | { type: "REMOVE_MASKS"; requestId: string; sessionId: string }
   | { type: "COPY_REDACTED_TEXT"; requestId: string; sessionId: string; findingIds: string[] }
@@ -337,6 +428,16 @@ export interface PopupState {
   coverageStatus?: ScanCoverageStatus;
   /** Visual regions found beyond the per-pass budget that were not queued. */
   deferredMediaCount?: number;
+  /** Number of DOM scan windows completed (P6/D4). */
+  windowsScanned?: number;
+  /** Total DOM scan windows discovered on the page (P6/D4). */
+  windowsTotal?: number;
+  /** Any windows that could not be scanned, named for honest reporting. */
+  incompleteWindows?: IncompleteWindowInfo[];
+  /** Explicit unscannable or partially scanned region causes surfaced in the popup (C3). */
+  coverageWarnings?: CoverageWarning[];
+  /** Explicit pinned scan target state and available scannable tabs (Task A2 / Decision D2). */
+  pinnedTarget?: PinnedTargetInfo;
 }
 
 /** One processed document page for the review UI (thumbnails only, no raw text). */
@@ -358,11 +459,31 @@ export interface DocPageMeta {
    * `previewKey` when it is absent or its bytes have gone.
    */
   pageImageKey?: string;
+  /** True when OCR ran on this page with low/empty token confidence (uncertain, never clean). */
+  lowOcrConfidence?: boolean;
   findings: Finding[];
 }
 
 export type PopupFromWorker =
-  | { type: "POPUP_STATE"; requestId: string; state: PopupState }
+  | { type: "POPUP_STATE"; requestId: string; state: PopupState; chunkIndex?: number; totalChunks?: number }
+  | {
+      type: "POPUP_SCAN_PROGRESS";
+      requestId: string;
+      sessionId: string;
+      windowsCompleted: number;
+      windowsTotal: number;
+      charsScanned: number;
+      charsTotal: number;
+      findingsSoFar: number;
+    }
+  | {
+      type: "POPUP_STATE_CHUNK";
+      requestId: string;
+      sessionId: string;
+      chunkIndex: number;
+      totalChunks: number;
+      findings: Finding[];
+    }
   | { type: "POPUP_COPY_RESULT"; requestId: string; text: string }
   | {
       type: "POPUP_AUDIT_EXPORT";
@@ -540,10 +661,72 @@ export type PopupFromWorker =
       appliedPolicyVersion?: number;
       lastSyncStatus?: string;
       error?: string;
+    }
+  | {
+      type: "SUPABASE_PAIR_STATUS_STATE";
+      requestId: string;
+      pairingState: SupabasePairingState;
+      owningBackend?: OwningBackend | null;
+      organisationId?: string;
+      organisationName?: string;
+      seatId?: string;
+      unlocked?: boolean;
+      policyId?: string;
+      policyVersion?: number;
+      policyEnforced?: boolean;
+      hasDrift?: boolean;
+      driftedKeys?: string[];
+      conflict?: {
+        detected: boolean;
+        existingBackend: OwningBackend;
+        incomingBackend: OwningBackend;
+        message: string;
+      };
+      revoked?: boolean;
+      revokedNotice?: string;
+      lastSyncAt?: string;
+      lastHeartbeatAt?: string;
+      error?: string;
+    }
+  | {
+      type: "SUPABASE_PAIR_REDEEM_RESULT";
+      requestId: string;
+      ok: boolean;
+      pairingState: SupabasePairingState;
+      organisationId?: string;
+      organisationName?: string;
+      seatId?: string;
+      unlocked?: boolean;
+      policyVersion?: number;
+      error?: string;
+    }
+  | {
+      type: "POPUP_STAGED_STATS_STATE";
+      requestId: string;
+      stats: StagedStorageAudit;
+      purged?: PurgeStagedDataResult;
     };
+
+export interface StagedStorageAudit {
+  totalKeys: number;
+  totalBytes: number;
+  liveKeys: number;
+  liveBytes: number;
+  orphanKeys: number;
+  orphanBytes: number;
+  hasInFlightJob: boolean;
+}
+
+export interface PurgeStagedDataResult {
+  deletedKeys: number;
+  deletedBytes: number;
+  preservedLiveSession: boolean;
+  remaining: StagedStorageAudit;
+}
 
 export const MESSAGE_TYPES = new Set<string>([
   "POPUP_SCAN",
+  "POPUP_PIN_TAB",
   "POPUP_APPLY_MASKS",
   "POPUP_REMOVE_MASKS",
   "POPUP_COPY_REDACTED",
@@ -560,8 +743,12 @@ export const MESSAGE_TYPES = new Set<string>([
   "POPUP_DOC_STATUS",
   "POPUP_DOC_DELIVERY_REPORT",
   "SCAN_PAGE",
+  "SCAN_PROGRESS",
+  "SCAN_RESULT_CHUNK",
   "SCAN_RESULT",
   "CONTENT_ERROR",
+  "CONTENT_GET_NAME_DICTIONARIES",
+  "CONTENT_GET_MEDICAL_DICTIONARY",
   "APPLY_MASKS",
   "REMOVE_MASKS",
   "COPY_REDACTED_TEXT",
@@ -569,6 +756,8 @@ export const MESSAGE_TYPES = new Set<string>([
   "CONTEXT_REDACT_SELECTION",
   "CONTEXT_MASK_SELECTION",
   "POPUP_STATE",
+  "POPUP_SCAN_PROGRESS",
+  "POPUP_STATE_CHUNK",
   "POPUP_COPY_RESULT",
   "POPUP_DOC_STATE",
   "POPUP_DOC_DONE",
@@ -624,10 +813,19 @@ export const MESSAGE_TYPES = new Set<string>([
   "POPUP_MANAGEMENT_UNENROLL",
   "POPUP_SYNC_MANAGED_POLICY",
   "POPUP_MANAGEMENT_STATUS_STATE",
+  "SUPABASE_PAIR_REDEEM",
+  "SUPABASE_PAIR_STATUS",
+  "SUPABASE_PAIR_UNPAIR",
+  "SUPABASE_POLICY_SYNC",
+  "SUPABASE_PAIR_STATUS_STATE",
+  "SUPABASE_PAIR_REDEEM_RESULT",
   // Multi-format acquisition pipeline messages (Layer 2–5 async OCR/PDF results)
   "SCAN_PAGE_VISUAL_RESULT",
   "CONTENT_SHOW_TOAST",
   "POPUP_SCAN_COVERAGE",
+  "POPUP_GET_STAGED_STATS",
+  "POPUP_PURGE_STAGED_DATA",
+  "POPUP_STAGED_STATS_STATE",
 ]);
 
 export const MAX_MESSAGE_BYTES = 64 * 1024;

@@ -3,6 +3,10 @@ import { describe, it, expect } from "vitest";
 import {
   shouldInvalidateBatch,
   getAffectedNodeIds,
+  selectObserverDebounceMs,
+  SMALL_BATCH_NODE_THRESHOLD,
+  FAST_DEBOUNCE_MS,
+  BURST_DEBOUNCE_MS,
   type MutationBatch,
 } from "../src/content/normalization/mutation.js";
 
@@ -72,5 +76,17 @@ describe("getAffectedNodeIds", () => {
     const batch: MutationBatch = { addedNodes: [], removedNodes: [parent], mutatedTextNodes: [], timestamp: 0 };
     const affected = getAffectedNodeIds(batch, nodeIds);
     expect(affected.has("seg_0")).toBe(true);
+  });
+});
+
+describe("selectObserverDebounceMs (P7 adaptive debounce)", () => {
+  it("uses fast path for small batches up to SMALL_BATCH_NODE_THRESHOLD", () => {
+    expect(selectObserverDebounceMs(1)).toBe(FAST_DEBOUNCE_MS);
+    expect(selectObserverDebounceMs(SMALL_BATCH_NODE_THRESHOLD)).toBe(FAST_DEBOUNCE_MS);
+  });
+
+  it("preserves full burst debounce above SMALL_BATCH_NODE_THRESHOLD", () => {
+    expect(selectObserverDebounceMs(SMALL_BATCH_NODE_THRESHOLD + 1)).toBe(BURST_DEBOUNCE_MS);
+    expect(selectObserverDebounceMs(100)).toBe(BURST_DEBOUNCE_MS);
   });
 });

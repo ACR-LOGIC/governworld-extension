@@ -5,7 +5,18 @@ import { validateApiUrl, setApiUrl, getApiUrl, CURRENT_EXTENSION_VERSION } from 
 
 describe("API Client & Transport Security", () => {
   beforeEach(() => {
+    const localStore: Record<string, unknown> = {};
     vi.stubGlobal("fetch", vi.fn());
+    vi.stubGlobal("chrome", {
+      storage: {
+        local: {
+          get: vi.fn(async (key: string) => ({ [key]: localStore[key] })),
+          set: vi.fn(async (items: Record<string, unknown>) => {
+            Object.assign(localStore, items);
+          }),
+        },
+      },
+    });
   });
 
   afterEach(() => {
@@ -22,14 +33,14 @@ describe("API Client & Transport Security", () => {
     expect(invalidHttp.error).toContain("Insecure transport rejected");
   });
 
-  it("permits plaintext HTTP only for localhost and 127.0.0.1 development", () => {
+  it("rejects plaintext HTTP even for localhost and 127.0.0.1 (fail-closed production runtime)", () => {
     const localhost = validateApiUrl("http://localhost:8000");
-    expect(localhost.valid).toBe(true);
-    expect(localhost.normalizedUrl).toBe("http://localhost:8000");
+    expect(localhost.valid).toBe(false);
+    expect(localhost.error).toContain("Insecure transport rejected");
 
     const loopback = validateApiUrl("http://127.0.0.1:8000/api");
-    expect(loopback.valid).toBe(true);
-    expect(loopback.normalizedUrl).toBe("http://127.0.0.1:8000/api");
+    expect(loopback.valid).toBe(false);
+    expect(loopback.error).toContain("Insecure transport rejected");
   });
 
   it("automatically attaches correlation ID (X-Request-ID) and version headers", async () => {

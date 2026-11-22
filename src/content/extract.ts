@@ -1,5 +1,5 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
-import type { Finding } from "../shared/types.js";
+import type { Finding, IncompleteWindowInfo } from "../shared/types.js";
 import { placeholderLabelFor } from "./detect.js";
 import { getAccessibleShadowRoot } from "./normalization/shadow.js";
 
@@ -104,33 +104,49 @@ const NON_TEXT_INPUT_TYPES = new Set([
   "hidden",
 ]);
 
-/**
- * Walk visible text nodes, shadow roots, and inputs in the document and produce segments.
- * Truncates oversized nodes and stops at maxVisibleChars (graceful, reported).
- */
-export function extractVisibleText(
-  root: Document | Element | ShadowRoot,
-  maxVisibleChars: number,
+export interface TextWindow {
+  /** 1-based sequential window index across the page. */
+  windowIndex: number;
+  segments: TextSegment[];
+  charCount: number;
+  nodeTruncated: boolean;
+}
+
+export interface WindowedExtractionResult {
+  windows: TextWindow[];
+  totalChars: number;
+  windowsTotal: number;
+  incompleteWindows: IncompleteWindowInfo[];
+  hardLimitReached: boolean;
+  /** True only if an individual DOM node exceeded maxNodeChars or hardLimitReached occurred. */
+  truncated: boolean;
+}
+
+export const DEFAULT_MAX_TOTAL_WINDOWS = 200;
+
+interface SegmentVisitorCallbacks {
+  canAcceptMore: () => boolean;
+  onStopRequested?: () => void;
+  onSegment: (seg: TextSegment, nodeTruncated: boolean) => boolean;
+}
+
+function traverseVisibleSegments(
+  root: Document | Element | ShadowRoot | Text,
   maxNodeChars: number,
-  nodeIds: Map<string, Node>
-): { segments: TextSegment[]; truncated: boolean } {
-  const segments: TextSegment[] = [];
-  let remaining = maxVisibleChars;
-  let truncated = false;
+  nodeIds: Map<string, Node>,
+  callbacks: SegmentVisitorCallbacks
+): void {
   let counter = 0;
 
-  function processTextNode(node: Text) {
-    if (remaining <= 0) {
-      truncated = true;
+  function emitSlice(raw: string, target: Node) {
+    if (!callbacks.canAcceptMore()) {
+      callbacks.onStopRequested?.();
       return;
     }
-    const raw = node.textContent ?? "";
     const trimmed = raw.replace(TRIM_RE, "");
     if (trimmed.length === 0) return;
 
-    if (trimmed.length > maxNodeChars) {
-      truncated = true;
-    }
+    const nodeTruncated = trimmed.length > maxNodeChars;
     const slice = trimmed.slice(0, maxNodeChars);
 
     const lead = raw.length - raw.replace(/^[\s\u00a0\u200b]+/, "").length;
@@ -138,46 +154,14 @@ export function extractVisibleText(
     const endOffset = Math.min(raw.length, lead + slice.length);
 
     const nodeId = `seg_${counter++}`;
-    nodeIds.set(nodeId, node);
+    nodeIds.set(nodeId, target);
 
-    segments.push({ nodeId, startOffset, endOffset, text: slice });
-    remaining -= slice.length;
-    if (remaining <= 0) {
-      truncated = true;
-    }
-  }
-
-  function processInputElement(el: HTMLInputElement | HTMLTextAreaElement) {
-    if (remaining <= 0) {
-      truncated = true;
-      return;
-    }
-    const raw = el.value ?? "";
-    const trimmed = raw.replace(TRIM_RE, "");
-    if (trimmed.length === 0) return;
-
-    if (trimmed.length > maxNodeChars) {
-      truncated = true;
-    }
-    const slice = trimmed.slice(0, maxNodeChars);
-
-    const lead = raw.length - raw.replace(/^[\s\u00a0\u200b]+/, "").length;
-    const startOffset = lead;
-    const endOffset = Math.min(raw.length, lead + slice.length);
-
-    const nodeId = `seg_${counter++}`;
-    nodeIds.set(nodeId, el);
-
-    segments.push({ nodeId, startOffset, endOffset, text: slice });
-    remaining -= slice.length;
-    if (remaining <= 0) {
-      truncated = true;
-    }
+    callbacks.onSegment({ nodeId, startOffset, endOffset, text: slice }, nodeTruncated);
   }
 
   function traverse(current: Node) {
-    if (remaining <= 0) {
-      truncated = true;
+    if (!callbacks.canAcceptMore()) {
+      callbacks.onStopRequested?.();
       return;
     }
 
@@ -192,14 +176,17 @@ export function extractVisibleText(
         tag === "textarea" ||
         (tag === "input" && !NON_TEXT_INPUT_TYPES.has((el as HTMLInputElement).type?.toLowerCase() || ""))
       ) {
-        processInputElement(el as HTMLInputElement | HTMLTextAreaElement);
+        emitSlice((el as HTMLInputElement | HTMLTextAreaElement).value ?? "", el);
       }
 
       if (tag === "slot" && typeof (el as HTMLSlotElement).assignedNodes === "function") {
         const assigned = (el as HTMLSlotElement).assignedNodes({ flatten: true });
         if (assigned.length > 0) {
           for (const assignedNode of assigned) {
-            if (remaining <= 0) break;
+            if (!callbacks.canAcceptMore()) {
+              callbacks.onStopRequested?.();
+              break;
+            }
             traverse(assignedNode);
           }
           return;
@@ -214,13 +201,13 @@ export function extractVisibleText(
     } else if (current.nodeType === Node.TEXT_NODE) {
       const parent = current.parentElement;
       if (!parent || !isExcludedElement(parent)) {
-        processTextNode(current as Text);
+        emitSlice(current.textContent ?? "", current);
       }
       return;
     }
 
     let child = current.firstChild;
-    while (child && remaining > 0) {
+    while (child && callbacks.canAcceptMore()) {
       traverse(child);
       child = child.nextSibling;
     }
@@ -230,8 +217,109 @@ export function extractVisibleText(
   if (startNode) {
     traverse(startNode);
   }
+}
+
+/**
+ * Walk visible text nodes, shadow roots, and inputs in the document and produce segments.
+ * Truncates oversized nodes and stops at maxVisibleChars (graceful, reported).
+ */
+export function extractVisibleText(
+  root: Document | Element | ShadowRoot | Text,
+  maxVisibleChars: number,
+  maxNodeChars: number,
+  nodeIds: Map<string, Node>
+): { segments: TextSegment[]; truncated: boolean } {
+  const segments: TextSegment[] = [];
+  let remaining = maxVisibleChars;
+  let truncated = false;
+
+  traverseVisibleSegments(root, maxNodeChars, nodeIds, {
+    canAcceptMore: () => remaining > 0,
+    onStopRequested: () => {
+      truncated = true;
+    },
+    onSegment: (seg, nodeTruncated) => {
+      if (nodeTruncated) truncated = true;
+      segments.push(seg);
+      remaining -= seg.text.length;
+      if (remaining <= 0) {
+        truncated = true;
+        return false;
+      }
+      return true;
+    },
+  });
 
   return { segments, truncated };
+}
+
+/**
+ * Walk the full visible DOM tree and partition extracted segments into bounded
+ * windows (`windowSizeChars` per window as a memory safeguard, never a whole-page cut-off).
+ * Only halts if `maxTotalWindows` is exceeded, reporting the unvisited window explicitly.
+ */
+export function extractVisibleTextWindows(
+  root: Document | Element | ShadowRoot | Text,
+  windowSizeChars: number,
+  maxNodeChars: number,
+  nodeIds: Map<string, Node>,
+  options: { maxTotalWindows?: number } = {}
+): WindowedExtractionResult {
+  const effectiveWindowSize = Math.max(100, windowSizeChars);
+  const maxTotalWindows = Math.max(1, options.maxTotalWindows ?? DEFAULT_MAX_TOTAL_WINDOWS);
+
+  const windows: TextWindow[] = [];
+  const incompleteWindows: IncompleteWindowInfo[] = [];
+  let currentWindow: TextWindow | null = null;
+  let totalChars = 0;
+  let hardLimitReached = false;
+  let anyNodeTruncated = false;
+
+  traverseVisibleSegments(root, maxNodeChars, nodeIds, {
+    canAcceptMore: () => !hardLimitReached,
+    onSegment: (seg, nodeTruncated) => {
+      if (nodeTruncated) anyNodeTruncated = true;
+      if (!currentWindow) {
+        currentWindow = { windowIndex: 1, segments: [], charCount: 0, nodeTruncated: false };
+        windows.push(currentWindow);
+      } else if (
+        currentWindow.charCount > 0 &&
+        currentWindow.charCount + seg.text.length > effectiveWindowSize
+      ) {
+        if (windows.length >= maxTotalWindows) {
+          hardLimitReached = true;
+          nodeIds.delete(seg.nodeId);
+          incompleteWindows.push({
+            windowIndex: maxTotalWindows + 1,
+            reason: `Technical window ceiling reached (${maxTotalWindows} windows)`,
+          });
+          return false;
+        }
+        currentWindow = {
+          windowIndex: windows.length + 1,
+          segments: [],
+          charCount: 0,
+          nodeTruncated: false,
+        };
+        windows.push(currentWindow);
+      }
+
+      if (nodeTruncated) currentWindow.nodeTruncated = true;
+      currentWindow.segments.push(seg);
+      currentWindow.charCount += seg.text.length;
+      totalChars += seg.text.length;
+      return true;
+    },
+  });
+
+  return {
+    windows,
+    totalChars,
+    windowsTotal: windows.length,
+    incompleteWindows,
+    hardLimitReached,
+    truncated: hardLimitReached || anyNodeTruncated,
+  };
 }
 
 /** Join segments into a combined scan string with offset mapping tables. */

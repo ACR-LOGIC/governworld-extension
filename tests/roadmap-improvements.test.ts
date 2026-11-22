@@ -325,6 +325,7 @@ describe("GovernWorld Roadmap Improvements Suite (All 17 Items)", () => {
         policy_version: "1.0",
         policy_hash: hash,
         effective_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + 86_400_000).toISOString(),
         rules,
       };
 

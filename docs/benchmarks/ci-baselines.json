@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "directive": "GW-DEV-DIRECTIVE-2026-001",
+  "recordedAt": "2026-11-21T23:10:00Z",
+  "maxRegressionRatio": 1.2,
+  "baselines": {
+    "detect1MbP50Ms": 125.6,
+    "scan1kP50Ms": 42.0,
+    "pasteDialogP50Ms": 50.0
+  },
+  "hardLimits": {
+    "detect1MbP50Ms": 200,
+    "scan1kP50Ms": 75,
+    "pasteDialogP50Ms": 100,
+    "charDataMaxMs": 2000
+  },
+  "hostObserved": {
+    "environment": "win32 Node v22.22.2 Chrome 159.0.8154.6",
+    "detect1MbP50Ms": 115.918,
+    "scan1kP50Ms": 27.685,
+    "pasteShortP50Ms": 23.09,
+    "paste10KbP50Ms": 19.06,
+    "paste68KbP50Ms": 33.91,
+    "charDataP50Ms": 61.4
+  }
+}

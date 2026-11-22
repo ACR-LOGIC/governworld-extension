@@ -114,7 +114,7 @@ export function maskValue(category: FindingCategory, value: string): string {
       if (at <= 0) return value.replace(/./g, "*");
       const local = value.slice(0, at);
       const domain = value.slice(at + 1);
-      const head = local[0] ?? "";
+      const head = Array.from(local)[0] ?? "";
       return `${head}***@${domain}`;
     }
     case "phone": {
@@ -269,7 +269,7 @@ export function placeholderLabelFor(category: FindingCategory): string {
  * detector returns immediately when the text contains no `@` at all, which is
  * the case for the overwhelming majority of nodes.
  */
-const EMAIL_RE = /\b[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]{1,64}(?:\.[A-Za-z0-9!#$%&'*+/=?^_`{|}~-]{1,63}){0,12}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?){0,12}/g;
+const EMAIL_RE = /(?<![\p{L}\p{N}.!#$%&'*+/=?^_`{|}~-])[\p{L}\p{N}!#$%&'*+/=?^_`{|}~-]{1,64}(?:\.[\p{L}\p{N}!#$%&'*+/=?^_`{|}~-]{1,63}){0,12}@[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,61}[\p{L}\p{N}])?(?:\.[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,61}[\p{L}\p{N}])?){0,12}/gu;
 
 function detectEmails(text: string): RawMatch[] {
   const out: RawMatch[] = [];
@@ -283,7 +283,7 @@ function detectEmails(text: string): RawMatch[] {
       end -= 1;
     }
     if (!value.includes(".")) continue;
-    if (!/[A-Za-z]/.test(value)) continue;
+    if (!/\p{L}/u.test(value)) continue;
     out.push({ category: "email", confidence: 0.92, value, start: m.index, end });
   }
   return out;

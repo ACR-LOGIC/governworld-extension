@@ -65,6 +65,23 @@
       </div>
     </header>
 
+    <div id="pinned-target-bar" class="pinned-target-bar" role="region" aria-label="Pinned scan target">
+      <div id="pinned-target-summary" class="pinned-target__summary">
+        <span class="pinned-target__badge" data-i18n="pinned_target_label">Pinned target:</span>
+        <strong id="pinned-target-title" class="pinned-target__title" data-i18n="pinned_target_none">No target tab pinned</strong>
+        <span id="pinned-target-domain" class="pinned-target__domain"></span>
+      </div>
+      <div id="pinned-target-controls" class="pinned-target__controls">
+        <select id="pinned-tab-select" class="preset-select pinned-target__select" aria-label="Change target tab">
+          <option value="" data-i18n="pinned_target_select_placeholder">— Change target tab —</option>
+        </select>
+        <button id="pin-current-tab-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="pin_current_tab_btn">Pin current tab</button>
+      </div>
+      <div id="pinned-target-warning" class="pinned-target-warning" role="alert" hidden>
+        <p id="pinned-target-warning-text" class="pinned-target-warning__text"></p>
+      </div>
+    </div>
+
     <nav class="tab-nav" role="tablist" aria-label="Main navigation">
       <button class="tab-btn tab-btn--active" type="button" role="tab" aria-selected="true" aria-controls="tab-protection" data-tab="protection" id="tab-btn-protection">
         <span class="tab-btn__icon" aria-hidden="true">◉</span>
@@ -156,6 +173,14 @@
       <div id="scan-summary" class="scan-summary" hidden>
         <p id="status" class="status-text"></p>
         <p id="summary-chars" class="footnote"></p>
+        <p id="scan-coverage-statement" class="footnote" role="status" aria-live="polite" hidden></p>
+        <div id="coverage-warnings-banner" class="coverage-warning-banner" role="alert" aria-live="polite" hidden>
+          <div class="coverage-warning-banner__header">
+            <strong class="coverage-warning-banner__title" data-i18n="coverage_warning_banner_title">Incomplete Coverage — Unscanned Page Regions</strong>
+            <span id="coverage-warnings-findings-count" class="count-badge">0 findings</span>
+          </div>
+          <ul id="coverage-warnings-list" class="coverage-warning-banner__list"></ul>
+        </div>
 
         <!--
         Shown only when a page scan found no text to read AND the page carries
@@ -290,11 +315,31 @@
   </div>
       </div>
 
-      <div id="doc-progress" class="doc-progress" hidden role="status" aria-live="polite">
-        <div class="doc-progress__spinner" aria-hidden="true"></div>
-        <span id="doc-progress-text" class="doc-progress__text" data-i18n="doc_processing">Processing document…</span>
-        <button id="doc-cancel-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="doc_cancel">Cancel</button>
-      </div>
+        <div id="doc-progress" class="doc-progress" hidden role="status" aria-live="polite">
+          <div class="doc-progress__spinner" aria-hidden="true"></div>
+          <span id="doc-progress-text" class="doc-progress__text" data-i18n="doc_processing">Processing document…</span>
+          <button id="doc-cancel-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="doc_cancel">Cancel</button>
+        </div>
+
+        <p id="doc-staging-help" class="summary__note">
+          Document bytes and page previews stay staged only in your browser&rsquo;s local storage during active review.
+          <strong>Cancel</strong> aborts rendering/OCR and clears staged bytes immediately; <strong>Start Over</strong> removes all staged keys for this document.
+        </p>
+
+        <div id="doc-staged-audit" class="summary doc-staged-audit" role="region" aria-label="Staged storage audit">
+          <div class="doc-staged-audit__row">
+            <span id="doc-staged-summary" class="summary__note" data-i18n="doc_staged_zero">Staged data: 0 keys (0 B)</span>
+            <button id="doc-purge-staged-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="doc_purge_staged_btn">Purge staged data</button>
+          </div>
+          <div id="doc-purge-confirm-bar" class="doc-staged-audit__confirm" hidden>
+            <span class="summary__note" data-i18n="doc_purge_confirm_prompt">Delete staged document data now?</span>
+            <div class="doc-staged-audit__confirm-actions">
+              <button id="doc-purge-confirm-yes" class="btn btn--primary btn--sm" type="button" data-i18n="doc_purge_confirm_yes">Confirm purge</button>
+              <button id="doc-purge-confirm-no" class="btn btn--ghost btn--sm" type="button" data-i18n="doc_cancel">Cancel</button>
+            </div>
+          </div>
+          <p id="doc-staged-confirm-msg" class="summary__note doc-staged-audit__msg" role="status" aria-live="polite" hidden></p>
+        </div>
 
         <div id="doc-status" class="summary" hidden role="status" aria-live="polite">
           <p id="doc-status-text" class="summary__note"></p>
@@ -483,6 +528,7 @@
         <div class="coverage-section">
           <h3 data-i18n="coverage_title">Coverage</h3>
           <p id="coverage-status" class="coverage-status" role="status" aria-live="polite" hidden></p>
+          <p id="coverage-windows-detail" class="footnote" hidden></p>
           <div class="coverage-grid">
             <div class="coverage-item">
               <span class="coverage-icon" aria-hidden="true">·</span>
@@ -782,6 +828,16 @@
             <fieldset id="category-list" class="category-fieldset">
               <legend data-i18n="categories_label">Protection Categories</legend>
             </fieldset>
+            <label class="toggle-row" id="auto-mask-single-names-row">
+              <input id="auto-mask-single-names-toggle" type="checkbox" role="switch" aria-checked="false" />
+              <span data-i18n="auto_mask_single_names_toggle">Auto-mask single names (Possible name)</span>
+            </label>
+            <p class="footnote" id="auto-mask-single-names-desc" data-i18n="auto_mask_single_names_desc">Default off: single names remain review-only (unchecked) to avoid false positives, while multi-part structured names still auto-mask.</p>
+            <label class="toggle-row" id="medical-dictionary-row">
+              <input id="medical-dictionary-toggle" type="checkbox" role="switch" aria-checked="false" />
+              <span data-i18n="medical_dictionary_toggle">Medical dictionary (diagnoses &amp; medications)</span>
+            </label>
+            <p class="footnote" id="medical-dictionary-desc" data-i18n="medical_dictionary_desc">Default off: lazy-loads an offline clinical term list (conditions, medications, procedures) only when enabled.</p>
             <p class="footnote" data-i18n="threshold_disclosure">Compliance presets choose which categories are detected. Every finding above a category's confidence threshold is reported; nothing is silently discarded.</p>
           <div class="form-row">
             <label for="threshold-category-select" data-i18n="threshold_category_label">Category confidence threshold</label>
@@ -968,9 +1024,9 @@
             </select>
           </div>
           <div class="form-row">
-            <label for="max-visible-chars-input" data-i18n="max_visible_chars_label">Max visible characters per page scan</label>
+            <label for="max-visible-chars-input" data-i18n="max_visible_chars_label">Per-window character safeguard</label>
             <input id="max-visible-chars-input" type="number" min="100" max="2000000" step="1000" value="250000" />
-            <span class="footnote" data-i18n="max_visible_chars_hint">Default: 250,000 characters. Pages longer than this limit report a partial scan notice.</span>
+            <span class="footnote" data-i18n="max_visible_chars_hint">Default: 250,000 characters per window. Full pages are scanned across consecutive windows rather than cut off; smaller windows bound memory per pass.</span>
           </div>
           <div class="form-row">
             <label for="max-node-chars-input" data-i18n="max_node_chars_label">Max characters per DOM text node</label>
@@ -1010,6 +1066,10 @@
             <div class="diag-item">
               <span class="diag-label" data-i18n="diag_network">Network</span>
               <span class="diag-value" data-i18n="diag_no_network">Not used in Local Only mode ✓</span>
+            </div>
+            <div class="diag-item">
+              <span class="diag-label" data-i18n="diag_version">Version</span>
+              <span class="diag-value" id="diag-version-value">—</span>
             </div>
           </div>
 
