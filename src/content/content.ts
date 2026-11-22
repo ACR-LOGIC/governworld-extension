@@ -279,7 +279,10 @@ if (g.__gwRedactionContentLoaded !== true) {
           rects,
           contextPreview: contextFor(match.start, match.end),
           ...(match.category === "possible_name" ? { parsedName } : {}),
-          selected: match.category !== "possible_name" || isNameStructured(parsedName),
+          selected:
+            match.category !== "possible_name" ||
+            currentSettings?.autoMaskSingleNames === true ||
+            isNameStructured(parsedName),
         } satisfies Finding;
     });
   }
@@ -1422,6 +1425,7 @@ interface ScanSettings {
   maskPlaceholders: boolean;
   sessionTimeoutMs: number;
   confidenceThresholds?: Record<FindingCategory, number>;
+  autoMaskSingleNames?: boolean;
   windowChars?: number;
   windowOverlapChars?: number;
   maxTotalWindows?: number;

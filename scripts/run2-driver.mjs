@@ -27,10 +27,10 @@ const args = process.argv.slice(2);
 const modeArg = (args.find((a) => a.startsWith("--mode=")) || "--mode=baseline").split("=")[1];
 const stageArg = (args.find((a) => a.startsWith("--stage=")) || "--stage=all").split("=")[1];
 const outArg = args.find((a) => a.startsWith("--out="))?.slice(6);
-const TAKE_SCREENSHOTS = args.includes("--screenshot") || ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p11", "c2", "c3"].includes(modeArg);
+const TAKE_SCREENSHOTS = args.includes("--screenshot") || ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p11", "c2", "c3", "a1"].includes(modeArg);
 const SCREENSHOT_DIR = join(ROOT, "docs", "releases", "directive-reports", "screenshots");
 const RESULTS_PATH = outArg ? resolve(ROOT, outArg) : join(ROOT, "docs", "benchmarks", "results-run2.json");
-const IS_GATE = ["gate", "p1", "p2", "p3", "p4", "p5", "p6", "p7", "p11", "c2", "c3"].includes(modeArg);
+const IS_GATE = ["gate", "p1", "p2", "p3", "p4", "p5", "p6", "p7", "p11", "c2", "c3", "a1"].includes(modeArg);
 
 const executablePath = (process.env.GW_BROWSER_EXECUTABLE || "").trim() || chromium.executablePath();
 
@@ -1036,6 +1036,117 @@ try {
   }
 
   // -------------------------------------------------------------------------
+  // STAGE: A1 (Decision D1 — Auto-mask single names checkbox, default OFF)
+  // -------------------------------------------------------------------------
+  if (shouldRun("a1")) {
+    console.log("\n[Run 2 - A1 Auto-Mask Single Names Stage]");
+    await page.goto(fixtureUrl, { waitUntil: "domcontentloaded" });
+    await page.evaluate(() => {
+      const stage = document.getElementById("stage");
+      stage.innerHTML = `<p id="single-name-line">Patient: Maria</p><p id="full-name-line">Patient: Maria Gonzalez</p>`;
+    });
+
+    // Ensure setting starts at default OFF via Settings -> Detection UI
+    await popup.evaluate(() => {
+      document.querySelector('[data-tab="settings"]')?.click();
+      document.querySelector('[data-settings-page="detection"]')?.click();
+    });
+    await popup.waitForTimeout(150);
+
+    const toggleOffState = await popup.evaluate(() => {
+      const toggle = document.getElementById("auto-mask-single-names-toggle");
+      if (toggle && toggle.checked) {
+        toggle.click();
+      }
+      return {
+        exists: Boolean(toggle),
+        checked: Boolean(toggle?.checked),
+        helpText: (document.getElementById("auto-mask-single-names-desc")?.textContent ?? "").trim(),
+      };
+    });
+
+    // 1. Scan with checkbox OFF
+    await popup.evaluate(() => document.querySelector('[data-tab="scan"]')?.click());
+    const offScanState = await injectAndScan();
+    const offNameFindings = (offScanState.findings || []).filter((f) => f.category === "possible_name");
+    const offSelectedIds = (offScanState.findings || []).filter((f) => f.selected).map((f) => f.id);
+    await applyMasks(offSelectedIds);
+    await page.waitForTimeout(150);
+    const offOverlayMasks = await readOverlayMasksViaCdp(cdp);
+
+    if (TAKE_SCREENSHOTS) {
+      mkdirSync(SCREENSHOT_DIR, { recursive: true });
+      await popup.screenshot({ path: join(SCREENSHOT_DIR, "A1-single-name-off.png") });
+    }
+
+    // 2. Turn checkbox ON in Settings -> Detection and rescan
+    await popup.evaluate(() => {
+      document.querySelector('[data-tab="settings"]')?.click();
+      document.querySelector('[data-settings-page="detection"]')?.click();
+    });
+    await popup.waitForTimeout(150);
+    const toggleOnState = await popup.evaluate(() => {
+      const toggle = document.getElementById("auto-mask-single-names-toggle");
+      if (toggle && !toggle.checked) {
+        toggle.click();
+      }
+      return {
+        checked: Boolean(toggle?.checked),
+      };
+    });
+    await popup.waitForTimeout(150);
+
+    if (TAKE_SCREENSHOTS) {
+      mkdirSync(SCREENSHOT_DIR, { recursive: true });
+      await popup.screenshot({ path: join(SCREENSHOT_DIR, "A1-settings-detection-toggle-on.png") });
+    }
+
+    await popup.evaluate(() => document.querySelector('[data-tab="scan"]')?.click());
+    const onScanState = await injectAndScan();
+    const onNameFindings = (onScanState.findings || []).filter((f) => f.category === "possible_name");
+    const onSelectedIds = (onScanState.findings || []).filter((f) => f.selected).map((f) => f.id);
+    await applyMasks(onSelectedIds);
+    await page.waitForTimeout(150);
+    const onOverlayMasks = await readOverlayMasksViaCdp(cdp);
+
+    if (TAKE_SCREENSHOTS) {
+      mkdirSync(SCREENSHOT_DIR, { recursive: true });
+      await popup.screenshot({ path: join(SCREENSHOT_DIR, "A1-single-name-on.png") });
+    }
+
+    // Restore setting to default OFF
+    await popup.evaluate(() => {
+      const toggle = document.getElementById("auto-mask-single-names-toggle");
+      if (toggle && toggle.checked) toggle.click();
+    });
+    await popup.waitForTimeout(100);
+
+    out.a1 = {
+      toggleOffState,
+      offNameFindings: offNameFindings.map((f) => ({
+        id: f.id,
+        preview: f.preview,
+        selected: f.selected,
+        first: f.parsedName?.first,
+        last: f.parsedName?.last,
+      })),
+      offOverlayMaskCount: offOverlayMasks.length,
+      toggleOnState,
+      onNameFindings: onNameFindings.map((f) => ({
+        id: f.id,
+        preview: f.preview,
+        selected: f.selected,
+        first: f.parsedName?.first,
+        last: f.parsedName?.last,
+      })),
+      onOverlayMaskCount: onOverlayMasks.length,
+    };
+    console.log(
+      `  A1 OFF: findings=${offNameFindings.length} selected=${offNameFindings.filter((f) => f.selected).length} masks=${offOverlayMasks.length} | ON: findings=${onNameFindings.length} selected=${onNameFindings.filter((f) => f.selected).length} masks=${onOverlayMasks.length}`
+    );
+  }
+
+  // -------------------------------------------------------------------------
   // STAGE: PASTE (Real clipboard Ctrl+V, 15 trials, dialog latency + 0 escapes)
   // -------------------------------------------------------------------------
   if (shouldRun("paste")) {
@@ -1337,10 +1448,29 @@ const runP6Check = modeArg === "p6";
 const runP11Check = modeArg === "p11";
 const runC2Check = modeArg === "c2";
 const runC3Check = modeArg === "c3";
+const runA1Check = modeArg === "a1";
 const runPasteCheck = modeArg === "gate";
 const runLatencyP7Check = modeArg === "p7";
 
 if (IS_GATE) {
+  if (runA1Check) {
+    const a1 = out.a1;
+    if (
+      !a1 ||
+      !a1.toggleOffState?.exists ||
+      a1.toggleOffState?.checked !== false ||
+      !a1.toggleOffState?.helpText ||
+      a1.offNameFindings?.length !== 2 ||
+      a1.offNameFindings?.filter((f) => f.selected).length !== 1 ||
+      a1.offOverlayMaskCount !== 1 ||
+      a1.toggleOnState?.checked !== true ||
+      a1.onNameFindings?.length !== 2 ||
+      a1.onNameFindings?.filter((f) => f.selected).length !== 2 ||
+      a1.onOverlayMaskCount !== 2
+    ) {
+      out.gateFailures.push(`A1 auto-mask single names check failed: ${JSON.stringify(a1)}`);
+    }
+  }
   if (runC3Check) {
     const c3 = out.c3;
     if (

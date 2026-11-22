@@ -302,6 +302,7 @@ export interface ScanSettingsMessage {
   /** Session timeout in milliseconds, or 0 for "never". */
   sessionTimeoutMs: number;
   confidenceThresholds?: Record<FindingCategory, number>;
+  autoMaskSingleNames?: boolean;
   windowChars?: number;
   windowOverlapChars?: number;
   maxTotalWindows?: number;

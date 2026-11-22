@@ -811,6 +811,11 @@
             <fieldset id="category-list" class="category-fieldset">
               <legend data-i18n="categories_label">Protection Categories</legend>
             </fieldset>
+            <label class="toggle-row" id="auto-mask-single-names-row">
+              <input id="auto-mask-single-names-toggle" type="checkbox" role="switch" aria-checked="false" />
+              <span data-i18n="auto_mask_single_names_toggle">Auto-mask single names (Possible name)</span>
+            </label>
+            <p class="footnote" id="auto-mask-single-names-desc" data-i18n="auto_mask_single_names_desc">Default off: single names remain review-only (unchecked) to avoid false positives, while multi-part structured names still auto-mask.</p>
             <p class="footnote" data-i18n="threshold_disclosure">Compliance presets choose which categories are detected. Every finding above a category's confidence threshold is reported; nothing is silently discarded.</p>
           <div class="form-row">
             <label for="threshold-category-select" data-i18n="threshold_category_label">Category confidence threshold</label>

@@ -2607,8 +2607,8 @@ export async function refreshProtectionStatus(): Promise<ProtectionStatusSnapsho
     }
   }
 
-  for (const elId of ["threshold-category-select", "threshold-value-select", "threshold-apply-all-btn"]) {
-    const el = document.getElementById(elId) as HTMLSelectElement | HTMLButtonElement | null;
+  for (const elId of ["threshold-category-select", "threshold-value-select", "threshold-apply-all-btn", "auto-mask-single-names-toggle"]) {
+    const el = document.getElementById(elId) as HTMLSelectElement | HTMLButtonElement | HTMLInputElement | null;
     if (el) {
       el.disabled = isLocked;
       if (isLocked) el.title = t(lang, "managed_lock_notice");
@@ -3409,6 +3409,17 @@ export async function initPopup(): Promise<void> {
     });
   }
 
+  const autoMaskSingleNamesToggle = document.getElementById("auto-mask-single-names-toggle") as HTMLInputElement | null;
+  if (autoMaskSingleNamesToggle) {
+    autoMaskSingleNamesToggle.checked = settings.autoMaskSingleNames;
+    autoMaskSingleNamesToggle.setAttribute("aria-checked", autoMaskSingleNamesToggle.checked ? "true" : "false");
+    autoMaskSingleNamesToggle.addEventListener("change", async () => {
+      autoMaskSingleNamesToggle.setAttribute("aria-checked", autoMaskSingleNamesToggle.checked ? "true" : "false");
+      const current = await loadSettings();
+      await saveSettings({ ...current, autoMaskSingleNames: autoMaskSingleNamesToggle.checked });
+    });
+  }
+
   const pasteGuardToggle = document.getElementById("paste-guard-toggle") as HTMLInputElement | null;
   const alwaysOnToggle = document.getElementById("always-on-toggle") as HTMLInputElement | null;
   const grantAccessBtn = document.getElementById("grant-access-btn") as HTMLButtonElement | null;
@@ -3766,6 +3777,10 @@ export async function initPopup(): Promise<void> {
     if (placeholderToggle) {
       placeholderToggle.checked = defaults.maskPlaceholders;
       placeholderToggle.setAttribute("aria-checked", "false");
+    }
+    if (autoMaskSingleNamesToggle) {
+      autoMaskSingleNamesToggle.checked = defaults.autoMaskSingleNames;
+      autoMaskSingleNamesToggle.setAttribute("aria-checked", "false");
     }
     // Mode toggles, banner, categories, and lock notice are synced by the
     // refreshProtectionStatus() call above.

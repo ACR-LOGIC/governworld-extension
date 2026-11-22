@@ -115,6 +115,7 @@ function buildScanSettingsMessage(
             ? 15 * 60 * 1000
             : 30 * 60 * 1000,
     confidenceThresholds: settings.confidenceThresholds,
+    autoMaskSingleNames: settings.autoMaskSingleNames,
   };
 }
 

@@ -1,0 +1,50 @@
+{
+  "generatedAt": "2026-11-22T00:31:15.725Z",
+  "mode": "a1",
+  "stage": "a1",
+  "executablePath": "C:\\Users\\omg\\AppData\\Local\\ms-playwright\\chromium-1255\\chrome-win64\\chrome.exe",
+  "browserVersion": "Chrome/159.0.8154.6",
+  "nodeVersion": "v22.22.2",
+  "scan": {},
+  "paste": {},
+  "docs": {},
+  "ocrNode": {},
+  "network": {},
+  "gateFailures": [],
+  "a1": {
+    "toggleOffState": {
+      "exists": true,
+      "checked": false,
+      "helpText": "Default off: single names remain review-only (unchecked) to avoid false positives, while multi-part structured names still auto-mask."
+    },
+    "offNameFindings": [
+      {
+        "id": "possible_name_34_39_0",
+        "preview": "********",
+        "selected": false
+      },
+      {
+        "id": "possible_name_49_63_1",
+        "preview": "********",
+        "selected": true
+      }
+    ],
+    "offOverlayMaskCount": 1,
+    "toggleOnState": {
+      "checked": true
+    },
+    "onNameFindings": [
+      {
+        "id": "possible_name_34_39_0",
+        "preview": "********",
+        "selected": true
+      },
+      {
+        "id": "possible_name_49_63_1",
+        "preview": "********",
+        "selected": true
+      }
+    ],
+    "onOverlayMaskCount": 2
+  }
+}

@@ -527,6 +527,7 @@ export function isScanSettings(value: unknown): value is ScanSettingsMessage {
     typeof value.sessionTimeoutMs === "number" &&
     value.sessionTimeoutMs >= 0 &&
     (value.confidenceThresholds === undefined || isConfidenceThresholds(value.confidenceThresholds)) &&
+    (value.autoMaskSingleNames === undefined || typeof value.autoMaskSingleNames === "boolean") &&
     (value.windowChars === undefined || (typeof value.windowChars === "number" && Number.isSafeInteger(value.windowChars) && value.windowChars >= 100)) &&
     (value.windowOverlapChars === undefined || (typeof value.windowOverlapChars === "number" && Number.isSafeInteger(value.windowOverlapChars) && value.windowOverlapChars >= 0)) &&
     (value.maxTotalWindows === undefined || (typeof value.maxTotalWindows === "number" && Number.isSafeInteger(value.maxTotalWindows) && value.maxTotalWindows >= 1))

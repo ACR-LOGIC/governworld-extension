@@ -1486,6 +1486,8 @@ export const UI_TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     "guide_dialog_title": "Feature Guide",
     "guide_open_all_btn": "View All 21 Guides",
     "guide_got_it_btn": "Got It — Return to Work",
+    "auto_mask_single_names_toggle": "Auto-mask single names (Possible name)",
+    "auto_mask_single_names_desc": "Default off: single names remain review-only (unchecked) to avoid false positives, while multi-part structured names still auto-mask.",
   },
   es: {
     brand_title: "GovernWorld",
@@ -2039,6 +2041,8 @@ export const UI_TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     "guide_dialog_title": "Guía de funciones",
     "guide_open_all_btn": "Ver las 21 guías",
     "guide_got_it_btn": "Entendido — Volver",
+    "auto_mask_single_names_toggle": "Auto-enmascarar nombres individuales (Posible nombre)",
+    "auto_mask_single_names_desc": "Desactivado por defecto: los nombres de una sola palabra permanecen solo para revisión (sin marcar) para evitar falsos positivos, mientras que los nombres compuestos sí se auto-enmascaran.",
   },
   fr: {
     brand_title: "GovernWorld",
@@ -2592,6 +2596,8 @@ export const UI_TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     "guide_dialog_title": "Guide des fonctionnalités",
     "guide_open_all_btn": "Voir les 21 guides",
     "guide_got_it_btn": "Compris — Retour",
+    "auto_mask_single_names_toggle": "Masquer automatiquement les prénoms seuls (Nom probable)",
+    "auto_mask_single_names_desc": "Désactivé par défaut : les noms d'un seul mot restent à vérifier manuellement (non cochés) pour éviter les faux positifs, tandis que les noms complets sont masqués automatiquement.",
   },
   de: {
     brand_title: "GovernWorld",
@@ -3145,6 +3151,8 @@ export const UI_TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     "guide_dialog_title": "Funktionsanleitung",
     "guide_open_all_btn": "Alle 21 Anleitungen",
     "guide_got_it_btn": "Verstanden — Zurück",
+    "auto_mask_single_names_toggle": "Einzelne Namen automatisch maskieren (Möglicher Name)",
+    "auto_mask_single_names_desc": "Standardmäßig aus: Einzelnamen bleiben nur zur Überprüfung (nicht ausgewählt), um Fehlalarme zu vermeiden; mehrteilige Namen werden weiterhin automatisch maskiert.",
   },
   ja: {
     brand_title: "GovernWorld",
@@ -3698,6 +3706,8 @@ export const UI_TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     "guide_dialog_title": "機能ガイド",
     "guide_open_all_btn": "全21件のガイドを見る",
     "guide_got_it_btn": "了解 — 作業に戻る",
+    "auto_mask_single_names_toggle": "単一語の名前を自動マスク（人名の可能性）",
+    "auto_mask_single_names_desc": "既定でオフ：誤検知を防ぐため単一語の名前は確認専用（未チェック）となり、姓名が揃った構造化人名は自動マスクされます。",
   },
   pt: {
     brand_title: "GovernWorld",
@@ -4251,6 +4261,8 @@ export const UI_TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     "guide_dialog_title": "Guia de Recursos",
     "guide_open_all_btn": "Ver os 21 Guias",
     "guide_got_it_btn": "Entendi — Voltar",
+    "auto_mask_single_names_toggle": "Mascarar automaticamente nomes únicos (Nome provável)",
+    "auto_mask_single_names_desc": "Desativado por padrão: nomes de uma única palavra permanecem apenas para revisão (desmarcados) para evitar falsos positivos, enquanto nomes compostos são mascarados automaticamente.",
   },
   zh: {
     brand_title: "GovernWorld",
@@ -4804,6 +4816,8 @@ export const UI_TRANSLATIONS: Record<LanguageCode, Record<string, string>> = {
     "guide_dialog_title": "功能指南",
     "guide_open_all_btn": "查看全部 21 项指南",
     "guide_got_it_btn": "知道了 — 返回工作",
+    "auto_mask_single_names_toggle": "自动遮罩单词人名（可能的人名）",
+    "auto_mask_single_names_desc": "默认关闭：单个词的人名仅在审阅列表中显示（默认不勾选）以避免误报，而包含姓名的完整人名仍会自动勾选遮罩。",
   },
 };
 

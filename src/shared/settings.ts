@@ -313,6 +313,8 @@ export interface Settings {
   defaultRedactionStyle: RedactionStyle;
   /** Default text stamp label for Document Studio. */
   defaultStampText: string;
+  /** When true, single-token possible_name findings are auto-selected for masking; default false (review-only). */
+  autoMaskSingleNames: boolean;
 }
 
 function defaultThresholds(): Record<FindingCategory, number> {
@@ -375,6 +377,7 @@ export const DEFAULT_SETTINGS: Settings = {
   sessionTimeout: "never",
   defaultRedactionStyle: "blackout",
   defaultStampText: "[REDACTED]",
+  autoMaskSingleNames: false,
 };
 
 export function isCategory(value: unknown): value is FindingCategory {
@@ -476,6 +479,7 @@ export function normalizeSettings(raw: unknown): Settings {
   const defaultStampText = typeof raw.defaultStampText === "string" && raw.defaultStampText.trim().length > 0 && raw.defaultStampText.length <= 50
     ? raw.defaultStampText.trim()
     : base.defaultStampText;
+  const autoMaskSingleNames = raw.autoMaskSingleNames === true;
 
   return {
     mode,
@@ -508,6 +512,7 @@ export function normalizeSettings(raw: unknown): Settings {
     sessionTimeout,
     defaultRedactionStyle,
     defaultStampText,
+    autoMaskSingleNames,
   };
 }
 

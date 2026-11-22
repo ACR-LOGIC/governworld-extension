@@ -34,6 +34,7 @@ export const SETTING_OWNERSHIP_MAP: Record<string, SettingOwnership> = {
   defaultRedactionStyle: "administrator",
   defaultStampText: "administrator",
   customRules: "administrator",
+  autoMaskSingleNames: "administrator",
 
   // --- User-controlled settings ---
   language: "user",
