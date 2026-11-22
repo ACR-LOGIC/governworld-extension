@@ -169,6 +169,15 @@ export interface PreviewOutput {
   truncated: boolean;
 }
 
+export const LOW_OCR_CONFIDENCE_THRESHOLD = 60;
+
+export function isLowOcrConfidencePage(tokens: readonly { text: string; confidence: number }[]): boolean {
+  const nonEmpty = tokens.filter((t) => t.text.trim().length > 0);
+  if (nonEmpty.length === 0) return true;
+  const mean = nonEmpty.reduce((sum, t) => sum + t.confidence, 0) / nonEmpty.length;
+  return mean < LOW_OCR_CONFIDENCE_THRESHOLD;
+}
+
 export async function runDocumentPreview(input: PreviewInput, signal?: AbortSignal): Promise<PreviewOutput> {
   if (signal?.aborted) throw new DocumentCancelledError();
   const { pages, truncated } = await loadPages(input, input.maxPages, input.pageOffset ?? 0, signal);
@@ -178,6 +187,7 @@ export async function runDocumentPreview(input: PreviewInput, signal?: AbortSign
   try {
     for (const page of pages) {
       if (signal?.aborted) throw new DocumentCancelledError();
+      let pageLowOcr = false;
       if (page.tokens && page.tokens.length > 0) {
         // Same assembler OCR uses, so text and offsets cannot disagree.
         ocrResults.push({
@@ -188,7 +198,9 @@ export async function runDocumentPreview(input: PreviewInput, signal?: AbortSign
           fullText: assembleOcrText(page.tokens),
         });
       } else {
-        ocrResults.push(await ocrCanvas(page.canvas, page.index, input.ocrLanguage ?? "eng", signal));
+        const ocrPage = await ocrCanvas(page.canvas, page.index, input.ocrLanguage ?? "eng", signal);
+        pageLowOcr = isLowOcrConfidencePage(ocrPage.tokens);
+        ocrResults.push(ocrPage);
       }
       if (signal?.aborted) throw new DocumentCancelledError();
 
@@ -210,6 +222,7 @@ export async function runDocumentPreview(input: PreviewInput, signal?: AbortSign
         heightPx: page.heightPx,
         previewKey,
         ...(pageBytes ? { pageImageKey } : {}),
+        ...(pageLowOcr ? { lowOcrConfidence: true } : {}),
         findings: [],
       });
     }

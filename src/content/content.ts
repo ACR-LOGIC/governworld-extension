@@ -6,6 +6,12 @@ import { applySelectionExcludingAttrs, attributeAt, buildAttrScan, collectAttrRe
 import type { AttrScan } from "./attrs.js";
 import { detect, detectWithCoverage, maskValue, maskContext, placeholderLabelFor, type RawMatch } from "./detect.js";
 import { parseName, type ParsedName } from "./detectors/nameParser.js";
+import { ensureNameDictionariesLoaded, isNameDictionariesLoaded } from "./detectors/nameDictionaries.js";
+import {
+  ensureMedicalDictionaryLoaded,
+  isMedicalDictionaryLoaded,
+  detectMedicalDictionaryTerms,
+} from "./detectors/medicalDictionary.js";
 import { createOverlay } from "./overlay.js";
 import type { OverlayController } from "./overlay.js";
 import { initPasteGuard } from "./pasteGuard.js";
@@ -475,7 +481,21 @@ if (g.__gwRedactionContentLoaded !== true) {
           end: slice.globalStartOffset + m.end,
         }));
         if (settings.enabledCategories.includes("possible_name")) {
+          if (!isNameDictionariesLoaded() && winMatches.some((m) => m.category === "possible_name")) {
+            await ensureNameDictionariesLoaded();
+          }
           winMatches = enrichAndBoostNames(winMatches);
+        }
+        if (settings.medicalDictionaryEnabled === true) {
+          if (!isMedicalDictionaryLoaded()) {
+            await ensureMedicalDictionaryLoaded();
+          }
+          const medMatches = detectMedicalDictionaryTerms(slice.combined).map((m) => ({
+            ...m,
+            start: slice.globalStartOffset + m.start,
+            end: slice.globalStartOffset + m.end,
+          }));
+          winMatches.push(...medMatches);
         }
         rawMatches.push(...winMatches);
         windowsScanned += 1;
@@ -516,6 +536,9 @@ if (g.__gwRedactionContentLoaded !== true) {
         end: frameGlobalStart + m.end,
       }));
       if (settings.enabledCategories.includes("possible_name")) {
+        if (!isNameDictionariesLoaded() && frameMatches.some((m) => m.category === "possible_name")) {
+          await ensureNameDictionariesLoaded();
+        }
         frameMatches = enrichAndBoostNames(frameMatches);
       }
       rawMatches.push(...frameMatches);
@@ -1219,6 +1242,9 @@ if (g.__gwRedactionContentLoaded !== true) {
     const threshold = (cat: FindingCategory) => settings.confidenceThresholds?.[cat] ?? 0;
     let deltaMatches = detect(newBuilt.combined, settings.enabledCategories, currentCustomPatterns);
     if (settings.enabledCategories.includes("possible_name")) {
+      if (!isNameDictionariesLoaded() && deltaMatches.some((m) => m.category === "possible_name")) {
+        void ensureNameDictionariesLoaded();
+      }
       deltaMatches = enrichAndBoostNames(deltaMatches);
     }
     deltaMatches = deltaMatches.filter((m) => m.confidence >= threshold(m.category));
@@ -1426,6 +1452,7 @@ interface ScanSettings {
   sessionTimeoutMs: number;
   confidenceThresholds?: Record<FindingCategory, number>;
   autoMaskSingleNames?: boolean;
+  medicalDictionaryEnabled?: boolean;
   windowChars?: number;
   windowOverlapChars?: number;
   maxTotalWindows?: number;

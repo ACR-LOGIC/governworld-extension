@@ -160,6 +160,7 @@ function isDocPageMeta(value: unknown): value is DocPageMeta {
   // and the review page falls back to the thumbnail), but when present it must
   // still be a well-formed store key rather than an arbitrary string.
   if (value.pageImageKey !== undefined && !isPageImageKey(value.pageImageKey)) return false;
+  if (value.lowOcrConfidence !== undefined && typeof value.lowOcrConfidence !== "boolean") return false;
   return (
     typeof value.index === "number" &&
     typeof value.widthPx === "number" &&
@@ -528,6 +529,7 @@ export function isScanSettings(value: unknown): value is ScanSettingsMessage {
     value.sessionTimeoutMs >= 0 &&
     (value.confidenceThresholds === undefined || isConfidenceThresholds(value.confidenceThresholds)) &&
     (value.autoMaskSingleNames === undefined || typeof value.autoMaskSingleNames === "boolean") &&
+    (value.medicalDictionaryEnabled === undefined || typeof value.medicalDictionaryEnabled === "boolean") &&
     (value.windowChars === undefined || (typeof value.windowChars === "number" && Number.isSafeInteger(value.windowChars) && value.windowChars >= 100)) &&
     (value.windowOverlapChars === undefined || (typeof value.windowOverlapChars === "number" && Number.isSafeInteger(value.windowOverlapChars) && value.windowOverlapChars >= 0)) &&
     (value.maxTotalWindows === undefined || (typeof value.maxTotalWindows === "number" && Number.isSafeInteger(value.maxTotalWindows) && value.maxTotalWindows >= 1))
@@ -881,6 +883,10 @@ export function validateMessage(raw: unknown): ValidationResult {
       if (typeof raw.code !== "string") return { ok: false, error: "Invalid error code" };
       if (typeof raw.userMessage !== "string") return { ok: false, error: "Invalid userMessage" };
       return { ok: true, message: { type, requestId, sessionId: raw.sessionId, code: raw.code, userMessage: raw.userMessage } };
+    }
+    case "CONTENT_GET_NAME_DICTIONARIES":
+    case "CONTENT_GET_MEDICAL_DICTIONARY": {
+      return { ok: true, message: { type, requestId } };
     }
     case "APPLY_MASKS":
     case "COPY_REDACTED_TEXT": {

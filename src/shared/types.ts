@@ -333,6 +333,7 @@ export interface ScanSettingsMessage {
   sessionTimeoutMs: number;
   confidenceThresholds?: Record<FindingCategory, number>;
   autoMaskSingleNames?: boolean;
+  medicalDictionaryEnabled?: boolean;
   windowChars?: number;
   windowOverlapChars?: number;
   maxTotalWindows?: number;
@@ -368,6 +369,8 @@ export type WorkerMessage =
       totalChunks?: number;
     }
   | { type: "CONTENT_ERROR"; requestId: string; sessionId: string; code: string; userMessage: string }
+  | { type: "CONTENT_GET_NAME_DICTIONARIES"; requestId: string }
+  | { type: "CONTENT_GET_MEDICAL_DICTIONARY"; requestId: string }
   | { type: "APPLY_MASKS"; requestId: string; sessionId: string; findingIds: string[] }
   | { type: "REMOVE_MASKS"; requestId: string; sessionId: string }
   | { type: "COPY_REDACTED_TEXT"; requestId: string; sessionId: string; findingIds: string[] }
@@ -456,6 +459,8 @@ export interface DocPageMeta {
    * `previewKey` when it is absent or its bytes have gone.
    */
   pageImageKey?: string;
+  /** True when OCR ran on this page with low/empty token confidence (uncertain, never clean). */
+  lowOcrConfidence?: boolean;
   findings: Finding[];
 }
 
@@ -742,6 +747,8 @@ export const MESSAGE_TYPES = new Set<string>([
   "SCAN_RESULT_CHUNK",
   "SCAN_RESULT",
   "CONTENT_ERROR",
+  "CONTENT_GET_NAME_DICTIONARIES",
+  "CONTENT_GET_MEDICAL_DICTIONARY",
   "APPLY_MASKS",
   "REMOVE_MASKS",
   "COPY_REDACTED_TEXT",

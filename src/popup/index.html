@@ -832,6 +832,11 @@
               <span data-i18n="auto_mask_single_names_toggle">Auto-mask single names (Possible name)</span>
             </label>
             <p class="footnote" id="auto-mask-single-names-desc" data-i18n="auto_mask_single_names_desc">Default off: single names remain review-only (unchecked) to avoid false positives, while multi-part structured names still auto-mask.</p>
+            <label class="toggle-row" id="medical-dictionary-row">
+              <input id="medical-dictionary-toggle" type="checkbox" role="switch" aria-checked="false" />
+              <span data-i18n="medical_dictionary_toggle">Medical dictionary (diagnoses &amp; medications)</span>
+            </label>
+            <p class="footnote" id="medical-dictionary-desc" data-i18n="medical_dictionary_desc">Default off: lazy-loads an offline clinical term list (conditions, medications, procedures) only when enabled.</p>
             <p class="footnote" data-i18n="threshold_disclosure">Compliance presets choose which categories are detected. Every finding above a category's confidence threshold is reported; nothing is silently discarded.</p>
           <div class="form-row">
             <label for="threshold-category-select" data-i18n="threshold_category_label">Category confidence threshold</label>

@@ -83,15 +83,15 @@
 
 ---
 
-## 3. Expressly Unmeasured Until Scheduled Tasks Run
+## 3. Phase 7 Measured Results (`M1`–`M5`, `C4`–`C11`, `P9`)
 
-Per `GW-BENCH-2026-001 §13.3` and `GW-DEV-DIRECTIVE-2026-001` Section 5:
-- Real-scan OCR accuracy (printed, handwritten, rotated, low-res) — **Target: `P8 / M1`**
-- Live submit / Enter interception — **Target: `P13 / M2`** (and rich-text / shadow-DOM / drag-drop under `C8`)
-- DOCX end-to-end processing timing — **Target: `P14 / M3`**
-- Live SPA navigation and cross-origin iframe scanning — **Target: `P14 / M4`**
-- Peak OS native RSS during OCR (separate from JS heap) — **Target: `P14 / M5`**
-- MANAGE-mode pairing, policy lockdown, fail-closed offline continuity, and wire heartbeat inspection — **Target: `C9`**
-- Label-free clinical prose name recall — **Target: `C4`**
-- PDF/image export metadata stripping and finished-PDF OCR re-decode — **Target: `C5`, `P9`**
-- Multi-zoom/DPI/rotation redaction-box alignment — **Target: `C6`**
+Measured via `node scripts/measure-m1-m5.mjs` ([`results-m1-m5.json`](results-m1-m5.json)) and Vitest suites on Windows (`win32`, Node `v22.22.2`):
+
+- **`P8 / M1` (Realistic scanned typography PNG + bundled Tesseract `eng`):** `342.53 ms`, mean word confidence `86`, `4/5` PII items recognized (`Maria Gonzalez`, `04/22/1990`, `jane.doe@example.test`, `555-234-5678`; `219-09-9999` misread by OCR on serif numerals).
+- **`P13 / M2` (Live Enter / Submit):** `228.73 ms`, `submittedAfterEnter = false` (intercepted).
+- **`P14 / M3` (DOCX extraction timing):** `1p = 15.17 ms` (`63` chars), `5p = 2.85 ms` (`315` chars), `20p = 3.65 ms` (`1271` chars), 100% SSN & email token preservation (`1/5/20`).
+- **`P14 / M4` (SPA + same/cross-origin iframe):** `scanAck = true`, `crossOriginIframePresent = true`.
+- **`P14 / M5` (Native OS RSS vs JS Heap — strictly separate):**
+  - Node process RSS: `108.71 MB` | Node JS heap used: `51.13 MB`
+  - Chrome renderer JS heap: `5.94 MB` | Chrome processes total OS `WorkingSet64`: `1871.56 MB`
+- **`C4`–`C11`, `P9`:** Verified in `tests/name-recall-c4.test.ts` (2/2), `tests/export-metadata-c5.test.ts` (1/1), `tests/box-alignment-matrix-c6.test.ts` (3/3), `tests/ocr-confidence-c7.test.ts` (3/3), `tests/guard-matrix-c8.test.ts` (1/1), `tests/pairing-and-heartbeat.test.ts` + `tests/m3-fail-closed-hardening.test.ts` (20/20), `docs/benchmarks/ci-baselines.json` + `scripts/run-ci-gates.mjs`, `tests/review-a11y-c11.test.ts` (1/1), and `tests/export-secret-recovery-gate.test.ts` (1/1).

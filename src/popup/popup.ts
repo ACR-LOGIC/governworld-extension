@@ -3528,6 +3528,17 @@ export async function initPopup(): Promise<void> {
     });
   }
 
+  const medicalDictionaryToggle = document.getElementById("medical-dictionary-toggle") as HTMLInputElement | null;
+  if (medicalDictionaryToggle) {
+    medicalDictionaryToggle.checked = settings.medicalDictionaryEnabled;
+    medicalDictionaryToggle.setAttribute("aria-checked", medicalDictionaryToggle.checked ? "true" : "false");
+    medicalDictionaryToggle.addEventListener("change", async () => {
+      medicalDictionaryToggle.setAttribute("aria-checked", medicalDictionaryToggle.checked ? "true" : "false");
+      const current = await loadSettings();
+      await saveSettings({ ...current, medicalDictionaryEnabled: medicalDictionaryToggle.checked });
+    });
+  }
+
   const pasteGuardToggle = document.getElementById("paste-guard-toggle") as HTMLInputElement | null;
   const alwaysOnToggle = document.getElementById("always-on-toggle") as HTMLInputElement | null;
   const grantAccessBtn = document.getElementById("grant-access-btn") as HTMLButtonElement | null;
@@ -3889,6 +3900,10 @@ export async function initPopup(): Promise<void> {
     if (autoMaskSingleNamesToggle) {
       autoMaskSingleNamesToggle.checked = defaults.autoMaskSingleNames;
       autoMaskSingleNamesToggle.setAttribute("aria-checked", "false");
+    }
+    if (medicalDictionaryToggle) {
+      medicalDictionaryToggle.checked = defaults.medicalDictionaryEnabled;
+      medicalDictionaryToggle.setAttribute("aria-checked", "false");
     }
     // Mode toggles, banner, categories, and lock notice are synced by the
     // refreshProtectionStatus() call above.
@@ -5558,8 +5573,21 @@ export async function initPopup(): Promise<void> {
       // on an already-processed document. The studio itself now carries the
       // result (page count, per-page findings, and the findings badge).
       hideDocProgress();
+      const hasLowOcrConfidence = message.pages.some((p) => p.lowOcrConfidence === true);
       if (found === 0) {
-        setDocStatus("No sensitive values were found in this document.", true);
+        if (hasLowOcrConfidence) {
+          setDocStatus(
+            "Scan uncertain — low OCR confidence on one or more pages; review manually before sharing.",
+            true
+          );
+        } else {
+          setDocStatus("No sensitive values were found in this document.", true);
+        }
+      } else if (hasLowOcrConfidence) {
+        setDocStatus(
+          "Some pages had low OCR confidence — review manually for missed items.",
+          true
+        );
       } else {
         setDocStatus("", false);
       }

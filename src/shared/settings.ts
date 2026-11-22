@@ -315,6 +315,8 @@ export interface Settings {
   defaultStampText: string;
   /** When true, single-token possible_name findings are auto-selected for masking; default false (review-only). */
   autoMaskSingleNames: boolean;
+  /** When true, lazy-loads the clinical/medical dictionary detector (A3 / D3); default false. */
+  medicalDictionaryEnabled: boolean;
 }
 
 function defaultThresholds(): Record<FindingCategory, number> {
@@ -378,6 +380,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultRedactionStyle: "blackout",
   defaultStampText: "[REDACTED]",
   autoMaskSingleNames: false,
+  medicalDictionaryEnabled: false,
 };
 
 export function isCategory(value: unknown): value is FindingCategory {
@@ -480,6 +483,7 @@ export function normalizeSettings(raw: unknown): Settings {
     ? raw.defaultStampText.trim()
     : base.defaultStampText;
   const autoMaskSingleNames = raw.autoMaskSingleNames === true;
+  const medicalDictionaryEnabled = raw.medicalDictionaryEnabled === true;
 
   return {
     mode,
@@ -513,6 +517,7 @@ export function normalizeSettings(raw: unknown): Settings {
     defaultRedactionStyle,
     defaultStampText,
     autoMaskSingleNames,
+    medicalDictionaryEnabled,
   };
 }
 

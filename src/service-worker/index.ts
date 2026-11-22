@@ -116,6 +116,7 @@ function buildScanSettingsMessage(
             : 30 * 60 * 1000,
     confidenceThresholds: settings.confidenceThresholds,
     autoMaskSingleNames: settings.autoMaskSingleNames,
+    medicalDictionaryEnabled: settings.medicalDictionaryEnabled,
   };
 }
 
@@ -2721,7 +2722,34 @@ const CONTENT_MESSAGE_TYPES = new Set<ExtensionMessage["type"]>([
   "SCAN_RESULT",
   "COPY_REDACTED_TEXT_RESULT",
   "CONTENT_ERROR",
+  "CONTENT_GET_NAME_DICTIONARIES",
+  "CONTENT_GET_MEDICAL_DICTIONARY",
 ]);
+
+let cachedMedicalDictionary: { terms: string[] } | null = null;
+async function getMedicalDictionaryPayload(): Promise<{ terms: string[] }> {
+  if (cachedMedicalDictionary) return cachedMedicalDictionary;
+  const resp = await fetch(chrome.runtime.getURL("assets/medical-dictionary.json"));
+  if (!resp.ok) throw new Error(`Failed to load medical-dictionary.json (${resp.status})`);
+  const parsed = (await resp.json()) as { terms?: unknown };
+  cachedMedicalDictionary = {
+    terms: Array.isArray(parsed.terms) ? parsed.terms.filter((t): t is string => typeof t === "string") : [],
+  };
+  return cachedMedicalDictionary;
+}
+
+let cachedNameDictionaries: { first: string; last: string } | null = null;
+async function getNameDictionariesPayload(): Promise<{ first: string; last: string }> {
+  if (cachedNameDictionaries) return cachedNameDictionaries;
+  const resp = await fetch(chrome.runtime.getURL("assets/name-dictionaries.json"));
+  if (!resp.ok) throw new Error(`Failed to load name-dictionaries.json (${resp.status})`);
+  const parsed = (await resp.json()) as { first?: string; last?: string };
+  cachedNameDictionaries = {
+    first: typeof parsed.first === "string" ? parsed.first : "",
+    last: typeof parsed.last === "string" ? parsed.last : "",
+  };
+  return cachedNameDictionaries;
+}
 
 function isTrustedExtensionPageSender(sender: chrome.runtime.MessageSender): boolean {
   return sender.id === chrome.runtime.id && Boolean(sender.url?.startsWith(chrome.runtime.getURL("")));
@@ -2763,6 +2791,16 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
       return;
     }
     switch (msg.type) {
+      case "CONTENT_GET_NAME_DICTIONARIES": {
+        const payload = await getNameDictionariesPayload();
+        sendResponse({ ok: true, ...payload });
+        return;
+      }
+      case "CONTENT_GET_MEDICAL_DICTIONARY": {
+        const payload = await getMedicalDictionaryPayload();
+        sendResponse({ ok: true, ...payload });
+        return;
+      }
       case "SCAN_PROGRESS":
       case "SCAN_RESULT_CHUNK":
       case "SCAN_RESULT":

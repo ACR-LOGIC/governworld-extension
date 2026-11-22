@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 import {
-  FIRST_NAMES, LAST_NAMES, MIDDLE_NAMES, MIDDLE_INITIALS,
+  isFirstNameEntry, isLastNameEntry, isMiddleNameEntry, MIDDLE_INITIALS,
   NAME_PREFIXES, NAME_SUFFIXES, PROFESSIONAL_CREDENTIALS, GENDER_INDICATORS,
 } from "./nameDictionaries.js";
 
@@ -23,12 +23,17 @@ const GENDER = GENDER_INDICATORS;
 
 function norm(s: string | null | undefined): string {
   if (s == null) return "";
-  return String(s).trim().toUpperCase();
+  return String(s)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\u0141|\u0142/g, "L")
+    .trim()
+    .toUpperCase();
 }
 
-// Strip surrounding punctuation but keep internal hyphens, apostrophes, periods
+// Strip surrounding punctuation but keep internal hyphens, apostrophes, periods, and accented Latin letters
 function cleanToken(raw: string): string {
-  return String(raw).replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9\u00C0-\u024F]+$/g, "");
+  return String(raw).replace(/^[^A-Za-z0-9\u00C0-\u024F]+|[^A-Za-z0-9\u00C0-\u024F]+$/g, "");
 }
 
 function isPrefix(t: string): boolean {
@@ -44,13 +49,13 @@ function isGenderIndicator(t: string): boolean {
   return GENDER.has(norm(t));
 }
 function isFirstName(t: string): boolean {
-  return FIRST_NAMES.has(norm(t));
+  return isFirstNameEntry(norm(t));
 }
 function isLastName(t: string): boolean {
-  return LAST_NAMES.has(norm(t));
+  return isLastNameEntry(norm(t));
 }
 function isMiddleName(t: string): boolean {
-  return MIDDLE_NAMES.has(norm(t));
+  return isMiddleNameEntry(norm(t));
 }
 function isMiddleInitial(t: string): boolean {
   const u = norm(t);
@@ -265,7 +270,7 @@ export function parseName(text: string): ParsedName {
 
   if (core.length === 1) {
     const only = core[0];
-    if (isLastName(only) && !isFirstName(only)) {
+    if ((result.prefix && isLastName(only)) || (isLastName(only) && !isFirstName(only))) {
       result.last = only;
     } else {
       result.first = only;
