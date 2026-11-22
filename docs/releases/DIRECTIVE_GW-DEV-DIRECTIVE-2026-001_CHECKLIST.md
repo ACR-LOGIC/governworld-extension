@@ -11,7 +11,7 @@ Tick a box only when the task's Definition of Done (S9) is fully met and its S6 
 - [x] **Phase 0** — Baseline confirmed and reported. Ref: `docs/releases/directive-reports/Phase-0.md` (commit `task/phase-0-baseline`)
 - [ ] **S1–S10** — Standards followed for every task; any S7 question or S8 cut recorded. Ref: `docs/releases/directive-reports/`
 - [x] **A1** Auto-mask single names, default OFF (D1) Ref: `docs/releases/directive-reports/A1.md` (branch `task/A1-auto-mask-single-names`)
-- [ ] **A2** Pinned tab picker, no auto-follow (D2) Ref: `docs/releases/directive-reports/A2.md`
+- [x] **A2** Pinned tab picker, no auto-follow (D2) Ref: `docs/releases/directive-reports/A2.md` (branch `task/A2-pinned-tab-picker`)
 - [ ] **A3** Medical dictionary, separate toggle, lazy (D3) Ref: `docs/releases/directive-reports/A3.md`
 - [ ] **A4** Accent folding, lazy-load, measured trim only Ref: `docs/releases/directive-reports/A4.md`
 - [ ] **A5** Boost-only rule, never a detection gate Ref: `docs/releases/directive-reports/A5.md`

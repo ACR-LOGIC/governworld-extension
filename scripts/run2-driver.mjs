@@ -27,10 +27,10 @@ const args = process.argv.slice(2);
 const modeArg = (args.find((a) => a.startsWith("--mode=")) || "--mode=baseline").split("=")[1];
 const stageArg = (args.find((a) => a.startsWith("--stage=")) || "--stage=all").split("=")[1];
 const outArg = args.find((a) => a.startsWith("--out="))?.slice(6);
-const TAKE_SCREENSHOTS = args.includes("--screenshot") || ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p11", "c2", "c3", "a1"].includes(modeArg);
+const TAKE_SCREENSHOTS = args.includes("--screenshot") || ["p1", "p2", "p3", "p4", "p5", "p6", "p7", "p11", "c2", "c3", "a1", "a2"].includes(modeArg);
 const SCREENSHOT_DIR = join(ROOT, "docs", "releases", "directive-reports", "screenshots");
 const RESULTS_PATH = outArg ? resolve(ROOT, outArg) : join(ROOT, "docs", "benchmarks", "results-run2.json");
-const IS_GATE = ["gate", "p1", "p2", "p3", "p4", "p5", "p6", "p7", "p11", "c2", "c3", "a1"].includes(modeArg);
+const IS_GATE = ["gate", "p1", "p2", "p3", "p4", "p5", "p6", "p7", "p11", "c2", "c3", "a1", "a2"].includes(modeArg);
 
 const executablePath = (process.env.GW_BROWSER_EXECUTABLE || "").trim() || chromium.executablePath();
 
@@ -1147,6 +1147,209 @@ try {
   }
 
   // -------------------------------------------------------------------------
+  // STAGE: A2 (Decision D2 — Pinned scan target / tab picker, no auto-follow)
+  // -------------------------------------------------------------------------
+  if (shouldRun("a2")) {
+    console.log("\n[Run 2 - A2 Pinned Tab Picker Stage]");
+    // Open 5 tabs with distinct synthetic findings:
+    // Tab 1 (reuse `page`): 1 email
+    // Tab 2: 1 phone
+    // Tab 3 (PINNED TARGET): 3 findings (SSN + Email + NPI)
+    // Tab 4: 1 credit card
+    // Tab 5: 1 DEA
+    const extraPages = [];
+    const tabSpecs = [
+      { idx: 1, title: "A2 Tab 1 - Outpatient", html: `<p>Tab 1 contact: tab1.user@clinic.test</p>` },
+      { idx: 2, title: "A2 Tab 2 - Triage", html: `<p>Tab 2 phone: (415) 555-0192</p>` },
+      { idx: 3, title: "A2 Tab 3 - Pinned Target Ward", html: `<p>Tab 3 SSN: 219-09-9999 | Email: ward3@hospital.test | NPI: 1245319599</p>` },
+      { idx: 4, title: "A2 Tab 4 - Billing", html: `<p>Tab 4 card: 4111-1111-1111-1111</p>` },
+      { idx: 5, title: "A2 Tab 5 - Pharmacy", html: `<p>Tab 5 DEA checksum valid: AB1234563</p>` },
+    ];
+
+    try {
+      const pagesByIdx = new Map();
+      pagesByIdx.set(1, page);
+      for (let i = 2; i <= 5; i++) {
+        const p = await context.newPage();
+        extraPages.push(p);
+        pagesByIdx.set(i, p);
+      }
+
+      for (const spec of tabSpecs) {
+        const p = pagesByIdx.get(spec.idx);
+        await p.goto(`${fixtureUrl}?tab=${spec.idx}`, { waitUntil: "domcontentloaded" });
+        await p.evaluate(({ title, html }) => {
+          document.title = title;
+          document.getElementById("stage").innerHTML = html;
+        }, { title: spec.title, html: spec.html });
+      }
+
+      // Refresh popup state so all 5 scannable tabs appear in #pinned-tab-select
+      await popup.evaluate(() => {
+        chrome.runtime.sendMessage({ type: "POPUP_GET_STATE", requestId: `a2-init-${Date.now()}` });
+      });
+      await popup.waitForTimeout(300);
+
+      const readPinnedUi = async () => {
+        return await popup.evaluate(() => {
+          const title = (document.getElementById("pinned-target-title")?.textContent ?? "").trim();
+          const domain = (document.getElementById("pinned-target-domain")?.textContent ?? "").trim();
+          const select = document.getElementById("pinned-tab-select");
+          const options = select
+            ? Array.from(select.options).map((o) => ({ value: o.value, text: (o.textContent ?? "").trim() }))
+            : [];
+          const warning = document.getElementById("pinned-target-warning");
+          const warningText = (document.getElementById("pinned-target-warning-text")?.textContent ?? "").trim();
+          const scanBtn = document.getElementById("scan-btn");
+          const applyBtn = document.getElementById("apply-masks-btn");
+          const findingsCount = document.querySelectorAll("#findings-list .finding").length;
+          const findingsCategories = Array.from(document.querySelectorAll("#findings-list .finding__cat")).map((el) =>
+            (el.textContent ?? "").trim()
+          );
+          return {
+            title,
+            domain,
+            selectedValue: select ? select.value : "",
+            options,
+            warningHidden: warning ? warning.hidden : true,
+            warningReason: warning?.getAttribute("data-reason") ?? "",
+            warningText,
+            scanDisabled: Boolean(scanBtn?.disabled),
+            applyDisabled: Boolean(applyBtn?.disabled),
+            findingsCount,
+            findingsCategories,
+          };
+        });
+      };
+
+      // Find Tab 3's option value in #pinned-tab-select and pin Tab 3 via the picker
+      const initUi = await readPinnedUi();
+      const tab3Opt = initUi.options.find((o) => o.text.includes("A2 Tab 3 - Pinned Target Ward"));
+      const tab3Id = tab3Opt ? Number(tab3Opt.value) : null;
+
+      await popup.evaluate((val) => {
+        const select = document.getElementById("pinned-tab-select");
+        if (select) {
+          select.value = String(val);
+          select.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      }, tab3Id);
+      await popup.waitForTimeout(250);
+
+      const clickAndWaitForState = async (buttonId) => {
+        await popup.evaluate((id) => {
+          return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => {
+              chrome.runtime.onMessage.removeListener(onMsg);
+              reject(new Error(`Timeout waiting for POPUP_STATE after clicking ${id}`));
+            }, 15_000);
+            const onMsg = (msg) => {
+              if (msg?.type === "POPUP_STATE" && !msg?.state?.scanning) {
+                clearTimeout(timer);
+                chrome.runtime.onMessage.removeListener(onMsg);
+                resolve(msg.state);
+              }
+            };
+            chrome.runtime.onMessage.addListener(onMsg);
+            document.getElementById(id)?.click();
+          });
+        }, buttonId);
+        await popup.waitForTimeout(100);
+      };
+
+      // Trigger scan on pinned Tab 3 via #scan-btn
+      await clickAndWaitForState("scan-btn");
+      await clickAndWaitForState("apply-masks-btn");
+
+      const pinnedTab3Ui = await readPinnedUi();
+      if (TAKE_SCREENSHOTS) {
+        mkdirSync(SCREENSHOT_DIR, { recursive: true });
+        await popup.screenshot({ path: join(SCREENSHOT_DIR, "A2-pinned-tab3.png") });
+      }
+
+      // Switch focus among the other 4 tabs (Tab 1, Tab 2, Tab 4, Tab 5) and trigger scans & masks
+      const focusSwitchTrials = [];
+      for (const otherIdx of [1, 2, 4, 5]) {
+        const otherPage = pagesByIdx.get(otherIdx);
+        await otherPage.bringToFront();
+        await otherPage.waitForTimeout(100);
+        await clickAndWaitForState("scan-btn");
+        await clickAndWaitForState("apply-masks-btn");
+        const uiAfter = await readPinnedUi();
+        focusSwitchTrials.push({
+          focusedTabIdx: otherIdx,
+          headerTitle: uiAfter.title,
+          selectedValue: uiAfter.selectedValue,
+          findingsCount: uiAfter.findingsCount,
+        });
+      }
+
+      // Check CDP overlay masks on Tab 3 vs Tab 5
+      const tab3Page = pagesByIdx.get(3);
+      const tab3Cdp = await context.newCDPSession(tab3Page);
+      await tab3Cdp.send("DOM.enable");
+      const tab3Masks = await readOverlayMasksViaCdp(tab3Cdp);
+
+      const tab5Page = pagesByIdx.get(5);
+      const tab5Cdp = await context.newCDPSession(tab5Page);
+      await tab5Cdp.send("DOM.enable");
+      const tab5Masks = await readOverlayMasksViaCdp(tab5Cdp);
+
+      const switchedFocusUi = await readPinnedUi();
+      if (TAKE_SCREENSHOTS) {
+        mkdirSync(SCREENSHOT_DIR, { recursive: true });
+        await popup.screenshot({ path: join(SCREENSHOT_DIR, "A2-switched-focus-still-tab3.png") });
+      }
+
+      // Navigate Tab 3 to a new URL -> verify navigation warning in popup while pin stays on Tab 3
+      await tab3Page.goto(`${fixtureUrl}?tab=3&navigated=1`, { waitUntil: "domcontentloaded" });
+      await tab3Page.evaluate(() => {
+        document.title = "A2 Tab 3 - Navigated Discharge Page";
+        document.getElementById("stage").innerHTML = `<p>Navigated page SSN: 219-09-9999</p>`;
+      });
+      await popup.waitForTimeout(350);
+      const navigatedUi = await readPinnedUi();
+      if (TAKE_SCREENSHOTS) {
+        mkdirSync(SCREENSHOT_DIR, { recursive: true });
+        await popup.screenshot({ path: join(SCREENSHOT_DIR, "A2-navigated-warning.png") });
+      }
+
+      // Close Tab 3 -> verify closed-target warning, Scan & Apply disabled, and no auto-scan of other tabs
+      await tab3Page.close();
+      extraPages.splice(extraPages.indexOf(tab3Page), 1);
+      await popup.waitForTimeout(350);
+      const closedUi = await readPinnedUi();
+      if (TAKE_SCREENSHOTS) {
+        mkdirSync(SCREENSHOT_DIR, { recursive: true });
+        await popup.screenshot({ path: join(SCREENSHOT_DIR, "A2-closed-target-warning.png") });
+      }
+
+      out.a2 = {
+        tab3Id,
+        availableTabCount: initUi.options.length - 1,
+        pinnedTab3Ui,
+        focusSwitchTrials,
+        tab3MaskCount: tab3Masks.length,
+        tab5MaskCount: tab5Masks.length,
+        switchedFocusUi,
+        navigatedUi,
+        closedUi,
+      };
+      console.log(
+        `  A2 pinnedTab3: title="${pinnedTab3Ui.title}" findings=${pinnedTab3Ui.findingsCount} masksOnTab3=${tab3Masks.length} masksOnTab5=${tab5Masks.length} | navWarning=${!navigatedUi.warningHidden} (${navigatedUi.warningReason}) | closedWarning=${!closedUi.warningHidden} (${closedUi.warningReason}) scanDisabled=${closedUi.scanDisabled}`
+      );
+    } finally {
+      for (const p of extraPages) {
+        await p.close().catch(() => undefined);
+      }
+      // Re-pin the main fixture tab so any subsequent stage has a clean state
+      await sw.evaluate(async (tabId) => {
+        await chrome.storage.session.remove("pinnedScanTarget");
+      }, fixtureTabId);
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // STAGE: PASTE (Real clipboard Ctrl+V, 15 trials, dialog latency + 0 escapes)
   // -------------------------------------------------------------------------
   if (shouldRun("paste")) {
@@ -1449,10 +1652,33 @@ const runP11Check = modeArg === "p11";
 const runC2Check = modeArg === "c2";
 const runC3Check = modeArg === "c3";
 const runA1Check = modeArg === "a1";
+const runA2Check = modeArg === "a2";
 const runPasteCheck = modeArg === "gate";
 const runLatencyP7Check = modeArg === "p7";
 
 if (IS_GATE) {
+  if (runA2Check) {
+    const a2 = out.a2;
+    if (
+      !a2 ||
+      a2.availableTabCount < 5 ||
+      !a2.pinnedTab3Ui?.title?.includes("A2 Tab 3") ||
+      a2.pinnedTab3Ui?.findingsCount !== 3 ||
+      a2.tab3MaskCount !== 3 ||
+      a2.tab5MaskCount !== 0 ||
+      !Array.isArray(a2.focusSwitchTrials) ||
+      a2.focusSwitchTrials.length !== 4 ||
+      a2.focusSwitchTrials.some((t) => !t.headerTitle.includes("A2 Tab 3") || t.findingsCount !== 3) ||
+      a2.navigatedUi?.warningHidden !== false ||
+      a2.navigatedUi?.warningReason !== "navigated" ||
+      a2.closedUi?.warningHidden !== false ||
+      a2.closedUi?.warningReason !== "closed" ||
+      a2.closedUi?.scanDisabled !== true ||
+      a2.closedUi?.applyDisabled !== true
+    ) {
+      out.gateFailures.push(`A2 pinned tab picker check failed: ${JSON.stringify(a2)}`);
+    }
+  }
   if (runA1Check) {
     const a1 = out.a1;
     if (

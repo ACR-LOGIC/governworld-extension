@@ -201,8 +201,31 @@ export interface ScanStats {
  * every message is validated at runtime on arrival.
  */
 
+export type PinnedTargetStatus = "unpinned" | "pinned" | "navigated" | "closed";
+
+export interface ScannableTabSummary {
+  tabId: number;
+  title: string;
+  url: string;
+  domain: string;
+  active: boolean;
+}
+
+export interface PinnedTargetInfo {
+  status: PinnedTargetStatus;
+  pinnedTabId: number | null;
+  title?: string;
+  url?: string;
+  domain?: string;
+  scannedUrl?: string;
+  closedTitle?: string;
+  closedDomain?: string;
+  availableTabs: ScannableTabSummary[];
+}
+
 export type PopupMessage =
   | { type: "POPUP_SCAN"; requestId: string; mode: ScanMode; tabId?: number }
+  | { type: "POPUP_PIN_TAB"; requestId: string; tabId: number | null; pinCurrent?: boolean }
   | { type: "POPUP_APPLY_MASKS"; requestId: string; findingIds: string[]; tabId?: number }
   | { type: "POPUP_REMOVE_MASKS"; requestId: string; tabId?: number }
   | { type: "POPUP_COPY_REDACTED"; requestId: string; findingIds: string[]; tabId?: number }
@@ -403,6 +426,8 @@ export interface PopupState {
   incompleteWindows?: IncompleteWindowInfo[];
   /** Explicit unscannable or partially scanned region causes surfaced in the popup (C3). */
   coverageWarnings?: CoverageWarning[];
+  /** Explicit pinned scan target state and available scannable tabs (Task A2 / Decision D2). */
+  pinnedTarget?: PinnedTargetInfo;
 }
 
 /** One processed document page for the review UI (thumbnails only, no raw text). */
@@ -651,6 +676,7 @@ export interface PurgeStagedDataResult {
 
 export const MESSAGE_TYPES = new Set<string>([
   "POPUP_SCAN",
+  "POPUP_PIN_TAB",
   "POPUP_APPLY_MASKS",
   "POPUP_REMOVE_MASKS",
   "POPUP_COPY_REDACTED",

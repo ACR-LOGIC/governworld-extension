@@ -1010,6 +1010,80 @@ function syncProfilePopoverSummary(): void {
   }
 }
 
+function renderPinnedTarget(state: PopupState): void {
+  const titleEl = document.getElementById("pinned-target-title");
+  const domainEl = document.getElementById("pinned-target-domain");
+  const selectEl = document.getElementById("pinned-tab-select") as HTMLSelectElement | null;
+  const warningEl = document.getElementById("pinned-target-warning");
+  const warningTextEl = document.getElementById("pinned-target-warning-text");
+  const scanBtn = document.getElementById("scan-btn") as HTMLButtonElement | null;
+  const applyMasksBtn = document.getElementById("apply-masks-btn") as HTMLButtonElement | null;
+
+  const pt = state.pinnedTarget;
+  if (!pt) return;
+
+  if (pt.url) {
+    currentWebTabUrl = pt.url;
+  }
+
+  if (titleEl && domainEl) {
+    if (pt.pinnedTabId !== null && pt.title) {
+      titleEl.textContent = pt.title;
+      domainEl.textContent = pt.domain ? `(${pt.domain})` : "";
+    } else {
+      titleEl.textContent = t(currentLang, "pinned_target_none");
+      domainEl.textContent = "";
+    }
+  }
+
+  if (selectEl) {
+    selectEl.replaceChildren();
+    const placeholderOpt = document.createElement("option");
+    placeholderOpt.value = "";
+    placeholderOpt.textContent = t(currentLang, "pinned_target_select_placeholder");
+    selectEl.appendChild(placeholderOpt);
+    for (const tab of pt.availableTabs) {
+      const opt = document.createElement("option");
+      opt.value = String(tab.tabId);
+      opt.textContent = tab.domain ? `${tab.title} (${tab.domain})` : tab.title;
+      selectEl.appendChild(opt);
+    }
+    selectEl.value = pt.pinnedTabId !== null ? String(pt.pinnedTabId) : "";
+  }
+
+  if (warningEl && warningTextEl) {
+    if (pt.status === "unpinned") {
+      warningEl.hidden = false;
+      warningEl.setAttribute("data-reason", "unpinned");
+      warningTextEl.textContent = t(currentLang, "pinned_warn_unpinned");
+    } else if (pt.status === "navigated") {
+      warningEl.hidden = false;
+      warningEl.setAttribute("data-reason", "navigated");
+      warningTextEl.textContent = t(currentLang, "pinned_warn_navigated", {
+        domain: pt.domain || pt.url || "new page",
+      });
+    } else if (pt.status === "closed") {
+      warningEl.hidden = false;
+      warningEl.setAttribute("data-reason", "closed");
+      warningTextEl.textContent = t(currentLang, "pinned_warn_closed", {
+        title: pt.closedTitle || pt.closedDomain || "previous tab",
+      });
+    } else {
+      warningEl.hidden = true;
+      warningEl.removeAttribute("data-reason");
+      warningTextEl.textContent = "";
+    }
+  }
+
+  const noTargetPinned = pt.pinnedTabId === null;
+  if (scanBtn) {
+    scanBtn.disabled = state.scanning || noTargetPinned;
+  }
+  if (applyMasksBtn) {
+    applyMasksBtn.disabled = noTargetPinned;
+  }
+}
+
 function renderState(state: PopupState): void {
   const status = document.getElementById("status") as HTMLParagraphElement | null;
   const scanBtn = document.getElementById("scan-btn") as HTMLButtonElement | null;
@@ -1020,6 +1094,7 @@ function renderState(state: PopupState): void {
 
   lastOperatingMode = state.operatingMode === "MANAGE" ? "MANAGE" : "LOCAL";
   syncProfilePopoverSummary();
+  renderPinnedTarget(state);
 
   const liveScanVal = document.getElementById("live-scan-value");
   if (liveScanVal) {
@@ -1043,7 +1118,8 @@ function renderState(state: PopupState): void {
     }
   }
   if (scanBtn) {
-    scanBtn.disabled = state.scanning;
+    const noTargetPinned = state.pinnedTarget !== undefined && state.pinnedTarget.pinnedTabId === null;
+    scanBtn.disabled = state.scanning || noTargetPinned;
     scanBtn.textContent = state.scanning ? t(currentLang, "scanning_btn") : t(currentLang, "scan_page_btn");
   }
 
@@ -2804,10 +2880,42 @@ export async function initPopup(): Promise<void> {
   /** Store key of the last verified redaction, if one is still staged. */
   let lastPrintFileKey: string | null = null;
 
+  const pinnedTabSelect = document.getElementById("pinned-tab-select") as HTMLSelectElement | null;
+  const pinCurrentTabBtn = document.getElementById("pin-current-tab-btn") as HTMLButtonElement | null;
+
+  pinnedTabSelect?.addEventListener("change", () => {
+    const rawVal = pinnedTabSelect.value;
+    const nextTabId = rawVal ? Number(rawVal) : null;
+    void sendMessage({
+      type: "POPUP_PIN_TAB",
+      requestId: requestId(),
+      tabId: nextTabId && Number.isSafeInteger(nextTabId) && nextTabId > 0 ? nextTabId : null,
+    });
+  });
+
+  pinCurrentTabBtn?.addEventListener("click", () => {
+    void sendMessage({
+      type: "POPUP_PIN_TAB",
+      requestId: requestId(),
+      tabId: null,
+      pinCurrent: true,
+    });
+  });
+
   scanBtn?.addEventListener("click", async () => {
+    const pt = lastState?.pinnedTarget;
+    if (pt && pt.pinnedTabId === null) {
+      return;
+    }
+    scanBtn.disabled = true;
     const current = await loadSettings();
     speakAnnouncement(t(current.language, "speech_scan_start"), current);
     const mode: ScanMode = lastState?.mode ?? current.mode;
+    if (pt && typeof pt.pinnedTabId === "number") {
+      if (pt.url) currentWebTabUrl = pt.url;
+      void sendMessage({ type: "POPUP_SCAN", requestId: requestId(), mode, tabId: pt.pinnedTabId });
+      return;
+    }
     const targetTab = await getActiveWebTab();
     if (targetTab?.id) {
       if (targetTab.url) currentWebTabUrl = targetTab.url;

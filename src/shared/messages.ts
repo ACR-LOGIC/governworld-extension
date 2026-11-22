@@ -534,6 +534,46 @@ export function isScanSettings(value: unknown): value is ScanSettingsMessage {
   );
 }
 
+const PINNED_TARGET_STATUSES = new Set<string>(["unpinned", "pinned", "navigated", "closed"]);
+
+function normalizePinnedTargetInfo(value: unknown): import("./types.js").PinnedTargetInfo | undefined {
+  if (!isRecord(value)) return undefined;
+  if (typeof value.status !== "string" || !PINNED_TARGET_STATUSES.has(value.status)) return undefined;
+  const pinnedTabId =
+    value.pinnedTabId === null
+      ? null
+      : typeof value.pinnedTabId === "number" && Number.isSafeInteger(value.pinnedTabId) && value.pinnedTabId > 0
+        ? value.pinnedTabId
+        : null;
+  const availableTabs: import("./types.js").ScannableTabSummary[] = [];
+  if (Array.isArray(value.availableTabs)) {
+    for (const item of value.availableTabs) {
+      if (availableTabs.length >= 64) break;
+      if (!isRecord(item)) continue;
+      if (typeof item.tabId !== "number" || !Number.isSafeInteger(item.tabId) || item.tabId <= 0) continue;
+      if (typeof item.title !== "string" || typeof item.url !== "string" || typeof item.domain !== "string") continue;
+      availableTabs.push({
+        tabId: item.tabId,
+        title: item.title.slice(0, 200),
+        url: item.url.slice(0, 1024),
+        domain: item.domain.slice(0, 256),
+        active: item.active === true,
+      });
+    }
+  }
+  return {
+    status: value.status as import("./types.js").PinnedTargetStatus,
+    pinnedTabId,
+    ...(typeof value.title === "string" ? { title: value.title.slice(0, 200) } : {}),
+    ...(typeof value.url === "string" ? { url: value.url.slice(0, 1024) } : {}),
+    ...(typeof value.domain === "string" ? { domain: value.domain.slice(0, 256) } : {}),
+    ...(typeof value.scannedUrl === "string" ? { scannedUrl: value.scannedUrl.slice(0, 1024) } : {}),
+    ...(typeof value.closedTitle === "string" ? { closedTitle: value.closedTitle.slice(0, 200) } : {}),
+    ...(typeof value.closedDomain === "string" ? { closedDomain: value.closedDomain.slice(0, 256) } : {}),
+    availableTabs,
+  };
+}
+
 function normalizePopupState(value: unknown): PopupState | null {
   if (!isRecord(value) || (value.mode !== "local" && value.mode !== "cloud") || typeof value.scanning !== "boolean" || typeof value.scanned !== "boolean" || typeof value.truncated !== "boolean" || typeof value.visibleChars !== "number" || !Number.isSafeInteger(value.visibleChars) || value.visibleChars < 0) return null;
   if (value.findingsTruncated !== undefined && typeof value.findingsTruncated !== "boolean") return null;
@@ -573,6 +613,8 @@ function normalizePopupState(value: unknown): PopupState | null {
     value.incompleteWindows === undefined ? undefined : normalizeIncompleteWindows(value.incompleteWindows);
   const coverageWarnings =
     value.coverageWarnings === undefined ? undefined : normalizeCoverageWarnings(value.coverageWarnings);
+  const pinnedTarget =
+    value.pinnedTarget === undefined ? undefined : normalizePinnedTargetInfo(value.pinnedTarget);
   return {
     mode: value.mode,
     ...(value.operatingMode === "MANAGE" || value.operatingMode === "LOCAL" ? { operatingMode: value.operatingMode } : {}),
@@ -593,6 +635,7 @@ function normalizePopupState(value: unknown): PopupState | null {
     ...(windowsTotal !== undefined ? { windowsTotal } : {}),
     ...(incompleteWindows ? { incompleteWindows } : {}),
     ...(coverageWarnings ? { coverageWarnings } : {}),
+    ...(pinnedTarget ? { pinnedTarget } : {}),
   };
 }
 
@@ -652,6 +695,24 @@ export function validateMessage(raw: unknown): ValidationResult {
       if (raw.tabId !== undefined && (typeof raw.tabId !== "number" || !Number.isSafeInteger(raw.tabId) || raw.tabId <= 0)) return { ok: false, error: "Invalid tabId" };
       return { ok: true, message: { type, requestId, mode: raw.mode, ...(typeof raw.tabId === "number" ? { tabId: raw.tabId } : {}) } };
     }
+    case "POPUP_PIN_TAB": {
+      const tabId = raw.tabId;
+      if (tabId !== null && (typeof tabId !== "number" || !Number.isSafeInteger(tabId) || tabId <= 0)) {
+        return { ok: false, error: "Invalid tabId" };
+      }
+      if (raw.pinCurrent !== undefined && typeof raw.pinCurrent !== "boolean") {
+        return { ok: false, error: "Invalid pinCurrent" };
+      }
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          tabId,
+          ...(typeof raw.pinCurrent === "boolean" ? { pinCurrent: raw.pinCurrent } : {}),
+        },
+      };
+    }
     case "POPUP_APPLY_MASKS": {
       if (!isStringArray(raw.findingIds)) return { ok: false, error: "Invalid findingIds" };
       if (raw.tabId !== undefined && (typeof raw.tabId !== "number" || !Number.isSafeInteger(raw.tabId) || raw.tabId <= 0)) return { ok: false, error: "Invalid tabId" };
@@ -664,7 +725,8 @@ export function validateMessage(raw: unknown): ValidationResult {
       return { ok: true, message: { type, requestId, ...(typeof raw.tabId === "number" ? { tabId: raw.tabId } : {}) } };
     case "POPUP_COPY_REDACTED": {
       if (!isStringArray(raw.findingIds)) return { ok: false, error: "Invalid findingIds" };
-      return { ok: true, message: { type, requestId, findingIds: raw.findingIds } };
+      if (raw.tabId !== undefined && (typeof raw.tabId !== "number" || !Number.isSafeInteger(raw.tabId) || raw.tabId <= 0)) return { ok: false, error: "Invalid tabId" };
+      return { ok: true, message: { type, requestId, findingIds: raw.findingIds, ...(typeof raw.tabId === "number" ? { tabId: raw.tabId } : {}) } };
     }
     case "POPUP_SET_MODE": {
       if (!isMode(raw.mode)) return { ok: false, error: "Invalid mode" };

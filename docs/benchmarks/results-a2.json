@@ -1,0 +1,194 @@
+{
+  "generatedAt": "2026-11-22T01:01:12.661Z",
+  "mode": "a2",
+  "stage": "a2",
+  "executablePath": "C:\\Users\\omg\\AppData\\Local\\ms-playwright\\chromium-1255\\chrome-win64\\chrome.exe",
+  "browserVersion": "Chrome/159.0.8154.6",
+  "nodeVersion": "v22.22.2",
+  "scan": {},
+  "paste": {},
+  "docs": {},
+  "ocrNode": {},
+  "network": {},
+  "gateFailures": [],
+  "a2": {
+    "tab3Id": 372675543,
+    "availableTabCount": 5,
+    "pinnedTab3Ui": {
+      "title": "A2 Tab 3 - Pinned Target Ward",
+      "domain": "(127.0.0.1:62915)",
+      "selectedValue": "372675543",
+      "options": [
+        {
+          "value": "",
+          "text": "— Change target tab —"
+        },
+        {
+          "value": "372675540",
+          "text": "A2 Tab 1 - Outpatient (127.0.0.1:62915)"
+        },
+        {
+          "value": "372675542",
+          "text": "A2 Tab 2 - Triage (127.0.0.1:62915)"
+        },
+        {
+          "value": "372675543",
+          "text": "A2 Tab 3 - Pinned Target Ward (127.0.0.1:62915)"
+        },
+        {
+          "value": "372675544",
+          "text": "A2 Tab 4 - Billing (127.0.0.1:62915)"
+        },
+        {
+          "value": "372675545",
+          "text": "A2 Tab 5 - Pharmacy (127.0.0.1:62915)"
+        }
+      ],
+      "warningHidden": true,
+      "warningReason": "",
+      "warningText": "",
+      "scanDisabled": false,
+      "applyDisabled": false,
+      "findingsCount": 3,
+      "findingsCategories": []
+    },
+    "focusSwitchTrials": [
+      {
+        "focusedTabIdx": 1,
+        "headerTitle": "A2 Tab 3 - Pinned Target Ward",
+        "selectedValue": "372675543",
+        "findingsCount": 3
+      },
+      {
+        "focusedTabIdx": 2,
+        "headerTitle": "A2 Tab 3 - Pinned Target Ward",
+        "selectedValue": "372675543",
+        "findingsCount": 3
+      },
+      {
+        "focusedTabIdx": 4,
+        "headerTitle": "A2 Tab 3 - Pinned Target Ward",
+        "selectedValue": "372675543",
+        "findingsCount": 3
+      },
+      {
+        "focusedTabIdx": 5,
+        "headerTitle": "A2 Tab 3 - Pinned Target Ward",
+        "selectedValue": "372675543",
+        "findingsCount": 3
+      }
+    ],
+    "tab3MaskCount": 3,
+    "tab5MaskCount": 0,
+    "switchedFocusUi": {
+      "title": "A2 Tab 3 - Pinned Target Ward",
+      "domain": "(127.0.0.1:62915)",
+      "selectedValue": "372675543",
+      "options": [
+        {
+          "value": "",
+          "text": "— Change target tab —"
+        },
+        {
+          "value": "372675540",
+          "text": "A2 Tab 1 - Outpatient (127.0.0.1:62915)"
+        },
+        {
+          "value": "372675542",
+          "text": "A2 Tab 2 - Triage (127.0.0.1:62915)"
+        },
+        {
+          "value": "372675543",
+          "text": "A2 Tab 3 - Pinned Target Ward (127.0.0.1:62915)"
+        },
+        {
+          "value": "372675544",
+          "text": "A2 Tab 4 - Billing (127.0.0.1:62915)"
+        },
+        {
+          "value": "372675545",
+          "text": "A2 Tab 5 - Pharmacy (127.0.0.1:62915)"
+        }
+      ],
+      "warningHidden": true,
+      "warningReason": "",
+      "warningText": "",
+      "scanDisabled": false,
+      "applyDisabled": false,
+      "findingsCount": 3,
+      "findingsCategories": []
+    },
+    "navigatedUi": {
+      "title": "A2 Tab 3 - Navigated Discharge Page",
+      "domain": "(127.0.0.1:62915)",
+      "selectedValue": "372675543",
+      "options": [
+        {
+          "value": "",
+          "text": "— Change target tab —"
+        },
+        {
+          "value": "372675540",
+          "text": "A2 Tab 1 - Outpatient (127.0.0.1:62915)"
+        },
+        {
+          "value": "372675542",
+          "text": "A2 Tab 2 - Triage (127.0.0.1:62915)"
+        },
+        {
+          "value": "372675543",
+          "text": "A2 Tab 3 - Navigated Discharge Page (127.0.0.1:62915)"
+        },
+        {
+          "value": "372675544",
+          "text": "A2 Tab 4 - Billing (127.0.0.1:62915)"
+        },
+        {
+          "value": "372675545",
+          "text": "A2 Tab 5 - Pharmacy (127.0.0.1:62915)"
+        }
+      ],
+      "warningHidden": false,
+      "warningReason": "navigated",
+      "warningText": "Pinned tab navigated to 127.0.0.1:62915. Rescan to update findings for this page.",
+      "scanDisabled": false,
+      "applyDisabled": false,
+      "findingsCount": 3,
+      "findingsCategories": []
+    },
+    "closedUi": {
+      "title": "No target tab pinned",
+      "domain": "",
+      "selectedValue": "",
+      "options": [
+        {
+          "value": "",
+          "text": "— Change target tab —"
+        },
+        {
+          "value": "372675540",
+          "text": "A2 Tab 1 - Outpatient (127.0.0.1:62915)"
+        },
+        {
+          "value": "372675542",
+          "text": "A2 Tab 2 - Triage (127.0.0.1:62915)"
+        },
+        {
+          "value": "372675544",
+          "text": "A2 Tab 4 - Billing (127.0.0.1:62915)"
+        },
+        {
+          "value": "372675545",
+          "text": "A2 Tab 5 - Pharmacy (127.0.0.1:62915)"
+        }
+      ],
+      "warningHidden": false,
+      "warningReason": "closed",
+      "warningText": "Pinned target tab (A2 Tab 3 - Navigated Discharge Page) was closed. Scanning is paused until you select a new target tab.",
+      "scanDisabled": true,
+      "applyDisabled": true,
+      "findingsCount": 0,
+      "findingsCategories": []
+    }
+  }
+}

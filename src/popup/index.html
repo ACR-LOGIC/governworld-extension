@@ -65,6 +65,23 @@
       </div>
     </header>
 
+    <div id="pinned-target-bar" class="pinned-target-bar" role="region" aria-label="Pinned scan target">
+      <div id="pinned-target-summary" class="pinned-target__summary">
+        <span class="pinned-target__badge" data-i18n="pinned_target_label">Pinned target:</span>
+        <strong id="pinned-target-title" class="pinned-target__title" data-i18n="pinned_target_none">No target tab pinned</strong>
+        <span id="pinned-target-domain" class="pinned-target__domain"></span>
+      </div>
+      <div id="pinned-target-controls" class="pinned-target__controls">
+        <select id="pinned-tab-select" class="preset-select pinned-target__select" aria-label="Change target tab">
+          <option value="" data-i18n="pinned_target_select_placeholder">— Change target tab —</option>
+        </select>
+        <button id="pin-current-tab-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="pin_current_tab_btn">Pin current tab</button>
+      </div>
+      <div id="pinned-target-warning" class="pinned-target-warning" role="alert" hidden>
+        <p id="pinned-target-warning-text" class="pinned-target-warning__text"></p>
+      </div>
+    </div>
+
     <nav class="tab-nav" role="tablist" aria-label="Main navigation">
       <button class="tab-btn tab-btn--active" type="button" role="tab" aria-selected="true" aria-controls="tab-protection" data-tab="protection" id="tab-btn-protection">
         <span class="tab-btn__icon" aria-hidden="true">◉</span>

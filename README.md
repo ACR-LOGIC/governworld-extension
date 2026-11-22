@@ -52,6 +52,7 @@ The **GovernWorld Extension** (`v0.4.1`) is a local-first browser protection too
 ## Core Capabilities
 
 1. **On-Demand Page Scanning & Visual Masking:**
+   - Uses an explicit **Pinned Scan Target** picker (`#pinned-target-bar` / `#pinned-tab-select` / `#pin-current-tab-btn`, Decision D2) in the popup header so all scan, rescan, finding, badge, and overlay operations remain bound to the explicitly pinned tab ID without auto-following tab focus changes. Clearly warns when no target tab is pinned, when the pinned tab navigates to a new URL, or when the pinned target tab closes (pausing scanning and disabling Scan/Apply Masks until a new target tab is chosen).
    - Scans visible page text across the entire document using **chunked (windowed) scanning** (`Settings → Advanced → Per-window character safeguard`, default `250,000` chars per window — a per-window memory bound, not a whole-page cut-off) and report-only accessibility attributes (`aria-label`, `alt`, `placeholder`, `title`) only after explicit user action.
    - Displays live window/character progress in the popup while scanning (`Scanning window X of Y`) and chunks large finding sets across runtime IPC (`<= 64 KB` per message) so all findings arrive without silent drops.
    - Highlights findings, applies non-destructive visual masks in a shadow-root overlay, and copies securely redacted text (sensitive values replaced with `[REDACTED]`).

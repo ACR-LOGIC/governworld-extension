@@ -596,7 +596,187 @@ export async function getActiveTab(): Promise<chrome.tabs.Tab | undefined> {
   return allTabs.find((t) => t.active && isScannableTab(t));
 }
 
+const PINNED_TARGET_KEY = "pinnedScanTarget";
+
+interface StoredPinnedTarget {
+  status: import("../shared/types.js").PinnedTargetStatus;
+  pinnedTabId: number | null;
+  title?: string;
+  url?: string;
+  domain?: string;
+  scannedUrl?: string;
+  closedTitle?: string;
+  closedDomain?: string;
+}
+
+let lastPinnedTargetInfo: import("../shared/types.js").PinnedTargetInfo | undefined;
+
+function tabDomain(url?: string): string {
+  if (!url) return "";
+  try {
+    return new URL(url).host;
+  } catch {
+    return "";
+  }
+}
+
+function tabDisplayTitle(tab: chrome.tabs.Tab | undefined, fallback?: string): string {
+  const rawTitle = typeof tab?.title === "string" ? tab.title.trim() : "";
+  if (rawTitle.length > 0) return rawTitle.slice(0, 140);
+  const host = tabDomain(tab?.url);
+  if (host.length > 0) return host;
+  if (fallback && fallback.trim().length > 0) return fallback.trim().slice(0, 140);
+  return tab?.id ? `Tab #${tab.id}` : "Untitled tab";
+}
+
+function isStoredPinnedTarget(value: unknown): value is StoredPinnedTarget {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Partial<StoredPinnedTarget>;
+  if (v.status !== "unpinned" && v.status !== "pinned" && v.status !== "navigated" && v.status !== "closed") {
+    return false;
+  }
+  if (v.pinnedTabId !== null && (typeof v.pinnedTabId !== "number" || !Number.isSafeInteger(v.pinnedTabId) || v.pinnedTabId <= 0)) {
+    return false;
+  }
+  return true;
+}
+
+async function readPinnedTarget(): Promise<StoredPinnedTarget | null> {
+  try {
+    const raw: unknown = await chrome.storage.session.get(PINNED_TARGET_KEY);
+    if (typeof raw !== "object" || raw === null) return null;
+    const value = (raw as Record<string, unknown>)[PINNED_TARGET_KEY];
+    return isStoredPinnedTarget(value) ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+async function writePinnedTarget(target: StoredPinnedTarget): Promise<void> {
+  try {
+    await chrome.storage.session.set({ [PINNED_TARGET_KEY]: target });
+  } catch {
+    // Best-effort session storage persistence
+  }
+}
+
+async function listScannableTabs(): Promise<import("../shared/types.js").ScannableTabSummary[]> {
+  try {
+    const allTabs = await chrome.tabs.query({});
+    const out: import("../shared/types.js").ScannableTabSummary[] = [];
+    for (const t of allTabs) {
+      if (!isScannableTab(t) || !t.id || !t.url) continue;
+      out.push({
+        tabId: t.id,
+        title: tabDisplayTitle(t),
+        url: t.url,
+        domain: tabDomain(t.url),
+        active: Boolean(t.active),
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+async function refreshPinnedTargetInfo(options?: { autoPinInitialIfUnset?: boolean }): Promise<import("../shared/types.js").PinnedTargetInfo> {
+  const [availableTabs, initialStored] = await Promise.all([listScannableTabs(), readPinnedTarget()]);
+  let stored = initialStored;
+
+  if (!stored && options?.autoPinInitialIfUnset) {
+    const initialTab = await getActiveTab();
+    if (initialTab?.id && initialTab.url) {
+      stored = {
+        status: "pinned",
+        pinnedTabId: initialTab.id,
+        title: tabDisplayTitle(initialTab),
+        url: initialTab.url,
+        domain: tabDomain(initialTab.url),
+      };
+      await writePinnedTarget(stored);
+    }
+  }
+
+  if (stored && stored.pinnedTabId !== null) {
+    let liveTab: chrome.tabs.Tab | undefined;
+    try {
+      liveTab = await chrome.tabs.get(stored.pinnedTabId);
+    } catch {
+      liveTab = undefined;
+    }
+    if (!liveTab || !isScannableTab(liveTab)) {
+      stored = {
+        status: "closed",
+        pinnedTabId: null,
+        closedTitle: stored.title,
+        closedDomain: stored.domain,
+      };
+      await writePinnedTarget(stored);
+    } else {
+      const nextUrl = liveTab.url ?? stored.url;
+      const nextTitle = tabDisplayTitle(liveTab, stored.title);
+      const nextDomain = tabDomain(nextUrl) || stored.domain;
+      const navigated =
+        stored.status === "navigated" ||
+        Boolean(stored.scannedUrl && nextUrl && nextUrl !== stored.scannedUrl);
+      const nextStatus: import("../shared/types.js").PinnedTargetStatus = navigated ? "navigated" : "pinned";
+      if (
+        nextStatus !== stored.status ||
+        nextUrl !== stored.url ||
+        nextTitle !== stored.title ||
+        nextDomain !== stored.domain
+      ) {
+        stored = {
+          ...stored,
+          status: nextStatus,
+          url: nextUrl,
+          title: nextTitle,
+          domain: nextDomain,
+        };
+        await writePinnedTarget(stored);
+      }
+    }
+  }
+
+  const info: import("../shared/types.js").PinnedTargetInfo = {
+    status: stored?.status ?? "unpinned",
+    pinnedTabId: stored?.pinnedTabId ?? null,
+    ...(stored?.title ? { title: stored.title } : {}),
+    ...(stored?.url ? { url: stored.url } : {}),
+    ...(stored?.domain ? { domain: stored.domain } : {}),
+    ...(stored?.scannedUrl ? { scannedUrl: stored.scannedUrl } : {}),
+    ...(stored?.closedTitle ? { closedTitle: stored.closedTitle } : {}),
+    ...(stored?.closedDomain ? { closedDomain: stored.closedDomain } : {}),
+    availableTabs,
+  };
+  lastPinnedTargetInfo = info;
+  return info;
+}
+
 export async function resolveTargetTab(explicitTabId?: number): Promise<chrome.tabs.Tab | undefined> {
+  const stored = await readPinnedTarget();
+  if (stored) {
+    if (stored.status === "closed" || stored.status === "unpinned" || stored.pinnedTabId === null) {
+      return undefined;
+    }
+    try {
+      const pinnedCandidate = await chrome.tabs.get(stored.pinnedTabId);
+      if (pinnedCandidate && isScannableTab(pinnedCandidate)) {
+        return pinnedCandidate;
+      }
+    } catch {
+      // Tab no longer exists
+    }
+    await writePinnedTarget({
+      status: "closed",
+      pinnedTabId: null,
+      closedTitle: stored.title,
+      closedDomain: stored.domain,
+    });
+    return undefined;
+  }
+
   if (typeof explicitTabId === "number" && explicitTabId > 0) {
     try {
       const candidate = await chrome.tabs.get(explicitTabId);
@@ -764,19 +944,65 @@ function buildPopupState(
     ...(session?.stats.coverageWarnings && session.stats.coverageWarnings.length > 0
       ? { coverageWarnings: session.stats.coverageWarnings }
       : {}),
+    ...(lastPinnedTargetInfo ? { pinnedTarget: lastPinnedTargetInfo } : {}),
   };
 }
 
-async function stateForActiveTab(explicitTabId?: number): Promise<PopupState> {
+async function stateForActiveTab(explicitTabId?: number, autoPinInitial = false): Promise<PopupState> {
   await refreshOperatingMode();
+  await refreshPinnedTargetInfo({ autoPinInitialIfUnset: autoPinInitial });
   const settings = await loadSettings();
   const tab = await resolveTargetTab(explicitTabId);
   const session = tab ? await readSession(tab.id ?? -1) : null;
   return buildPopupState(settings, session);
 }
 
+async function handlePopupPinTab(tabId: number | null, pinCurrent: boolean | undefined, requestId: string): Promise<void> {
+  if (pinCurrent === true) {
+    const active = await getActiveTab();
+    if (active?.id && active.url) {
+      const existingSession = await readSession(active.id);
+      await writePinnedTarget({
+        status: "pinned",
+        pinnedTabId: active.id,
+        title: tabDisplayTitle(active),
+        url: active.url,
+        domain: tabDomain(active.url),
+        ...(existingSession ? { scannedUrl: active.url } : {}),
+      });
+    } else {
+      await writePinnedTarget({ status: "unpinned", pinnedTabId: null });
+    }
+  } else if (tabId === null) {
+    await writePinnedTarget({ status: "unpinned", pinnedTabId: null });
+  } else {
+    let target: chrome.tabs.Tab | undefined;
+    try {
+      target = await chrome.tabs.get(tabId);
+    } catch {
+      target = undefined;
+    }
+    if (target && isScannableTab(target) && target.id && target.url) {
+      const existingSession = await readSession(target.id);
+      await writePinnedTarget({
+        status: "pinned",
+        pinnedTabId: target.id,
+        title: tabDisplayTitle(target),
+        url: target.url,
+        domain: tabDomain(target.url),
+        ...(existingSession ? { scannedUrl: target.url } : {}),
+      });
+    } else {
+      await writePinnedTarget({ status: "unpinned", pinnedTabId: null });
+    }
+  }
+  const state = await stateForActiveTab();
+  notifyPopup({ type: "POPUP_STATE", requestId, state });
+}
+
 async function handlePopupScan(mode: ScanMode, requestId: string, explicitTabId?: number): Promise<void> {
   const settings = await loadSettings();
+  await refreshPinnedTargetInfo();
 
   if (mode === "cloud" && !isCloudAllowed(settings)) {
     notifyPopup({
@@ -785,6 +1011,30 @@ async function handlePopupScan(mode: ScanMode, requestId: string, explicitTabId?
       state: buildPopupState(settings, null, {
         code: "CLOUD_NOT_ALLOWED",
         userMessage: "Cloud analysis is disabled. Scans run locally on this device.",
+      }),
+    });
+    return;
+  }
+
+  const storedPin = await readPinnedTarget();
+  if (storedPin?.status === "closed") {
+    notifyPopup({
+      type: "POPUP_STATE",
+      requestId,
+      state: buildPopupState(settings, null, {
+        code: "TARGET_TAB_CLOSED",
+        userMessage: "Pinned target tab closed. Choose a new target tab to scan.",
+      }),
+    });
+    return;
+  }
+  if (storedPin?.status === "unpinned") {
+    notifyPopup({
+      type: "POPUP_STATE",
+      requestId,
+      state: buildPopupState(settings, null, {
+        code: "NO_PINNED_TAB",
+        userMessage: "No target tab is pinned. Select or pin a tab to scan.",
       }),
     });
     return;
@@ -801,6 +1051,18 @@ async function handlePopupScan(mode: ScanMode, requestId: string, explicitTabId?
       }),
     });
     return;
+  }
+
+  if (storedPin && storedPin.pinnedTabId === tab.id && tab.url) {
+    await writePinnedTarget({
+      ...storedPin,
+      status: "pinned",
+      url: tab.url,
+      title: tabDisplayTitle(tab, storedPin.title),
+      domain: tabDomain(tab.url) || storedPin.domain,
+      scannedUrl: tab.url,
+    });
+    await refreshPinnedTargetInfo();
   }
 
   const sessionId = crypto.randomUUID();
@@ -836,6 +1098,7 @@ async function handlePopupScan(mode: ScanMode, requestId: string, explicitTabId?
 
 /** True when the action ran; false when the popup was told it could not. */
 async function handlePopupApplyMasks(findingIds: string[], requestId: string, explicitTabId?: number): Promise<boolean> {
+  await refreshPinnedTargetInfo();
   const tab = await resolveTargetTab(explicitTabId);
   const settings = await loadSettings();
   const session = tab?.id ? await readSession(tab.id) : null;
@@ -863,6 +1126,7 @@ async function handlePopupApplyMasks(findingIds: string[], requestId: string, ex
 }
 
 async function handlePopupUndoMasks(requestId: string, explicitTabId?: number): Promise<void> {
+  await refreshPinnedTargetInfo();
   const tab = await resolveTargetTab(explicitTabId);
   const settings = await loadSettings();
   const session = tab?.id ? await readSession(tab.id) : null;
@@ -885,6 +1149,7 @@ async function handlePopupUndoMasks(requestId: string, explicitTabId?: number): 
 
 /** True when the action ran; false when the popup was told it could not. */
 async function handlePopupRemoveMasks(requestId: string, explicitTabId?: number): Promise<boolean> {
+  await refreshPinnedTargetInfo();
   const tab = await resolveTargetTab(explicitTabId);
   const settings = await loadSettings();
   const session = tab?.id ? await readSession(tab.id) : null;
@@ -904,8 +1169,9 @@ async function handlePopupRemoveMasks(requestId: string, explicitTabId?: number)
   return true;
 }
 
-async function handlePopupCopyRedacted(findingIds: string[], requestId: string): Promise<void> {
-  const tab = await getActiveTab();
+async function handlePopupCopyRedacted(findingIds: string[], requestId: string, explicitTabId?: number): Promise<void> {
+  await refreshPinnedTargetInfo();
+  const tab = await resolveTargetTab(explicitTabId);
   const session = tab?.id ? await readSession(tab.id) : null;
   if (!tab?.id || !session) {
     const settings = await loadSettings();
@@ -916,6 +1182,7 @@ async function handlePopupCopyRedacted(findingIds: string[], requestId: string):
 }
 
 async function handlePopupClearData(requestId: string, explicitTabId?: number): Promise<void> {
+  await refreshPinnedTargetInfo();
   const tab = await resolveTargetTab(explicitTabId);
   const settings = await loadSettings();
   if (tab?.id) {
@@ -1372,7 +1639,11 @@ async function handleContentScanResult(message: Extract<WorkerMessage, { type: "
       scanning: false,
     });
     const session = await readSession(tabId);
-    notifyPopup({ type: "POPUP_STATE", requestId: message.requestId, state: buildPopupState(settings, session) });
+    await refreshPinnedTargetInfo();
+    const storedPin = await readPinnedTarget();
+    if (!storedPin?.pinnedTabId || storedPin.pinnedTabId === tabId) {
+      notifyPopup({ type: "POPUP_STATE", requestId: message.requestId, state: buildPopupState(settings, session) });
+    }
     updateBadgeForTab(tabId, findings.length);
     return;
   }
@@ -1404,7 +1675,11 @@ async function handleContentScanResult(message: Extract<WorkerMessage, { type: "
     outcome: "ok",
   });
   const session = await readSession(tabId);
-  notifyPopup({ type: "POPUP_STATE", requestId: pending.requestId, state: buildPopupState(settings, session) });
+  await refreshPinnedTargetInfo();
+  const storedPin = await readPinnedTarget();
+  if (!storedPin?.pinnedTabId || storedPin.pinnedTabId === tabId) {
+    notifyPopup({ type: "POPUP_STATE", requestId: pending.requestId, state: buildPopupState(settings, session) });
+  }
   updateBadgeForTab(tabId, findings.length);
   void maybeNotifyFindings(findings, tabId);
 
@@ -1869,6 +2144,30 @@ chrome.runtime.onInstalled?.addListener(() => {
 // extract the authorization code and state, then close the tab.
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (changeInfo.status === "loading") clearBadgeForTab(tabId);
+  if (changeInfo.url || changeInfo.title || changeInfo.status === "complete") {
+    void (async () => {
+      const stored = await readPinnedTarget();
+      if (stored && stored.pinnedTabId === tabId) {
+        const nextUrl = changeInfo.url ?? tab.url ?? stored.url;
+        const urlChanged = Boolean(changeInfo.url && stored.url && changeInfo.url !== stored.url);
+        const nextTitle = tabDisplayTitle(tab, stored.title);
+        const nextDomain = tabDomain(nextUrl) || stored.domain;
+        const nextStatus: import("../shared/types.js").PinnedTargetStatus =
+          urlChanged || stored.status === "navigated" || Boolean(stored.scannedUrl && nextUrl && nextUrl !== stored.scannedUrl)
+            ? "navigated"
+            : "pinned";
+        await writePinnedTarget({
+          ...stored,
+          status: nextStatus,
+          url: nextUrl,
+          title: nextTitle,
+          domain: nextDomain,
+        });
+        const state = await stateForActiveTab();
+        notifyPopup({ type: "POPUP_STATE", requestId: "pinned-tab-updated", state });
+      }
+    })().catch(() => undefined);
+  }
   if (!tab.url) return;
   let url: URL;
   try {
@@ -2483,6 +2782,9 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
       case "POPUP_SCAN":
         await handlePopupScan(msg.mode, msg.requestId, msg.tabId);
         break;
+      case "POPUP_PIN_TAB":
+        await handlePopupPinTab(msg.tabId, msg.pinCurrent, msg.requestId);
+        break;
       case "POPUP_APPLY_MASKS":
         await handlePopupApplyMasks(msg.findingIds, msg.requestId, msg.tabId);
         break;
@@ -2490,13 +2792,13 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
         await handlePopupRemoveMasks(msg.requestId, msg.tabId);
         break;
       case "POPUP_COPY_REDACTED":
-        await handlePopupCopyRedacted(msg.findingIds, msg.requestId);
+        await handlePopupCopyRedacted(msg.findingIds, msg.requestId, msg.tabId);
         break;
       case "POPUP_CLEAR_DATA":
         await handlePopupClearData(msg.requestId, msg.tabId);
         break;
       case "POPUP_GET_STATE": {
-        notifyPopup({ type: "POPUP_STATE", requestId: msg.requestId, state: await stateForActiveTab(msg.tabId) });
+        notifyPopup({ type: "POPUP_STATE", requestId: msg.requestId, state: await stateForActiveTab(msg.tabId, true) });
         const docSession = await restoreLastSession();
         if (docSession) {
           notifyPopup({ type: "POPUP_DOC_STATE", requestId: msg.requestId, docId: docSession.docId, name: docSession.name, fileKey: docSession.fileKey, mimeType: docSession.mimeType, kind: docSession.kind, pages: docSession.pages, pageOffset: docSession.pageOffset, totalPages: docSession.totalPages, ...(docSession.truncated ? { truncated: true } : {}) });
@@ -2565,7 +2867,7 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
         await handlePopupRecordAudit(msg);
         break;
       case "POPUP_UNDO_MASKS":
-        await handlePopupUndoMasks(msg.requestId);
+        await handlePopupUndoMasks(msg.requestId, msg.tabId);
         break;
       case "POPUP_SET_NOTIFICATIONS": {
         if (msg.enabled) {
@@ -2752,7 +3054,7 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
   return true; // async response
 });
 
-// Clean up stale sessions for closed tabs.
+// Clean up stale sessions for closed tabs and update pinned target state (Task A2 / Decision D2).
 chrome.tabs.onRemoved.addListener((tabId) => {
   const pending = pendingScans.get(tabId);
   if (pending) {
@@ -2761,4 +3063,21 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   }
   clearPendingChunksForTab(tabId);
   void chrome.storage.session.remove(sessionKey(tabId));
+  void (async () => {
+    const stored = await readPinnedTarget();
+    if (stored && stored.pinnedTabId === tabId) {
+      await writePinnedTarget({
+        status: "closed",
+        pinnedTabId: null,
+        closedTitle: stored.title,
+        closedDomain: stored.domain,
+      });
+      const state = await stateForActiveTab();
+      notifyPopup({ type: "POPUP_STATE", requestId: "pinned-tab-closed", state });
+    } else if (stored) {
+      await refreshPinnedTargetInfo();
+      const state = await stateForActiveTab();
+      notifyPopup({ type: "POPUP_STATE", requestId: "tabs-list-updated", state });
+    }
+  })().catch(() => undefined);
 });
