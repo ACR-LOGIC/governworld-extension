@@ -1545,10 +1545,10 @@ describe("Tier 1: Feature Coverage — 19 Master Issue Categories", () => {
       expect(manifest.permissions).toContain("contextMenus");
     });
 
-    it("F29.2: manifest.json declares zero mandatory host_permissions, only optional_host_permissions", () => {
+    it("F29.2: manifest.json restricts host_permissions to pinned Supabase host and keeps page access optional", () => {
       const manifestPath = path.resolve(process.cwd(), "manifest.json");
       const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-      expect(manifest.host_permissions).toBeUndefined();
+      expect(manifest.host_permissions).toEqual(["https://lkgcehdwasewwoieyoip.supabase.co/*"]);
       expect(manifest.optional_host_permissions).toBeDefined();
       expect(manifest.optional_host_permissions).toContain("http://*/*");
       expect(manifest.optional_host_permissions).toContain("https://*/*");

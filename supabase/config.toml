@@ -1,0 +1,25 @@
+project_id = "lkgcehdwasewwoieyoip"
+
+[functions.pairing-code-generate]
+verify_jwt = false
+
+[functions.pairing-code-redeem]
+verify_jwt = false
+
+[functions.policy-deliver]
+verify_jwt = false
+
+[functions.heartbeat-ingest]
+verify_jwt = false
+
+[functions.session-rotate]
+verify_jwt = false
+
+[functions.seat-unpair]
+verify_jwt = false
+
+[functions.admin-grant-manage]
+verify_jwt = false
+
+[functions.admin-ops]
+verify_jwt = false

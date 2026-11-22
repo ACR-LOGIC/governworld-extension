@@ -267,6 +267,8 @@ In **LOCAL mode**, the extension starts and runs as an autonomous, self-containe
 
 ---
 
+> **Supabase pairing:** MANAGE mode pairs through a pinned Supabase backend (fail-closed, signature-verified policy, 15-minute heartbeat and session rotation). LOCAL mode is unchanged: zero network egress. Details in [docs/supabase-pairing.md](docs/supabase-pairing.md).
+
 ## Extension Policy Updates vs. Extension Software Updates
 
 It is critical to distinguish between dynamic policy synchronization and browser extension software updates:

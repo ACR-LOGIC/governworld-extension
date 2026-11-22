@@ -40,8 +40,8 @@ describe("Cross-Browser Compatibility Gates (Chrome, Firefox, Edge, Safari, Brav
       expect(manifest.permissions).toContain("storage");
       expect(manifest.permissions).toContain("downloads");
       expect(manifest.permissions).toContain("contextMenus");
-      // Zero broad site access declarations
-      expect(manifest.host_permissions).toBeUndefined();
+      // Zero broad site access declarations; only the pinned Supabase host
+      expect(manifest.host_permissions).toEqual(["https://lkgcehdwasewwoieyoip.supabase.co/*"]);
     });
   });
 

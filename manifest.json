@@ -36,6 +36,9 @@
     "http://*/*",
     "https://*/*"
   ],
+  "host_permissions": [
+    "https://lkgcehdwasewwoieyoip.supabase.co/*"
+  ],
   "storage": {
     "managed_schema": "schema/policy.json"
   },

@@ -514,6 +514,6 @@ describe("Run 1 Measured Benchmark (GW-BENCH-2026-001)", () => {
     expect(fetchCalls).toHaveLength(1);
     expect(fetchCalls[0]).toMatch(/^src\/document-pipeline\/ocr\.ts:\d+$/);
     expect(forbiddenCalls).toHaveLength(0);
-    expect(manifest.host_permissions).toBeUndefined();
+    expect(manifest.host_permissions).toEqual(["https://lkgcehdwasewwoieyoip.supabase.co/*"]);
   });
 });

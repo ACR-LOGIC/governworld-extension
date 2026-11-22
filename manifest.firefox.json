@@ -38,6 +38,9 @@
     "http://*/*",
     "https://*/*"
   ],
+  "host_permissions": [
+    "https://lkgcehdwasewwoieyoip.supabase.co/*"
+  ],
   "commands": {
     "_execute_action": {
       "suggested_key": {

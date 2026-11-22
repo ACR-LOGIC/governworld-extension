@@ -35,14 +35,17 @@ const PERMISSION_DOCS = [
 ];
 
 describe("manifest permission declarations", () => {
-  it("requests no automatic host permissions; site access is runtime-only", () => {
-    // Zero-egress posture, updated for always-on: no install-time site
-    // access of any kind. The only page access is optional http(s) origins
-    // the user grants at runtime (and can revoke), so default installs still
-    // touch no website automatically.
-    expect(manifest.host_permissions, "dist must keep its zero-egress posture").toBeUndefined();
+  it("requests only the single pinned Supabase host permission; site access is runtime-only", () => {
+    // Zero broad site access: only the single pinned Supabase backend host is
+    // declared in host_permissions (no wildcards), while page access remains
+    // runtime-only optional_host_permissions.
+    expect(manifest.host_permissions).toEqual(["https://lkgcehdwasewwoieyoip.supabase.co/*"]);
     expect(manifest.optional_host_permissions?.slice().sort()).toEqual(["http://*/*", "https://*/*"]);
-    expect(hostPermissions.slice().sort()).toEqual(["http://*/*", "https://*/*"]);
+    expect(hostPermissions.slice().sort()).toEqual([
+      "http://*/*",
+      "https://*/*",
+      "https://lkgcehdwasewwoieyoip.supabase.co/*",
+    ]);
   });
 
   it("does not request the blanket permissions a local-first tool should never need", () => {

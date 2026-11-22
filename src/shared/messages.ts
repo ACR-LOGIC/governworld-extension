@@ -4,7 +4,7 @@ import {
   MAX_MESSAGE_BYTES,
   MESSAGE_TYPES,
 } from "./types.js";
-import type { DocKind, ExtensionMessage, Finding, ScanMode, DocPageMeta, RedactionOptions, RedactionStyle, DocRedactionStage, ScanSettingsMessage } from "./types.js";
+import type { DocKind, ExtensionMessage, Finding, ScanMode, DocPageMeta, RedactionOptions, RedactionStyle, DocRedactionStage, ScanSettingsMessage, OwningBackend, SupabasePairingState } from "./types.js";
 import type { RedactionVerifyMethod } from "../document-pipeline/verify.js";
 import { isAllowedGatewayOrigin, isCategory } from "./settings.js";
 import { isPageImageKey, isPreviewKey } from "./docStore.js";
@@ -1400,6 +1400,252 @@ export function validateMessage(raw: unknown): ValidationResult {
           requestId,
           stats: raw.stats,
           ...(purged ? { purged } : {}),
+        },
+      };
+    }
+    case "POPUP_MANAGEMENT_GET_STATUS":
+    case "POPUP_MANAGEMENT_UNENROLL": {
+      return { ok: true, message: { type, requestId } };
+    }
+    case "POPUP_SYNC_MANAGED_POLICY": {
+      if (raw.force !== undefined && typeof raw.force !== "boolean") {
+        return { ok: false, error: "Invalid force flag" };
+      }
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          ...(typeof raw.force === "boolean" ? { force: raw.force } : {}),
+        },
+      };
+    }
+    case "POPUP_MANAGEMENT_ENROLL": {
+      const isBounded = (v: unknown, max: number): v is string =>
+        typeof v === "string" && v.trim().length > 0 && v.length <= max;
+      if (!isBounded(raw.organizationId, 128)) return { ok: false, error: "Invalid organizationId" };
+      if (!isBounded(raw.employeeId, 128)) return { ok: false, error: "Invalid employeeId" };
+      if (raw.organizationName !== undefined && !isBounded(raw.organizationName, 200)) {
+        return { ok: false, error: "Invalid organizationName" };
+      }
+      if (raw.employeeEmail !== undefined && !isBounded(raw.employeeEmail, 254)) {
+        return { ok: false, error: "Invalid employeeEmail" };
+      }
+      if (raw.coordinatorUrl !== undefined) {
+        if (typeof raw.coordinatorUrl !== "string" || raw.coordinatorUrl.length === 0 || raw.coordinatorUrl.length > 512) {
+          return { ok: false, error: "Invalid coordinatorUrl" };
+        }
+        let parsed: URL;
+        try {
+          parsed = new URL(raw.coordinatorUrl);
+        } catch {
+          return { ok: false, error: "Invalid coordinatorUrl" };
+        }
+        if (parsed.username !== "" || parsed.password !== "" || !parsed.hostname) {
+          return { ok: false, error: "Invalid coordinatorUrl" };
+        }
+        const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+        const isLoopback = host === "127.0.0.1" || host === "localhost" || host === "::1";
+        if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && isLoopback)) {
+          return { ok: false, error: "Invalid coordinatorUrl" };
+        }
+      }
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          organizationId: raw.organizationId.trim(),
+          employeeId: raw.employeeId.trim(),
+          ...(typeof raw.organizationName === "string" ? { organizationName: raw.organizationName.trim() } : {}),
+          ...(typeof raw.employeeEmail === "string" ? { employeeEmail: raw.employeeEmail.trim() } : {}),
+          ...(typeof raw.coordinatorUrl === "string" ? { coordinatorUrl: raw.coordinatorUrl } : {}),
+        },
+      };
+    }
+    case "POPUP_MANAGEMENT_STATUS_STATE": {
+      if (raw.mode !== "LOCAL" && raw.mode !== "MANAGE") return { ok: false, error: "Invalid mode" };
+      if (typeof raw.enrolled !== "boolean") return { ok: false, error: "Invalid enrolled flag" };
+      const checkOptStr = (v: unknown, max: number): boolean =>
+        v === undefined || (typeof v === "string" && v.length <= max);
+      if (!checkOptStr(raw.organizationId, 128)) return { ok: false, error: "Invalid organizationId" };
+      if (!checkOptStr(raw.organizationName, 200)) return { ok: false, error: "Invalid organizationName" };
+      if (!checkOptStr(raw.employeeId, 128)) return { ok: false, error: "Invalid employeeId" };
+      if (!checkOptStr(raw.employeeEmail, 254)) return { ok: false, error: "Invalid employeeEmail" };
+      if (!checkOptStr(raw.deviceId, 128)) return { ok: false, error: "Invalid deviceId" };
+      if (!checkOptStr(raw.appliedPolicyId, 128)) return { ok: false, error: "Invalid appliedPolicyId" };
+      if (!checkOptStr(raw.lastSyncStatus, 128)) return { ok: false, error: "Invalid lastSyncStatus" };
+      if (!checkOptStr(raw.error, 500)) return { ok: false, error: "Invalid error" };
+      if (
+        raw.appliedPolicyVersion !== undefined &&
+        (typeof raw.appliedPolicyVersion !== "number" ||
+          !Number.isSafeInteger(raw.appliedPolicyVersion) ||
+          raw.appliedPolicyVersion < 0)
+      ) {
+        return { ok: false, error: "Invalid appliedPolicyVersion" };
+      }
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          mode: raw.mode,
+          enrolled: raw.enrolled,
+          ...(typeof raw.organizationId === "string" ? { organizationId: raw.organizationId } : {}),
+          ...(typeof raw.organizationName === "string" ? { organizationName: raw.organizationName } : {}),
+          ...(typeof raw.employeeId === "string" ? { employeeId: raw.employeeId } : {}),
+          ...(typeof raw.employeeEmail === "string" ? { employeeEmail: raw.employeeEmail } : {}),
+          ...(typeof raw.deviceId === "string" ? { deviceId: raw.deviceId } : {}),
+          ...(typeof raw.appliedPolicyId === "string" ? { appliedPolicyId: raw.appliedPolicyId } : {}),
+          ...(typeof raw.appliedPolicyVersion === "number" ? { appliedPolicyVersion: raw.appliedPolicyVersion } : {}),
+          ...(typeof raw.lastSyncStatus === "string" ? { lastSyncStatus: raw.lastSyncStatus } : {}),
+          ...(typeof raw.error === "string" ? { error: raw.error } : {}),
+        },
+      };
+    }
+    case "SUPABASE_PAIR_REDEEM": {
+      if (typeof raw.code !== "string" || !/^\d{8}$/.test(raw.code)) {
+        return { ok: false, error: "Invalid pairing code format" };
+      }
+      return { ok: true, message: { type, requestId, code: raw.code } };
+    }
+    case "SUPABASE_PAIR_STATUS":
+    case "SUPABASE_PAIR_UNPAIR": {
+      return { ok: true, message: { type, requestId } };
+    }
+    case "SUPABASE_POLICY_SYNC": {
+      if (raw.force !== undefined && typeof raw.force !== "boolean") {
+        return { ok: false, error: "Invalid force flag" };
+      }
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          ...(typeof raw.force === "boolean" ? { force: raw.force } : {}),
+        },
+      };
+    }
+    case "SUPABASE_PAIR_STATUS_STATE": {
+      const isPairingState = (v: unknown): v is SupabasePairingState =>
+        v === "local_only" || v === "redeeming" || v === "paired" || v === "paired_offline";
+      const isBackend = (v: unknown): v is OwningBackend => v === "supabase" || v === "azure";
+      const checkOptStr = (v: unknown, max: number): boolean =>
+        v === undefined || (typeof v === "string" && v.length <= max);
+
+      if (!isPairingState(raw.pairingState)) return { ok: false, error: "Invalid pairingState" };
+      if (raw.owningBackend !== undefined && raw.owningBackend !== null && !isBackend(raw.owningBackend)) {
+        return { ok: false, error: "Invalid owningBackend" };
+      }
+      if (!checkOptStr(raw.organisationId, 128)) return { ok: false, error: "Invalid organisationId" };
+      if (!checkOptStr(raw.organisationName, 200)) return { ok: false, error: "Invalid organisationName" };
+      if (!checkOptStr(raw.seatId, 128)) return { ok: false, error: "Invalid seatId" };
+      if (raw.unlocked !== undefined && typeof raw.unlocked !== "boolean") return { ok: false, error: "Invalid unlocked" };
+      if (!checkOptStr(raw.policyId, 128)) return { ok: false, error: "Invalid policyId" };
+      if (
+        raw.policyVersion !== undefined &&
+        (typeof raw.policyVersion !== "number" || !Number.isSafeInteger(raw.policyVersion) || raw.policyVersion < 0)
+      ) {
+        return { ok: false, error: "Invalid policyVersion" };
+      }
+      if (raw.policyEnforced !== undefined && typeof raw.policyEnforced !== "boolean") {
+        return { ok: false, error: "Invalid policyEnforced" };
+      }
+      if (raw.hasDrift !== undefined && typeof raw.hasDrift !== "boolean") return { ok: false, error: "Invalid hasDrift" };
+      if (raw.driftedKeys !== undefined) {
+        if (
+          !Array.isArray(raw.driftedKeys) ||
+          raw.driftedKeys.length > 32 ||
+          !raw.driftedKeys.every((k) => typeof k === "string" && k.length > 0 && k.length <= 64)
+        ) {
+          return { ok: false, error: "Invalid driftedKeys" };
+        }
+      }
+      let conflict:
+        | { detected: boolean; existingBackend: OwningBackend; incomingBackend: OwningBackend; message: string }
+        | undefined;
+      if (raw.conflict !== undefined) {
+        if (
+          !isRecord(raw.conflict) ||
+          typeof raw.conflict.detected !== "boolean" ||
+          !isBackend(raw.conflict.existingBackend) ||
+          !isBackend(raw.conflict.incomingBackend) ||
+          typeof raw.conflict.message !== "string" ||
+          raw.conflict.message.length > 500
+        ) {
+          return { ok: false, error: "Invalid conflict object" };
+        }
+        conflict = {
+          detected: raw.conflict.detected,
+          existingBackend: raw.conflict.existingBackend,
+          incomingBackend: raw.conflict.incomingBackend,
+          message: raw.conflict.message,
+        };
+      }
+      if (raw.revoked !== undefined && typeof raw.revoked !== "boolean") return { ok: false, error: "Invalid revoked" };
+      if (!checkOptStr(raw.revokedNotice, 500)) return { ok: false, error: "Invalid revokedNotice" };
+      if (!checkOptStr(raw.lastSyncAt, 64)) return { ok: false, error: "Invalid lastSyncAt" };
+      if (!checkOptStr(raw.lastHeartbeatAt, 64)) return { ok: false, error: "Invalid lastHeartbeatAt" };
+      if (!checkOptStr(raw.error, 500)) return { ok: false, error: "Invalid error" };
+
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          pairingState: raw.pairingState,
+          ...(raw.owningBackend !== undefined ? { owningBackend: raw.owningBackend } : {}),
+          ...(typeof raw.organisationId === "string" ? { organisationId: raw.organisationId } : {}),
+          ...(typeof raw.organisationName === "string" ? { organisationName: raw.organisationName } : {}),
+          ...(typeof raw.seatId === "string" ? { seatId: raw.seatId } : {}),
+          ...(typeof raw.unlocked === "boolean" ? { unlocked: raw.unlocked } : {}),
+          ...(typeof raw.policyId === "string" ? { policyId: raw.policyId } : {}),
+          ...(typeof raw.policyVersion === "number" ? { policyVersion: raw.policyVersion } : {}),
+          ...(typeof raw.policyEnforced === "boolean" ? { policyEnforced: raw.policyEnforced } : {}),
+          ...(typeof raw.hasDrift === "boolean" ? { hasDrift: raw.hasDrift } : {}),
+          ...(Array.isArray(raw.driftedKeys) ? { driftedKeys: [...(raw.driftedKeys as string[])] } : {}),
+          ...(conflict ? { conflict } : {}),
+          ...(typeof raw.revoked === "boolean" ? { revoked: raw.revoked } : {}),
+          ...(typeof raw.revokedNotice === "string" ? { revokedNotice: raw.revokedNotice } : {}),
+          ...(typeof raw.lastSyncAt === "string" ? { lastSyncAt: raw.lastSyncAt } : {}),
+          ...(typeof raw.lastHeartbeatAt === "string" ? { lastHeartbeatAt: raw.lastHeartbeatAt } : {}),
+          ...(typeof raw.error === "string" ? { error: raw.error } : {}),
+        },
+      };
+    }
+    case "SUPABASE_PAIR_REDEEM_RESULT": {
+      const isPairingState = (v: unknown): v is SupabasePairingState =>
+        v === "local_only" || v === "redeeming" || v === "paired" || v === "paired_offline";
+      const checkOptStr = (v: unknown, max: number): boolean =>
+        v === undefined || (typeof v === "string" && v.length <= max);
+
+      if (typeof raw.ok !== "boolean") return { ok: false, error: "Invalid ok flag" };
+      if (!isPairingState(raw.pairingState)) return { ok: false, error: "Invalid pairingState" };
+      if (!checkOptStr(raw.organisationId, 128)) return { ok: false, error: "Invalid organisationId" };
+      if (!checkOptStr(raw.organisationName, 200)) return { ok: false, error: "Invalid organisationName" };
+      if (!checkOptStr(raw.seatId, 128)) return { ok: false, error: "Invalid seatId" };
+      if (raw.unlocked !== undefined && typeof raw.unlocked !== "boolean") return { ok: false, error: "Invalid unlocked" };
+      if (
+        raw.policyVersion !== undefined &&
+        (typeof raw.policyVersion !== "number" || !Number.isSafeInteger(raw.policyVersion) || raw.policyVersion < 0)
+      ) {
+        return { ok: false, error: "Invalid policyVersion" };
+      }
+      if (!checkOptStr(raw.error, 500)) return { ok: false, error: "Invalid error" };
+
+      return {
+        ok: true,
+        message: {
+          type,
+          requestId,
+          ok: raw.ok,
+          pairingState: raw.pairingState,
+          ...(typeof raw.organisationId === "string" ? { organisationId: raw.organisationId } : {}),
+          ...(typeof raw.organisationName === "string" ? { organisationName: raw.organisationName } : {}),
+          ...(typeof raw.seatId === "string" ? { seatId: raw.seatId } : {}),
+          ...(typeof raw.unlocked === "boolean" ? { unlocked: raw.unlocked } : {}),
+          ...(typeof raw.policyVersion === "number" ? { policyVersion: raw.policyVersion } : {}),
+          ...(typeof raw.error === "string" ? { error: raw.error } : {}),
         },
       };
     }

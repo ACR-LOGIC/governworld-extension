@@ -404,3 +404,7 @@ Privacy contact: privacy@acrlogic.com
 Website: governworld.acrlogic.com
 Privacy Policy: https://governworld.acrlogic.com/chrome-extension-privacy
 Support: https://github.com/ACR-LOGIC/governworld-extension/issues
+
+## Supabase pairing (MANAGE mode only)
+
+In LOCAL mode the extension makes no network requests. If an organisation pairs a seat, the extension contacts only the pinned GovernWorld Supabase project to redeem the pairing code, fetch signed policy and send a 15-minute metadata heartbeat (install UUID, browser and extension versions, policy version, health status). It never sends browsing history, URLs, page text, form data, keystrokes or credentials. See `docs/supabase-pairing.md`.

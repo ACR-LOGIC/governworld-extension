@@ -54,3 +54,6 @@ release/images/store-icon-128x128.png
 
 # Repomix packs
 repomix-output.xml
+.vercel
+.env*
+supabase/.temp

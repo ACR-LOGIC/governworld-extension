@@ -19,8 +19,12 @@ describe("extension manifest disclosure contract", () => {
     expect(manifest.minimum_chrome_version).toBe("116");
   });
 
-  it("enforces zero automatic site-access permissions (no host_permissions)", () => {
-    expect(manifest.host_permissions).toBeUndefined();
+  it("restricts automatic host_permissions to the pinned Supabase backend with zero wildcards", () => {
+    expect(manifest.host_permissions).toEqual(["https://lkgcehdwasewwoieyoip.supabase.co/*"]);
+    for (const entry of manifest.host_permissions ?? []) {
+      expect(entry).not.toContain("<all_urls>");
+      expect(entry).not.toMatch(/^https?:\/\/\*/);
+    }
   });
 
   it("keeps always-on site access runtime-only, narrow, and revocable", () => {

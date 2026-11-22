@@ -223,6 +223,9 @@ export interface PinnedTargetInfo {
   availableTabs: ScannableTabSummary[];
 }
 
+export type SupabasePairingState = "local_only" | "redeeming" | "paired" | "paired_offline";
+export type OwningBackend = "supabase" | "azure";
+
 export type PopupMessage =
   | { type: "POPUP_SCAN"; requestId: string; mode: ScanMode; tabId?: number }
   | { type: "POPUP_PIN_TAB"; requestId: string; tabId: number | null; pinCurrent?: boolean }
@@ -315,7 +318,11 @@ export type PopupMessage =
       coordinatorUrl?: string;
     }
   | { type: "POPUP_MANAGEMENT_UNENROLL"; requestId: string }
-  | { type: "POPUP_SYNC_MANAGED_POLICY"; requestId: string; force?: boolean };
+  | { type: "POPUP_SYNC_MANAGED_POLICY"; requestId: string; force?: boolean }
+  | { type: "SUPABASE_PAIR_REDEEM"; requestId: string; code: string }
+  | { type: "SUPABASE_PAIR_STATUS"; requestId: string }
+  | { type: "SUPABASE_PAIR_UNPAIR"; requestId: string }
+  | { type: "SUPABASE_POLICY_SYNC"; requestId: string; force?: boolean };
 
 export interface ScanSettingsMessage {
   enabledCategories: FindingCategory[];
@@ -651,6 +658,44 @@ export type PopupFromWorker =
       error?: string;
     }
   | {
+      type: "SUPABASE_PAIR_STATUS_STATE";
+      requestId: string;
+      pairingState: SupabasePairingState;
+      owningBackend?: OwningBackend | null;
+      organisationId?: string;
+      organisationName?: string;
+      seatId?: string;
+      unlocked?: boolean;
+      policyId?: string;
+      policyVersion?: number;
+      policyEnforced?: boolean;
+      hasDrift?: boolean;
+      driftedKeys?: string[];
+      conflict?: {
+        detected: boolean;
+        existingBackend: OwningBackend;
+        incomingBackend: OwningBackend;
+        message: string;
+      };
+      revoked?: boolean;
+      revokedNotice?: string;
+      lastSyncAt?: string;
+      lastHeartbeatAt?: string;
+      error?: string;
+    }
+  | {
+      type: "SUPABASE_PAIR_REDEEM_RESULT";
+      requestId: string;
+      ok: boolean;
+      pairingState: SupabasePairingState;
+      organisationId?: string;
+      organisationName?: string;
+      seatId?: string;
+      unlocked?: boolean;
+      policyVersion?: number;
+      error?: string;
+    }
+  | {
       type: "POPUP_STAGED_STATS_STATE";
       requestId: string;
       stats: StagedStorageAudit;
@@ -761,6 +806,12 @@ export const MESSAGE_TYPES = new Set<string>([
   "POPUP_MANAGEMENT_UNENROLL",
   "POPUP_SYNC_MANAGED_POLICY",
   "POPUP_MANAGEMENT_STATUS_STATE",
+  "SUPABASE_PAIR_REDEEM",
+  "SUPABASE_PAIR_STATUS",
+  "SUPABASE_PAIR_UNPAIR",
+  "SUPABASE_POLICY_SYNC",
+  "SUPABASE_PAIR_STATUS_STATE",
+  "SUPABASE_PAIR_REDEEM_RESULT",
   // Multi-format acquisition pipeline messages (Layer 2–5 async OCR/PDF results)
   "SCAN_PAGE_VISUAL_RESULT",
   "CONTENT_SHOW_TOAST",

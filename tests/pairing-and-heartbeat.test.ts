@@ -196,7 +196,7 @@ describe("Standalone LOCAL mode vs Managed Pairing & Heartbeat", () => {
     expect(typeof info.platform).toBe("string");
   });
 
-  it("rejects insecure non-localhost HTTP coordinator URLs without calling fetch and permits localhost HTTP", async () => {
+  it("rejects all plaintext HTTP coordinator URLs (including localhost/loopback) fail-closed without calling fetch", async () => {
     // 1. Insecure remote HTTP URL must fail closed before fetch
     await saveManagementEnrollment({
       organization_id: "org_governworld_corp",
@@ -215,7 +215,7 @@ describe("Standalone LOCAL mode vs Managed Pairing & Heartbeat", () => {
     expect(insecureResult.error).toMatch(/HTTPS|Insecure/i);
     expect(fetchMock).not.toHaveBeenCalled();
 
-    // 2. Localhost HTTP coordinator URL (http://127.0.0.1:4820) must be permitted
+    // 2. Localhost HTTP coordinator URL (http://127.0.0.1:4820) must also fail closed in production runtime
     await saveManagementEnrollment({
       organization_id: "org_governworld_corp",
       organization_name: "GovernWorld Corp",
@@ -226,17 +226,11 @@ describe("Standalone LOCAL mode vs Managed Pairing & Heartbeat", () => {
       management_mode: "MANAGE",
     });
 
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({ status: "acknowledged" }),
-    });
-
     const localResult = await sendHeartbeatStatusCheck();
     expect(localResult.mode).toBe("MANAGE");
-    expect(localResult.sent).toBe(true);
-    expect(localResult.status).toBe("sent");
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(fetchMock.mock.calls[0][0]).toBe("http://127.0.0.1:4820/api/v1/management/heartbeat");
+    expect(localResult.sent).toBe(false);
+    expect(localResult.status).toBe("error");
+    expect(localResult.error).toMatch(/HTTPS|Insecure/i);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
