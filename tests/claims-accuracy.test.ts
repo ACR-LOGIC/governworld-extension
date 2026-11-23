@@ -31,7 +31,6 @@ const MARKETING = [
   "docs/publishing/STORE_DESCRIPTION.md",
   "docs/publishing/CHROMEWEBSTORE.md",
   "docs/publishing/STORE_READINESS.md",
-  "src/landing/index.html",
 ];
 
 /** Strip code spans and links so a claim in an example does not trip the check. */

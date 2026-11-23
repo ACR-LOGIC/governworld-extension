@@ -5,7 +5,7 @@
 //
 //   1. The declared MV3 CSP is `script-src 'self' 'wasm-unsafe-eval'`, which
 //      blocks inline script and inline event handlers on every extension page.
-//      An inline <script> in popup/sidepanel/offscreen/landing/privacy renders
+//      An inline <script> in popup/sidepanel/offscreen/privacy renders
 //      as dead markup with no build error, so it is asserted out.
 //   2. The codebase standard is async/await; `.then()` chains reintroduce
 //      unhandled-rejection and error-swallowing shapes the rest of the code
@@ -28,7 +28,6 @@ const EXTENSION_PAGES = [
   "src/popup/review.html",
   "src/sidepanel/sidepanel.html",
   "src/offscreen/offscreen.html",
-  "src/landing/index.html",
 ];
 
 /** Recursively collect files with the given extensions. */

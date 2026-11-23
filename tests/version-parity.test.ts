@@ -4,8 +4,8 @@
 // The API client sends CURRENT_EXTENSION_VERSION as X-Extension-Version and
 // the health gate compares it against the server's minimum, so a stale
 // constant silently misreports the build and mis-evaluates the kill switch.
-// The Firefox manifest and the landing spec table drifted the same way, so
-// all of them are pinned to package.json here.
+// The Firefox manifest drifted the same way, so all of them are pinned
+// to package.json here.
 import { readFileSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { dirname, join } from "node:path";
@@ -40,12 +40,6 @@ describe("version parity (P11 single source of truth)", () => {
     expect(privacy).toContain(`<code>v${pkg.version}</code>`);
     expect(popupHtml).toContain('id="diag-version-value"');
     expect(sidepanelHtml).toContain('id="diag-version-value"');
-  });
-
-  it("landing page spec table names the shipped version", () => {
-    const pkg = json("package.json");
-    const landing = readFileSync(join(extRoot, "src/landing/index.html"), "utf8");
-    expect(landing).toContain(`<td>${pkg.version}</td>`);
   });
 
   it("sync-version --check passes when all targets match package.json", () => {

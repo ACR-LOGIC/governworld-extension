@@ -132,7 +132,7 @@ try {
   const id = new URL(worker.url()).host;
   console.log(`\n  extension id: ${id} (loaded from the extracted zip)`);
 
-  const pages = ["popup.html", "sidepanel.html", "landing.html", "privacy.html", "legal.html", "redact.html"];
+  const pages = ["popup.html", "sidepanel.html", "privacy.html", "legal.html", "redact.html"];
   const pageErrors = [];
   for (const name of pages) {
     const p = await context.newPage();

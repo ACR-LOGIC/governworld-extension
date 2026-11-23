@@ -18,7 +18,6 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
-const landing = join(root, "src", "landing", "index.html");
 const OUT_DIR = join(root, "release", "images");
 
 const W = 440;
@@ -127,10 +126,6 @@ const page = `<!doctype html><html><head><meta charset="utf-8"><style>
   </div>
 </body></html>`;
 
-if (!existsSync(landing)) {
-  console.error("src/landing/index.html missing");
-  process.exit(1);
-}
 mkdirSync(OUT_DIR, { recursive: true });
 
 const browser = await chromium.launch({ headless: false, ...browserChannelArgs() });

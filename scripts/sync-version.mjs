@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 // Single version source of truth: package.json -> all extension manifests,
-// TypeScript constants, landing/privacy HTML, README.md, and AGENTS.md.
+// TypeScript constants, privacy HTML, README.md, and AGENTS.md.
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -75,22 +75,14 @@ checkOrWriteText("src/api/config.ts", (raw) =>
   )
 );
 
-// 4. Landing page spec table src/landing/index.html
-checkOrWriteText("src/landing/index.html", (raw) =>
-  raw.replace(
-    /(<tr><td>Version<\/td><td>)[^<]+(<\/td><\/tr>)/,
-    `$1${VERSION}$2`
-  )
-);
-
-// 5. Privacy policy page src/popup/privacy.html
+// 4. Privacy policy page src/popup/privacy.html
 checkOrWriteText("src/popup/privacy.html", (raw) =>
   raw
     .replace(/(Extension v)\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/g, `$1${VERSION}`)
     .replace(/(GovernWorld Chrome Extension \(<code>v)\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(<\/code>\))/g, `$1${VERSION}$2`)
 );
 
-// 6. README.md active version badge, release link, intro, and modes line
+// 5. README.md active version badge, release link, intro, and modes line
 checkOrWriteText("README.md", (raw) =>
   raw
     .replace(/Version-\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-blue\.svg/g, `Version-${VERSION}-blue.svg`)
@@ -99,7 +91,7 @@ checkOrWriteText("README.md", (raw) =>
     .replace(/(GovernWorld Extension v)\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?( supports)/g, `$1${VERSION}$2`)
 );
 
-// 7. AGENTS.md current release version line
+// 6. AGENTS.md current release version line
 checkOrWriteText("AGENTS.md", (raw) =>
   raw.replace(
     /(Current release version: `)\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(`\.)/,

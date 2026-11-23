@@ -28,7 +28,7 @@ const MIME = {
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', 'http://localhost');
   let pathname = decodeURIComponent(url.pathname);
-  if (pathname === '/') pathname = '/landing.html';
+  if (pathname === '/') pathname = '/popup.html';
   const file = normalize(join(root, pathname));
   if (!file.startsWith(normalize(root))) {
     res.writeHead(403, { 'Content-Type': 'text/plain' });
@@ -47,7 +47,6 @@ const server = createServer(async (req, res) => {
 
 server.listen(port, () => {
   console.log(`GovernWorld extension preview: http://localhost:${port}`);
-  console.log(`  landing     : http://localhost:${port}/landing.html`);
   console.log(`  side panel  : http://localhost:${port}/sidepanel.html`);
   console.log(`  popup       : http://localhost:${port}/popup.html`);
 });
