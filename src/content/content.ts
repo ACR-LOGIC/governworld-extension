@@ -487,10 +487,9 @@ if (g.__gwRedactionContentLoaded !== true) {
           winMatches = enrichAndBoostNames(winMatches);
         }
         if (settings.medicalDictionaryEnabled === true) {
-          if (!isMedicalDictionaryLoaded()) {
-            await ensureMedicalDictionaryLoaded();
-          }
-          const medMatches = detectMedicalDictionaryTerms(slice.combined).map((m) => ({
+          const mode = settings.clinicMode ?? "general";
+          await ensureMedicalDictionaryLoaded(mode);
+          const medMatches = detectMedicalDictionaryTerms(slice.combined, mode).map((m) => ({
             ...m,
             start: slice.globalStartOffset + m.start,
             end: slice.globalStartOffset + m.end,
@@ -1247,6 +1246,14 @@ if (g.__gwRedactionContentLoaded !== true) {
       }
       deltaMatches = enrichAndBoostNames(deltaMatches);
     }
+    if (settings.medicalDictionaryEnabled === true) {
+      const mode = settings.clinicMode ?? "general";
+      if (!isMedicalDictionaryLoaded()) {
+        void ensureMedicalDictionaryLoaded(mode);
+      } else {
+        deltaMatches.push(...detectMedicalDictionaryTerms(newBuilt.combined, mode));
+      }
+    }
     deltaMatches = deltaMatches.filter((m) => m.confidence >= threshold(m.category));
     if (deltaMatches.length === 0) return;
 
@@ -1453,6 +1460,7 @@ interface ScanSettings {
   confidenceThresholds?: Record<FindingCategory, number>;
   autoMaskSingleNames?: boolean;
   medicalDictionaryEnabled?: boolean;
+  clinicMode?: import("../shared/types.js").ClinicMode;
   windowChars?: number;
   windowOverlapChars?: number;
   maxTotalWindows?: number;

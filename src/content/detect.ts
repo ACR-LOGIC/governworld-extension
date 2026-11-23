@@ -1288,34 +1288,32 @@ function isPlaceholder(pat: { confidence: number }, value: string): boolean {
 // address like "500 Training Plaza, Sampleville, TX 00000" produced no street
 // match at all and the whole address stayed visible.
 const STREET_RE =
-  /(?<![\dA-Za-z])\d{1,5}[^\S\n]{1,4}[A-Za-z][A-Za-z0-9.'-]{0,32}(?:[^\S\n]{1,4}[A-Za-z0-9.'-]{1,32}){0,6}[^\S\n]{1,4}(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Dr|Drive|Ln|Lane|Ct|Court|Pl|Place|Plaza|Way|Ter|Terrace|Cir|Circle|Pkwy|Parkway|Sq|Square|Hwy|Highway|Trl|Trail|Loop)(?:\.)?\b(?:[^\S\n]{1,4}(?:NW|NE|SW|SE|N|S|E|W)\b)?/g;
-// Optional apt/unit, then city, then state, then ZIP — each bounded by commas
-// so the city clause cannot swallow the state abbreviation.
-//
-// The ZIP group is followed by a negative lookahead on a digit. Without it the
-// optional group matched the first five digits of any longer run, so in
-// "5 Ocean Rd 4111111111111611" the address span ended at "...Rd 41111" and the
-// card match was then discarded as an overlap. A ZIP is exactly five digits;
-// five digits that are part of a longer run are not a ZIP.
+  /(?<![\dA-Za-z])(?:\d{1,5}[^\S\n]{1,4}[A-Za-z][A-Za-z0-9.'-]{0,32}(?:[^\S\n]{1,4}(?:[A-Za-z][A-Za-z0-9.'-]{0,32}|\d{1,4}(?:st|nd|rd|th))){0,6}[^\S\n]{1,4}(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Dr|Drive|Ln|Lane|Ct|Court|Pl|Place|Plaza|Way|Ter|Terrace|Cir|Circle|Pkwy|Parkway|Sq|Square|Hwy|Highway|Trl|Trail|Loop)(?:\.)?\b(?:[^\S\n]{1,4}(?:NW|NE|SW|SE|N|S|E|W)\b)?|P\.?\s*O\.?\s*Box\s+\d{1,6}[A-Za-z0-9-]*)/gi;
+// Optional apt/unit/suite, then city, then state, then ZIP — allowing commas or single newlines.
+// The ZIP group is followed by (?!\d) so it never swallows the first 5 digits of a card number.
 const ADDRESS_TAIL_RE =
-  /(?:,[^\S\n]{1,4}(?:Apt|Unit|Suite|#|Ste)\.?[^\S\n]{0,4}\d{1,6}[A-Za-z]?)?(?:,[^\S\n]{1,4}[A-Z][a-zA-Z.'-]{0,30}(?:[^\S\n]{1,4}[A-Z][a-zA-Z.'-]{0,30}){0,4})?(?:,[^\S\n]{1,4}[A-Z]{2}(?:\.[^\S\n]{1,4})?)?(?:[^\S\n]{1,4}\d{5}(?:-\d{4})?(?!\d))?/;
+  /(?:(?:,|[^\S\n]{1,4}|\r?\n[^\S\n]{0,4})(?:Apt|Unit|Suite|Ste|Bldg|Fl|#)\.?[^\S\n]{0,4}[A-Za-z0-9][A-Za-z0-9-]{0,7})?(?:(?:,|[^\S\n]{0,4}\r?\n[^\S\n]{0,4})[^\S\n]{0,4}[A-Z][a-zA-Z.'-]{0,30}(?:[^\S\n]{1,4}[A-Z][a-zA-Z.'-]{0,30}){0,4})?(?:(?:,[^\S\n]{0,4}|[^\S\n]{1,4})[A-Z]{2}\.?)?(?:[^\S\n]{1,4}\d{5}(?:-\d{4})?(?!\d))?/;
 const ZIP_RE = /\b\d{5}(?:-\d{4})?\b/;
+const ADDRESS_LABEL_BEFORE_RE = /(?:address|addr|residence|location|mailing\s+address|home\s+address|street)\s*[:#-]\s*$/i;
 
 function detectAddresses(text: string): RawMatch[] {
   const out: RawMatch[] = [];
   for (const m of text.matchAll(STREET_RE)) {
+    if (m.index === undefined) continue;
     const streetEnd = m.index + m[0].length;
-    const after = text.slice(streetEnd, Math.min(text.length, streetEnd + 120));
+    const after = text.slice(streetEnd, Math.min(text.length, streetEnd + 140));
     const tailMatch = after.match(ADDRESS_TAIL_RE);
     const tail = tailMatch ? tailMatch[0] : "";
-    // Require a city/state/zip tail OR a second address token to reduce noise.
     const hasZip = ZIP_RE.test(tail);
-    const hasTail = /\b(?:[A-Z]{2}|[A-Z][a-z]+)\b/.test(tail.slice(0, 60));
-    if (!hasZip && !hasTail) continue;
+    const hasTail = /\b(?:[A-Z]{2}|[A-Z][a-z]+)\b/.test(tail.slice(0, 80));
+    const before = text.slice(Math.max(0, m.index - 24), m.index);
+    const hasLabel = ADDRESS_LABEL_BEFORE_RE.test(before);
+    const isPoBox = /^p\.?\s*o\.?\s*box/i.test(m[0]);
+    if (!hasZip && !hasTail && !hasLabel && !isPoBox) continue;
     const value = text.slice(m.index, streetEnd + tail.length).replace(/[,\s]+$/, "");
     out.push({
       category: "address",
-      confidence: hasZip ? 0.84 : 0.72,
+      confidence: hasZip ? 0.84 : hasTail ? 0.76 : 0.72,
       value,
       start: m.index,
       end: m.index + value.length,

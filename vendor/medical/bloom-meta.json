@@ -1,0 +1,21 @@
+{
+  "generatedAt": "2026-11-23T00:27:41.242Z",
+  "drugs": {
+    "count": 11320,
+    "sizeBits": 217006,
+    "hashCount": 13,
+    "bytes": 27126
+  },
+  "conditions": {
+    "count": 15225,
+    "sizeBits": 291866,
+    "hashCount": 13,
+    "bytes": 36484
+  },
+  "terms": {
+    "count": 132,
+    "sizeBits": 2531,
+    "hashCount": 13,
+    "bytes": 317
+  }
+}

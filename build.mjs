@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 import { build } from "esbuild";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -50,6 +50,9 @@ copyFileSync(join(root, "src/sidepanel", "sidepanel.html"), join(outDir, "sidepa
 copyFileSync(join(root, "src/sidepanel", "sidepanel.css"), join(outDir, "sidepanel.css"));
 copyFileSync(join(root, "src/landing", "index.html"), join(outDir, "landing.html"));
 copyFileSync(join(root, "src/landing", "landing.js"), join(outDir, "landing.js"));
+if (existsSync(join(root, "src/landing", "assets"))) {
+  cpSync(join(root, "src/landing", "assets"), join(outDir, "landing-assets"), { recursive: true });
+}
   copyFileSync(join(root, "src/popup", "privacy.html"), join(outDir, "privacy.html"));
   copyFileSync(join(root, "src/popup", "legal.html"), join(outDir, "legal.html"));
   copyFileSync(join(root, "src/popup", "redact.html"), join(outDir, "redact.html"));
@@ -99,6 +102,9 @@ copyFileSync(
   join(root, "vendor/medical-dictionary.json"),
   join(assetsDir, "medical-dictionary.json")
 );
+if (existsSync(join(root, "vendor/medical"))) {
+  cpSync(join(root, "vendor/medical"), join(assetsDir, "medical"), { recursive: true });
+}
 
 // Vendor OCR language data.
 //

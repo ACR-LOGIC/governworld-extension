@@ -1,0 +1,53 @@
+high blood pressure
+low blood sugar
+sugar diabetes
+type 2 diabetes
+type 1 diabetes
+heart attack
+stroke
+hypertension
+major depressive disorder
+chronic kidney disease
+breast cancer
+prostate cancer
+endometriosis
+pcos
+polycystic ovary syndrome
+ovarian cyst
+cervical cancer
+preeclampsia
+gestational diabetes
+placenta previa
+hyperemesis gravidarum
+ectopic pregnancy
+preterm labor
+postpartum depression
+postpartum hemorrhage
+menopause
+rsv bronchiolitis
+croup
+hand foot and mouth
+kawasaki disease
+chickenpox
+acute otitis media
+neonatal jaundice
+respiratory distress of newborn
+neonatal sepsis
+congenital heart disease
+febrile seizure
+scoliosis
+mononucleosis
+alzheimer disease
+dementia
+hip fracture
+macular degeneration
+benign prostatic hyperplasia
+testicular torsion
+erectile dysfunction
+atrial fibrillation
+congestive heart failure
+coronary artery disease
+asthma
+copd
+pneumonia
+appendicitis

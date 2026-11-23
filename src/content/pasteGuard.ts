@@ -1,5 +1,11 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 import { detect, maskValue, placeholderLabelFor } from "./detect.js";
+import {
+  detectMedicalDictionaryTerms,
+  ensureMedicalDictionaryLoaded,
+  isMedicalDictionaryLoaded,
+} from "./detectors/medicalDictionary.js";
+import type { ClinicMode } from "../shared/types.js";
 import { showToast } from "./toast.js";
 import type { RawMatch } from "./detect.js";
 import { DEFAULT_SETTINGS, normalizeSettings, PAIRING_STATE_KEY } from "../shared/settings.js";
@@ -38,10 +44,23 @@ import { CATEGORY_LABELS, getFindingDisplayName } from "./paste-guard/constants.
 export function detectPasteFindings(
   text: string,
   enabledCategories: FindingCategory[] = DEFAULT_SETTINGS.enabledCategories,
-  customPatterns: CustomPattern[] = []
+  customPatterns: CustomPattern[] = [],
+  medicalOpts?: { medicalDictionaryEnabled?: boolean; clinicMode?: ClinicMode }
 ): RawMatch[] {
   if (!text || typeof text !== "string" || text.trim().length === 0) return [];
-  return detect(text, enabledCategories, customPatterns);
+  const base = detect(text, enabledCategories, customPatterns);
+  if (medicalOpts?.medicalDictionaryEnabled) {
+    const mode = medicalOpts.clinicMode ?? "general";
+    if (isMedicalDictionaryLoaded()) {
+      const med = detectMedicalDictionaryTerms(text, mode).filter(
+        (m) => !base.some((b) => m.start < b.end && m.end > b.start)
+      );
+      base.push(...med);
+    } else {
+      void ensureMedicalDictionaryLoaded(mode);
+    }
+  }
+  return base;
 }
 
 /** Pure sanitization helper replacing detected spans with [REDACTED] placeholders */
@@ -1066,6 +1085,8 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
   let cachedPolicy: EnterprisePolicy = { ...NO_ENTERPRISE_POLICY };
   let cachedMode: ProtectionMode = cachedSettings.protectionMode;
   let cachedEnabledCategories: FindingCategory[] = [...cachedSettings.enabledCategories];
+  let cachedMedicalDictionaryEnabled = cachedSettings.medicalDictionaryEnabled === true;
+  let cachedClinicMode: ClinicMode = cachedSettings.clinicMode ?? "general";
   let isHandlingEvent = false;
   const attachedRoots = new WeakSet<Document | ShadowRoot>();
   const attachedList: Array<Document | ShadowRoot> = [];
@@ -1091,6 +1112,11 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
     const eff = resolveEffectiveProtection(enforced, cachedPolicy);
     cachedMode = eff.mode;
     cachedEnabledCategories = eff.enabledCategories;
+    cachedMedicalDictionaryEnabled = enforced.medicalDictionaryEnabled === true;
+    cachedClinicMode = enforced.clinicMode ?? "general";
+    if (cachedMedicalDictionaryEnabled && !isMedicalDictionaryLoaded()) {
+      void ensureMedicalDictionaryLoaded(cachedClinicMode);
+    }
   };
 
   const refreshPolicy = async (): Promise<void> => {
@@ -1194,7 +1220,7 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
     if (cachedMode === "off") return;
     if (!text || text.trim().length === 0) return;
 
-    const matches = detectPasteFindings(text, cachedEnabledCategories, cachedCustomPatterns);
+    const matches = detectPasteFindings(text, cachedEnabledCategories, cachedCustomPatterns, { medicalDictionaryEnabled: cachedMedicalDictionaryEnabled, clinicMode: cachedClinicMode });
     if (matches.length === 0) return;
 
     // Intercept event
@@ -1405,7 +1431,7 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
     const text = getElementText(target);
     if (!text || text.trim().length === 0) return;
 
-    const matches = detectPasteFindings(text, cachedEnabledCategories, cachedCustomPatterns);
+    const matches = detectPasteFindings(text, cachedEnabledCategories, cachedCustomPatterns, { medicalDictionaryEnabled: cachedMedicalDictionaryEnabled, clinicMode: cachedClinicMode });
     if (matches.length === 0) return;
 
     e.preventDefault();
@@ -1553,7 +1579,7 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
       if (["password", "hidden", "submit", "button", "checkbox", "radio", "file"].includes(type)) continue;
       const val = input.value || "";
       if (!val || val.length < 3) continue;
-      const matches = detectPasteFindings(val, cachedEnabledCategories, cachedCustomPatterns);
+      const matches = detectPasteFindings(val, cachedEnabledCategories, cachedCustomPatterns, { medicalDictionaryEnabled: cachedMedicalDictionaryEnabled, clinicMode: cachedClinicMode });
       if (matches.length > 0) {
         foundMatches.push(...matches);
         if (!culpritElement) culpritElement = input;
@@ -1652,7 +1678,7 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
         onSanitize: () => {
           isHandlingEvent = false;
           for (const input of inputs) {
-            const matches = detectPasteFindings(input.value || "", cachedEnabledCategories, cachedCustomPatterns);
+            const matches = detectPasteFindings(input.value || "", cachedEnabledCategories, cachedCustomPatterns, { medicalDictionaryEnabled: cachedMedicalDictionaryEnabled, clinicMode: cachedClinicMode });
             if (matches.length > 0) {
               input.value = sanitizePastedText(input.value, matches);
               try {
@@ -1720,7 +1746,7 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
           if (typeof file.text === "function") {
             const fileText = await file.text();
             if (fileText) {
-              const matches = detectPasteFindings(fileText, cachedEnabledCategories, cachedCustomPatterns);
+              const matches = detectPasteFindings(fileText, cachedEnabledCategories, cachedCustomPatterns, { medicalDictionaryEnabled: cachedMedicalDictionaryEnabled, clinicMode: cachedClinicMode });
               if (matches.length > 0) {
                 const complianceFindings = extractComplianceFindings(fileText, matches);
                 const complianceEval = evaluateComplianceScore(complianceFindings, dest, "upload");
