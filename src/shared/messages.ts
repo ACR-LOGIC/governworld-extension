@@ -530,6 +530,7 @@ export function isScanSettings(value: unknown): value is ScanSettingsMessage {
     (value.confidenceThresholds === undefined || isConfidenceThresholds(value.confidenceThresholds)) &&
     (value.autoMaskSingleNames === undefined || typeof value.autoMaskSingleNames === "boolean") &&
     (value.medicalDictionaryEnabled === undefined || typeof value.medicalDictionaryEnabled === "boolean") &&
+    (value.clinicMode === undefined || (typeof value.clinicMode === "string" && ["general", "pediatrics", "obgyn", "geriatrics", "urology"].includes(value.clinicMode))) &&
     (value.windowChars === undefined || (typeof value.windowChars === "number" && Number.isSafeInteger(value.windowChars) && value.windowChars >= 100)) &&
     (value.windowOverlapChars === undefined || (typeof value.windowOverlapChars === "number" && Number.isSafeInteger(value.windowOverlapChars) && value.windowOverlapChars >= 0)) &&
     (value.maxTotalWindows === undefined || (typeof value.maxTotalWindows === "number" && Number.isSafeInteger(value.maxTotalWindows) && value.maxTotalWindows >= 1))
@@ -887,6 +888,13 @@ export function validateMessage(raw: unknown): ValidationResult {
     case "CONTENT_GET_NAME_DICTIONARIES":
     case "CONTENT_GET_MEDICAL_DICTIONARY": {
       return { ok: true, message: { type, requestId } };
+    }
+    case "CONTENT_GET_MEDICAL_PACKS": {
+      const cm = raw.clinicMode;
+      if (cm !== undefined && (typeof cm !== "string" || !["general", "pediatrics", "obgyn", "geriatrics", "urology"].includes(cm))) {
+        return { ok: false, error: "Invalid clinicMode" };
+      }
+      return { ok: true, message: { type, requestId, ...(cm ? { clinicMode: cm as import("./types.js").ClinicMode } : {}) } };
     }
     case "APPLY_MASKS":
     case "COPY_REDACTED_TEXT": {

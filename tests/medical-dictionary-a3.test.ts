@@ -30,6 +30,7 @@ describe("A3 (D3) — Medical dictionary separate toggle & lazy load", () => {
     (globalThis as { chrome?: unknown }).chrome = {
       runtime: {
         sendMessage: async (msg: { type: string }) => {
+          if (msg.type === "CONTENT_GET_MEDICAL_PACKS") return undefined;
           expect(msg.type).toBe("CONTENT_GET_MEDICAL_DICTIONARY");
           return { ok: true, terms: ["hypertension", "metformin"] };
         },

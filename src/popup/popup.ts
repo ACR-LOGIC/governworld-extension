@@ -3539,6 +3539,15 @@ export async function initPopup(): Promise<void> {
     });
   }
 
+  const clinicModeSelect = document.getElementById("clinic-mode-select") as HTMLSelectElement | null;
+  if (clinicModeSelect) {
+    clinicModeSelect.value = settings.clinicMode;
+    clinicModeSelect.addEventListener("change", async () => {
+      const current = await loadSettings();
+      await saveSettings({ ...current, clinicMode: clinicModeSelect.value as Settings["clinicMode"] });
+    });
+  }
+
   const pasteGuardToggle = document.getElementById("paste-guard-toggle") as HTMLInputElement | null;
   const alwaysOnToggle = document.getElementById("always-on-toggle") as HTMLInputElement | null;
   const grantAccessBtn = document.getElementById("grant-access-btn") as HTMLButtonElement | null;
@@ -3904,6 +3913,9 @@ export async function initPopup(): Promise<void> {
     if (medicalDictionaryToggle) {
       medicalDictionaryToggle.checked = defaults.medicalDictionaryEnabled;
       medicalDictionaryToggle.setAttribute("aria-checked", "false");
+    }
+    if (clinicModeSelect) {
+      clinicModeSelect.value = defaults.clinicMode;
     }
     // Mode toggles, banner, categories, and lock notice are synced by the
     // refreshProtectionStatus() call above.

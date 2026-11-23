@@ -1,8 +1,8 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 import { isRecord, type OwningBackend, type SupabasePairingState } from "./types.js";
-import type { FindingCategory, ScanMode, RedactionStyle } from "./types.js";
+import type { FindingCategory, ScanMode, RedactionStyle, ClinicMode } from "./types.js";
 import type { LanguageCode } from "./i18n.js";
-export type { FindingCategory, ScanMode, RedactionStyle, LanguageCode, OwningBackend };
+export type { FindingCategory, ScanMode, RedactionStyle, ClinicMode, LanguageCode, OwningBackend };
 
 export type FontSizeScale = "default" | "medium" | "large" | "xlarge";
 export type SessionTimeoutOption = "never" | "5m" | "15m" | "30m";
@@ -317,6 +317,8 @@ export interface Settings {
   autoMaskSingleNames: boolean;
   /** When true, lazy-loads the clinical/medical dictionary detector (A3 / D3); default false. */
   medicalDictionaryEnabled: boolean;
+  /** Clinical specialty mode for medical phrase/drug demographic boosting; default "general". */
+  clinicMode: ClinicMode;
 }
 
 function defaultThresholds(): Record<FindingCategory, number> {
@@ -381,6 +383,7 @@ export const DEFAULT_SETTINGS: Settings = {
   defaultStampText: "[REDACTED]",
   autoMaskSingleNames: false,
   medicalDictionaryEnabled: false,
+  clinicMode: "general",
 };
 
 export function isCategory(value: unknown): value is FindingCategory {
@@ -391,6 +394,7 @@ const VALID_LANGUAGES = new Set<LanguageCode>(["en", "es", "fr", "de", "ja", "pt
 const VALID_FONT_SIZES = new Set<FontSizeScale>(["default", "medium", "large", "xlarge"]);
 const VALID_TIMEOUTS = new Set<SessionTimeoutOption>(["never", "5m", "15m", "30m"]);
 const VALID_REDACTION_STYLES = new Set<RedactionStyle>(["blackout", "whiteout", "stamp"]);
+const VALID_CLINIC_MODES = new Set<ClinicMode>(["general", "pediatrics", "obgyn", "geriatrics", "urology"]);
 
 /** Coerce an unknown stored blob into a safe Settings value (fail closed). */
 export function normalizeSettings(raw: unknown): Settings {
@@ -484,6 +488,10 @@ export function normalizeSettings(raw: unknown): Settings {
     : base.defaultStampText;
   const autoMaskSingleNames = raw.autoMaskSingleNames === true;
   const medicalDictionaryEnabled = raw.medicalDictionaryEnabled === true;
+  const clinicMode: ClinicMode =
+    typeof raw.clinicMode === "string" && VALID_CLINIC_MODES.has(raw.clinicMode as ClinicMode)
+      ? (raw.clinicMode as ClinicMode)
+      : base.clinicMode;
 
   return {
     mode,
@@ -518,6 +526,7 @@ export function normalizeSettings(raw: unknown): Settings {
     defaultStampText,
     autoMaskSingleNames,
     medicalDictionaryEnabled,
+    clinicMode,
   };
 }
 

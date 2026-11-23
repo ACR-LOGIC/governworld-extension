@@ -117,6 +117,7 @@ function buildScanSettingsMessage(
     confidenceThresholds: settings.confidenceThresholds,
     autoMaskSingleNames: settings.autoMaskSingleNames,
     medicalDictionaryEnabled: settings.medicalDictionaryEnabled,
+    clinicMode: settings.clinicMode,
   };
 }
 
@@ -262,10 +263,20 @@ export function updateBadgeForTab(tabId: number, count: number, forceColor?: str
         }
         return;
       }
+      const clinicBadgeMap: Record<string, string> = {
+        pediatrics: "PEDI",
+        obgyn: "OBGY",
+        geriatrics: "GERI",
+        urology: "UROL",
+      };
+      const clinicTag =
+        settings?.medicalDictionaryEnabled && settings?.clinicMode && settings.clinicMode !== "general"
+          ? clinicBadgeMap[settings.clinicMode] ?? ""
+          : "";
       if (chrome.action?.setBadgeText) {
         void chrome.action.setBadgeText({
           tabId,
-          text: count > 0 ? (count > 99 ? "99+" : String(count)) : "",
+          text: count > 0 ? (count > 99 ? "99+" : String(count)) : clinicTag,
         }).catch(() => undefined);
       }
       if (chrome.action?.setBadgeBackgroundColor) {
@@ -2724,6 +2735,7 @@ const CONTENT_MESSAGE_TYPES = new Set<ExtensionMessage["type"]>([
   "CONTENT_ERROR",
   "CONTENT_GET_NAME_DICTIONARIES",
   "CONTENT_GET_MEDICAL_DICTIONARY",
+  "CONTENT_GET_MEDICAL_PACKS",
 ]);
 
 let cachedMedicalDictionary: { terms: string[] } | null = null;
@@ -2736,6 +2748,50 @@ async function getMedicalDictionaryPayload(): Promise<{ terms: string[] }> {
     terms: Array.isArray(parsed.terms) ? parsed.terms.filter((t): t is string => typeof t === "string") : [],
   };
   return cachedMedicalDictionary;
+}
+
+const cachedMedicalPacks = new Map<string, unknown>();
+async function fetchAssetBase64(relPath: string): Promise<string> {
+  const resp = await fetch(chrome.runtime.getURL(relPath));
+  if (!resp.ok) throw new Error(`Failed to load ${relPath} (${resp.status})`);
+  const bytes = new Uint8Array(await resp.arrayBuffer());
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+async function fetchAssetGzipJson(relPath: string): Promise<unknown> {
+  const resp = await fetch(chrome.runtime.getURL(relPath));
+  if (!resp.ok) throw new Error(`Failed to load ${relPath} (${resp.status})`);
+  const ds = new DecompressionStream("gzip");
+  const decompressed = await new Response(resp.body!.pipeThrough(ds)).text();
+  return JSON.parse(decompressed);
+}
+async function getMedicalPacksPayload(clinicMode: string): Promise<unknown> {
+  const key = clinicMode === "pediatrics" || clinicMode === "obgyn" ? clinicMode : "general";
+  if (cachedMedicalPacks.has(key)) return cachedMedicalPacks.get(key);
+  const meta = await (await fetch(chrome.runtime.getURL("assets/medical/bloom-meta.json"))).json();
+  const catalog = await (await fetch(chrome.runtime.getURL("assets/medical/conditions-catalog.json"))).json();
+  const [drugsB64, conditionsB64, termsB64, fuzzyIndex] = await Promise.all([
+    fetchAssetBase64("assets/medical/bloom-drugs.bin"),
+    fetchAssetBase64("assets/medical/bloom-conditions.bin"),
+    fetchAssetBase64("assets/medical/bloom-terms.bin"),
+    fetchAssetGzipJson("assets/medical/fuzzy-index.json.gz"),
+  ]);
+  let specialty: unknown = null;
+  if (key === "pediatrics" || key === "obgyn") {
+    const prefix = key === "pediatrics" ? "pediatric" : "obgyn";
+    const sMeta = await (await fetch(chrome.runtime.getURL(`assets/medical/bloom-${prefix}-meta.json`))).json();
+    const [sDrugs, sConds, sTerms, sFuzzy] = await Promise.all([
+      fetchAssetBase64(`assets/medical/bloom-drugs-${prefix}.bin`),
+      fetchAssetBase64(`assets/medical/bloom-conditions-${prefix}.bin`),
+      fetchAssetBase64(`assets/medical/bloom-terms-${prefix}.bin`),
+      fetchAssetGzipJson(`assets/medical/fuzzy-index-${prefix}.json.gz`),
+    ]);
+    specialty = { meta: sMeta, drugsB64: sDrugs, conditionsB64: sConds, termsB64: sTerms, fuzzyIndex: sFuzzy };
+  }
+  const payload = { meta, catalog, drugsB64, conditionsB64, termsB64, fuzzyIndex, specialty };
+  cachedMedicalPacks.set(key, payload);
+  return payload;
 }
 
 let cachedNameDictionaries: { first: string; last: string } | null = null;
@@ -2799,6 +2855,11 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
       case "CONTENT_GET_MEDICAL_DICTIONARY": {
         const payload = await getMedicalDictionaryPayload();
         sendResponse({ ok: true, ...payload });
+        return;
+      }
+      case "CONTENT_GET_MEDICAL_PACKS": {
+        const payload = await getMedicalPacksPayload(msg.clinicMode ?? "general");
+        sendResponse({ ok: true, payload });
         return;
       }
       case "SCAN_PROGRESS":

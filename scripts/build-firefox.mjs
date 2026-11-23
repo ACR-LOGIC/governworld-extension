@@ -13,7 +13,7 @@
 //
 // Output: dist-firefox/ (load via about:debugging, or `web-ext build`).
 import { build } from "esbuild";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
@@ -103,6 +103,9 @@ copyFileSync(
   join(root, "vendor/medical-dictionary.json"),
   join(assetsDir, "medical-dictionary.json")
 );
+if (existsSync(join(root, "vendor/medical"))) {
+  cpSync(join(root, "vendor/medical"), join(assetsDir, "medical"), { recursive: true });
+}
 
 const tessdataDir = join(assetsDir, "tessdata");
 mkdirSync(tessdataDir, { recursive: true });

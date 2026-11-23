@@ -83,6 +83,7 @@ export interface Finding {
 }
 
 export type RedactionStyle = "blackout" | "whiteout" | "stamp";
+export type ClinicMode = "general" | "pediatrics" | "obgyn" | "geriatrics" | "urology";
 
 export interface RedactionOptions {
   style?: RedactionStyle;
@@ -334,6 +335,7 @@ export interface ScanSettingsMessage {
   confidenceThresholds?: Record<FindingCategory, number>;
   autoMaskSingleNames?: boolean;
   medicalDictionaryEnabled?: boolean;
+  clinicMode?: ClinicMode;
   windowChars?: number;
   windowOverlapChars?: number;
   maxTotalWindows?: number;
@@ -371,6 +373,7 @@ export type WorkerMessage =
   | { type: "CONTENT_ERROR"; requestId: string; sessionId: string; code: string; userMessage: string }
   | { type: "CONTENT_GET_NAME_DICTIONARIES"; requestId: string }
   | { type: "CONTENT_GET_MEDICAL_DICTIONARY"; requestId: string }
+  | { type: "CONTENT_GET_MEDICAL_PACKS"; requestId: string; clinicMode?: ClinicMode }
   | { type: "APPLY_MASKS"; requestId: string; sessionId: string; findingIds: string[] }
   | { type: "REMOVE_MASKS"; requestId: string; sessionId: string }
   | { type: "COPY_REDACTED_TEXT"; requestId: string; sessionId: string; findingIds: string[] }
@@ -749,6 +752,7 @@ export const MESSAGE_TYPES = new Set<string>([
   "CONTENT_ERROR",
   "CONTENT_GET_NAME_DICTIONARIES",
   "CONTENT_GET_MEDICAL_DICTIONARY",
+  "CONTENT_GET_MEDICAL_PACKS",
   "APPLY_MASKS",
   "REMOVE_MASKS",
   "COPY_REDACTED_TEXT",

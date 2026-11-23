@@ -1,0 +1,132 @@
+mri
+ct scan
+x ray
+x-ray
+pet scan
+ultrasound
+echocardiogram
+electrocardiogram
+ekg
+ecg
+eeg
+emg
+blood test
+blood pressure
+blood glucose
+blood count
+cbc
+bmp
+cmp
+lipid panel
+thyroid panel
+hba1c
+a1c
+hemoglobin a1c
+urinalysis
+biopsy
+colonoscopy
+endoscopy
+bronchoscopy
+laparoscopy
+arthroscopy
+mammogram
+mammography
+pap smear
+colposcopy
+amniocentesis
+fetal heart rate
+c-section
+cesarean section
+vaginal delivery
+contraceptive counseling
+iud insertion
+chemotherapy
+radiation therapy
+immunotherapy
+dialysis
+hemodialysis
+peritoneal dialysis
+insulin pump
+pacemaker
+defibrillator
+stent
+catheter
+ventilator
+intubation
+tracheostomy
+appendectomy
+cholecystectomy
+hysterectomy
+mastectomy
+lumpectomy
+prostatectomy
+thyroidectomy
+tonsillectomy
+spinal fusion
+hip replacement
+knee replacement
+cataract surgery
+bariatric surgery
+angioplasty
+bypass surgery
+coronary bypass
+transplant
+blood transfusion
+iv infusion
+lumbar puncture
+spinal tap
+bone marrow biopsy
+pulmonary function test
+sleep study
+polysomnography
+well-child visit
+immunization
+vaccination
+growth chart
+developmental milestone
+pediatric intensive care
+nicu
+picu
+icu
+emergency department
+urgent care
+physical therapy
+occupational therapy
+speech therapy
+cognitive behavioral therapy
+weight-based dosing
+vital signs
+heart rate
+oxygen saturation
+pulse oximetry
+body mass index
+bmi
+allergy testing
+spirometry
+stress test
+bone density scan
+dexa scan
+creatinine
+egfr
+alt
+ast
+tsh
+psa
+inr
+troponin
+d-dimer
+bnp
+crp
+esr
+ferritin
+vitamin d
+vitamin b12
+folate
+electrolytes
+potassium
+sodium
+calcium
+platelets
+white blood cell
+red blood cell
+hematocrit

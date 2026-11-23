@@ -1,0 +1,47 @@
+ozempic
+wegovy
+tylenol
+advil
+benadryl
+metformin
+lisinopril
+atorvastatin
+amoxicillin
+amoxicillin clavulanate
+azithromycin
+albuterol
+budesonide
+cetirizine
+ibuprofen
+acetaminophen
+methylphenidate
+levonorgestrel
+ethinyl estradiol
+norethindrone
+medroxyprogesterone
+clomiphene
+letrozole
+labetalol
+methyldopa
+misoprostol
+oxytocin
+magnesium sulfate
+progesterone
+folic acid
+prenatal vitamin
+insulin glargine
+insulin lispro
+omeprazole
+losartan
+amlodipine
+gabapentin
+sertraline
+escitalopram
+fluoxetine
+alprazolam
+warfarin
+prednisone
+furosemide
+metoprolol
+levothyroxine
+hydrochlorothiazide
