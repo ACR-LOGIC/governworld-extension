@@ -68,7 +68,6 @@ describe("Cross-Browser Compatibility Gates (Chrome, Firefox, Edge, Safari, Brav
         "src/popup/review.html",
         "src/sidepanel/sidepanel.html",
         "src/offscreen/offscreen.html",
-        "src/landing/index.html",
       ];
       for (const page of pages) {
         const html = readFileSync(join(extRoot, page), "utf8");

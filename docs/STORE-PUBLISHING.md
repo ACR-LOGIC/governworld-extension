@@ -87,7 +87,7 @@ To automate store uploads from CI or local release scripts, configure the creden
    npm test
    npm run build:all
    ```
-2. Update the version across `package.json`, `package-lock.json`, `manifest.json`, `manifest.firefox.json`, `src/api/config.ts`, `src/landing/index.html`, and release documentation (`RELEASE_NOTES.md`, `RELEASE_EVIDENCE.md`).
+2. Update the version across `package.json`, `package-lock.json`, `manifest.json`, `manifest.firefox.json`, `src/api/config.ts`, and release documentation (`RELEASE_NOTES.md`, `RELEASE_EVIDENCE.md`).
 3. Commit (signed) and create a signed release tag:
    ```bash
    git commit -S -am "chore(release): vX.Y.Z"

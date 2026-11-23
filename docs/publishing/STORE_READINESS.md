@@ -97,7 +97,7 @@ text, exactly 1280x800 PNG (`npm run capture:store` validates PNG IHDR).
 - [x] Privacy policy published at
       `https://governworld.acrlogic.com/chrome-extension-privacy` (the
       extension's own notice — not the website policy at `/privacy`) and linked
-      from the popup's settings section, `landing.html`, and the listing.
+      from the popup's settings section and the listing.
 - [x] Screenshots captured from a local synthetic fixture page in
       `release/screenshots/`, via `npm run capture:store`. The store requires at
       least one **1280x800** image and accepts at most 5; the script reads each
@@ -145,9 +145,6 @@ text, exactly 1280x800 PNG (`npm run capture:store` validates PNG IHDR).
       detection is not guaranteed complete) shown after the first scan.
 - [x] Instructions section in the side panel (page scanning, keyboard
       shortcuts, side panel, document redaction, accuracy).
-- [x] Landing page (`landing.html`, also served at localhost preview root)
-      with Overview, Security, Privacy, About Us, and About This Extension
-      tabs.
 - [x] Optional redaction labels (`maskPlaceholders`): when enabled, applied
       mask blocks show a short white label (e.g. `[SSN]`, `[DOB]`,
       `[API KEY]`) identifying what was covered. Off by default.

@@ -91,7 +91,7 @@ If GovernWorld helps protect your privacy or workflow, you can support ongoing m
 `package.json` (`"version"`) is the **single source of truth** for the extension version (`0.4.1`). Do not edit version strings manually across manifests, source files, or documentation:
 
 1. Bump `"version"` in `package.json` only.
-2. Synchronize all derived surfaces (`package-lock.json`, `manifest.json`, `manifest.firefox.json`, `src/api/config.ts`, `src/landing/index.html`, `src/popup/privacy.html`, `README.md`, and `AGENTS.md`) via:
+2. Synchronize all derived surfaces (`package-lock.json`, `manifest.json`, `manifest.firefox.json`, `src/api/config.ts`, `src/popup/privacy.html`, `README.md`, and `AGENTS.md`) via:
    ```bash
    npm run sync:version
    ```

@@ -117,7 +117,6 @@ describe("link currency", () => {
     "src/popup/index.html",
     "src/popup/privacy.html",
     "src/popup/legal.html",
-    "src/landing/index.html",
   ];
 
   it("uses only the current repository name everywhere", () => {
