@@ -20,7 +20,7 @@ if (!existsSync(join(ext, "manifest.json"))) {
   throw new Error(`Missing ${join(ext, "manifest.json")}. Run \`npm run build\` first.`);
 }
 
-const EXTENSION_PAGES = ["popup.html", "sidepanel.html", "offscreen.html", "landing.html", "privacy.html", "legal.html", "redact.html", "review.html"];
+const EXTENSION_PAGES = ["popup.html", "sidepanel.html", "offscreen.html", "privacy.html", "legal.html", "redact.html", "review.html"];
 const CSP_VIOLATION = /Content Security Policy|Refused to (execute|inline|load|apply)/i;
 
 const profile = browserProfileDir(mkdtempSync(join(tmpdir(), "gw-ext-verify-")));
@@ -69,25 +69,6 @@ try {
     console.log(`[${label}] ${name} inlineScript=${inlineScript} cspViolations=${cspViolations.length} errors=${pageErrors.length}`);
     await page.close();
   }
-
-  // The landing page's tab strip is the regression this gate exists for: it was
-  // an inline <script>, so MV3 CSP blocked it and the page shipped dead tabs
-  // with no error anywhere.
-  const landing = await context.newPage();
-  await landing.goto(`chrome-extension://${extensionId}/landing.html`, { waitUntil: "load" });
-  const tabCount = await landing.locator(".tab").count();
-  if (tabCount < 2) {
-    fail("landing.html", `expected multiple tabs, found ${tabCount}`);
-  } else {
-    await landing.locator(".tab").nth(1).click();
-    await landing.waitForTimeout(200);
-    const selected = await landing.locator(".tab").nth(1).getAttribute("aria-selected");
-    const activePanels = await landing.locator('.panel[data-active="true"]').count();
-    if (selected !== "true") fail("landing.html", "clicking a tab did not set aria-selected");
-    if (activePanels !== 1) fail("landing.html", `expected exactly 1 active panel, found ${activePanels}`);
-    console.log(`[tabs] count=${tabCount} selectedAfterClick=${selected} activePanels=${activePanels}`);
-  }
-  await landing.close();
 
   // The popup's side-panel trigger must exist AND its API call must resolve.
   // `chrome.sidePanel.open({ path })` is rejected by Chrome ("Unexpected

@@ -90,7 +90,7 @@ describe("isScannableTab", () => {
     for (const url of [
       "chrome-extension://abcdef/popup.html",
       "chrome-extension://abcdef/sidepanel.html",
-      "chrome-extension://abcdef/landing.html",
+      "chrome-extension://abcdef/privacy.html",
       "chrome://extensions",
       "edge://extensions",
       "about:blank",
