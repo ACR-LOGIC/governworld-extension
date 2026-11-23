@@ -334,13 +334,6 @@ try {
   await redactPage.waitForTimeout(600);
   await captureElementOrPage(redactPage, null, join(DESKTOP_OUT, "28_print_pdf_redaction_view.png"), { x: 0, y: 0, width: 1280, height: 850 });
 
-  // Landing Page (landing.html)
-  const landingPage = await context.newPage();
-  await landingPage.setViewportSize({ width: 1280, height: 900 });
-  await landingPage.goto(`chrome-extension://${extensionId}/landing.html`, { waitUntil: "load" });
-  await landingPage.waitForTimeout(600);
-  await captureElementOrPage(landingPage, null, join(DESKTOP_OUT, "29_landing_page.png"), { x: 0, y: 0, width: 1280, height: 850 });
-
   // Privacy Policy (privacy.html)
   const privacyPage = await context.newPage();
   await privacyPage.setViewportSize({ width: 1280, height: 900 });
@@ -1103,24 +1096,6 @@ try {
           <span class="tag">redact.html</span>
           <span class="tag">docStore.ts</span>
           <span class="tag">window.print()</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card__header">
-        <span class="card__name">29. Landing Page</span>
-        <span class="badge badge--blue">landing.html</span>
-      </div>
-      <div class="card__preview">
-        <img src="${imgData['29_landing_page.png'] || ''}" alt="Landing Page" />
-      </div>
-      <div class="card__body">
-        <strong>Architectural Showcase &amp; Zero-Egress Explainer</strong>
-        <span>Complete architectural walkthrough, live terminal audit log illustration, compliance matrix, and security guarantees.</span>
-        <div class="tag-row">
-          <span class="tag">landing.html</span>
-          <span class="tag">auditable-architecture</span>
         </div>
       </div>
     </div>
