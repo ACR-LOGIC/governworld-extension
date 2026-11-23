@@ -58,8 +58,6 @@ for (const [from, to] of [
   ["src/offscreen/offscreen.html", "offscreen.html"],
   ["src/sidepanel/sidepanel.html", "sidepanel.html"],
   ["src/sidepanel/sidepanel.css", "sidepanel.css"],
-  ["src/landing/index.html", "landing.html"],
-  ["src/landing/landing.js", "landing.js"],
   ["src/popup/privacy.html", "privacy.html"],
   ["src/popup/legal.html", "legal.html"],
   ["src/popup/redact.html", "redact.html"],

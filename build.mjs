@@ -48,11 +48,6 @@ copyFileSync(join(root, "src/popup", "popup.css"), join(outDir, "popup.css"));
 copyFileSync(join(root, "src/offscreen", "offscreen.html"), join(outDir, "offscreen.html"));
 copyFileSync(join(root, "src/sidepanel", "sidepanel.html"), join(outDir, "sidepanel.html"));
 copyFileSync(join(root, "src/sidepanel", "sidepanel.css"), join(outDir, "sidepanel.css"));
-copyFileSync(join(root, "src/landing", "index.html"), join(outDir, "landing.html"));
-copyFileSync(join(root, "src/landing", "landing.js"), join(outDir, "landing.js"));
-if (existsSync(join(root, "src/landing", "assets"))) {
-  cpSync(join(root, "src/landing", "assets"), join(outDir, "landing-assets"), { recursive: true });
-}
   copyFileSync(join(root, "src/popup", "privacy.html"), join(outDir, "privacy.html"));
   copyFileSync(join(root, "src/popup", "legal.html"), join(outDir, "legal.html"));
   copyFileSync(join(root, "src/popup", "redact.html"), join(outDir, "redact.html"));
