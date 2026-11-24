@@ -212,8 +212,7 @@ if (g.__gwRedactionContentLoaded !== true) {
     return null;
   }
 
-  function findingRects(start: number, end: number): Rect[] {
-    const ranges = mapRange(segments, segmentStarts, combined.length, start, end);
+  function findingRectsFromRanges(ranges: ReturnType<typeof mapRange>): Rect[] {
     const rects: Rect[] = [];
     for (const range of ranges) {
       const node = nodeIds.get(range.nodeId);
@@ -258,6 +257,10 @@ if (g.__gwRedactionContentLoaded !== true) {
     return rects;
   }
 
+  function findingRects(start: number, end: number): Rect[] {
+    return findingRectsFromRanges(mapRange(segments, segmentStarts, combined.length, start, end));
+  }
+
   /** Findings travel via chunkFindingsByByteBudget so all findings survive Chrome IPC. */
 
   function buildFindings(
@@ -266,8 +269,8 @@ if (g.__gwRedactionContentLoaded !== true) {
     customPatterns: CustomPattern[] = []
   ): Finding[] {
     return rawMatches.map((match, i) => {
-      const rects = findingRects(match.start, match.end);
       const mapped = mapRange(segments, segmentStarts, combined.length, match.start, match.end);
+      const rects = findingRectsFromRanges(mapped);
       const isCustom = match.category === "custom" || customPatterns.some((cp) => cp.category === match.category && cp.pattern);
         const parsedName =
           match.parsedName ??
@@ -304,14 +307,22 @@ if (g.__gwRedactionContentLoaded !== true) {
           continue;
         }
         const fresh = findingRects(finding.startOffset, finding.endOffset);
-        if (fresh.length > 0) {
-          finding.rects = fresh;
-        }
+        finding.rects = fresh;
       }
       for (const r of finding.rects) {
+        if (
+          !Number.isFinite(r.x) ||
+          !Number.isFinite(r.y) ||
+          !Number.isFinite(r.width) ||
+          !Number.isFinite(r.height) ||
+          r.width <= 0 ||
+          r.height <= 0
+        ) {
+          continue;
+        }
         items.push({
           kind: "mask",
-          label: `${finding.category}: ${finding.preview}`,
+          label: `${finding.entityType ?? finding.category}: ${finding.preview}`,
           ...(placeholdersEnabled ? { placeholder: placeholderLabelFor(finding.category) } : {}),
           x: r.x - padding,
           y: r.y - padding,
@@ -324,11 +335,34 @@ if (g.__gwRedactionContentLoaded !== true) {
   }
 
   function recomputeOverlay(padding: number) {
+    if (overlay && overlay.isConnected && !overlay.isConnected()) {
+      overlay.destroy();
+      overlay = null;
+    }
     if (!overlay) {
-      overlay = createOverlay(document, () => getOverlayItems(4));
+      overlay = createOverlay(document, () => getOverlayItems(padding));
+    } else {
+      overlay.setRecalculator?.(() => getOverlayItems(padding));
     }
     const items = getOverlayItems(padding);
     overlay.render(items);
+
+    // Deterministic render-state reconciliation: if active findings fall inside
+    // the viewport yet no mask elements were painted, schedule a corrective repaint.
+    if (items.length > 0 && overlay.getRenderedCount && overlay.getRenderedCount() === 0) {
+      const vw = Math.max(1, window.innerWidth || document.documentElement?.clientWidth || 1024);
+      const vh = Math.max(1, window.innerHeight || document.documentElement?.clientHeight || 768);
+      const hasVisibleItem = items.some(
+        (r) => r.width > 0 && r.height > 0 && r.x + r.width >= 0 && r.y + r.height >= 0 && r.x <= vw && r.y <= vh
+      );
+      if (hasVisibleItem) {
+        queueMicrotask(() => {
+          if (!sessionId || !overlay) return;
+          const refreshed = getOverlayItems(padding);
+          overlay.render(refreshed);
+        });
+      }
+    }
   }
 
   async function handleScan(mode: "local" | "cloud", requestId: string, settings: ScanSettings): Promise<void> {
@@ -1207,7 +1241,7 @@ if (g.__gwRedactionContentLoaded !== true) {
     invalidateOnNavigation();
   };
 
-  function appendAndDetectNode(sourceNode: Element | Text, settings: ScanSettings): void {
+  async function appendAndDetectNode(sourceNode: Element | Text, settings: ScanSettings): Promise<void> {
     const newNodeIds = new Map<string, Node>();
     const extracted = extractVisibleText(
       sourceNode,
@@ -1248,11 +1282,10 @@ if (g.__gwRedactionContentLoaded !== true) {
     }
     if (settings.medicalDictionaryEnabled === true) {
       const mode = settings.clinicMode ?? "general";
-      if (!isMedicalDictionaryLoaded()) {
-        void ensureMedicalDictionaryLoaded(mode);
-      } else {
-        deltaMatches.push(...detectMedicalDictionaryTerms(newBuilt.combined, mode));
+      if (!isMedicalDictionaryLoaded(mode)) {
+        await ensureMedicalDictionaryLoaded(mode);
       }
+      deltaMatches.push(...detectMedicalDictionaryTerms(newBuilt.combined, mode));
     }
     deltaMatches = deltaMatches.filter((m) => m.confidence >= threshold(m.category));
     if (deltaMatches.length === 0) return;
@@ -1272,7 +1305,7 @@ if (g.__gwRedactionContentLoaded !== true) {
     }
   }
 
-  function rescanAffectedRegions(batch: MutationBatch): void {
+  async function rescanAffectedRegions(batch: MutationBatch): Promise<void> {
     if (!sessionId || !currentSettings) return;
     const settings = currentSettings;
 
@@ -1350,7 +1383,7 @@ if (g.__gwRedactionContentLoaded !== true) {
         n.isConnected && (n.nodeType === Node.ELEMENT_NODE || n.nodeType === Node.TEXT_NODE)
     );
     for (const node of connectedAdded) {
-      appendAndDetectNode(node, settings);
+      await appendAndDetectNode(node, settings);
     }
 
     // Option (a) for characterData mutations: re-extract and re-detect connected
@@ -1362,7 +1395,7 @@ if (g.__gwRedactionContentLoaded !== true) {
         (added) => added === textNode || (added.nodeType === Node.ELEMENT_NODE && added.contains(textNode))
       );
       if (coveredByAdded) continue;
-      appendAndDetectNode(textNode, settings);
+      await appendAndDetectNode(textNode, settings);
     }
 
     if (findings.some((f) => f.selected)) {
@@ -1431,8 +1464,9 @@ if (g.__gwRedactionContentLoaded !== true) {
       mutationDebounceTimer = setTimeout(() => {
         mutationDebounceTimer = null;
         if (pendingMutationBatch && sessionId) {
-          rescanAffectedRegions(pendingMutationBatch);
+          const batchToScan = pendingMutationBatch;
           pendingMutationBatch = null;
+          void rescanAffectedRegions(batchToScan);
         }
       }, rescanDelayMs);
     });

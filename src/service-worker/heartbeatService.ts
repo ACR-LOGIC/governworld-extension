@@ -107,8 +107,17 @@ export async function sendHeartbeatStatusCheck(): Promise<HeartbeatResult> {
     status: "healthy",
   };
 
-  const coordinatorUrl = enrollment.coordinator_url || "http://127.0.0.1:4820";
-  const urlCheck = validateApiUrl(coordinatorUrl);
+  if (!enrollment.coordinator_url || !enrollment.coordinator_url.trim()) {
+    return {
+      mode: "MANAGE",
+      sent: false,
+      status: "idle",
+      error: "Heartbeat disabled — coordinator not configured.",
+      payload,
+    };
+  }
+
+  const urlCheck = validateApiUrl(enrollment.coordinator_url);
   if (!urlCheck.valid || !urlCheck.normalizedUrl) {
     return {
       mode: "MANAGE",

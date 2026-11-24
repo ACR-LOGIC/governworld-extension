@@ -1,12 +1,8 @@
 # Community rule trust model
 
-**Status: design only. Not implemented.**
+**Status: rule submission live (capability-gated + pre-send screened); rule-pack retrieval still stubbed.**
 
-Both community network paths are currently stubbed off in the service worker and
-return an error (`src/service-worker/index.ts`, cases `POPUP_COMMUNITY_CONTRIBUTE`
-and `POPUP_COMMUNITY_FETCH_COMMUNITY_RULES`). Nothing is downloaded and nothing is
-sent. This document exists so the paths are not switched on without the trust
-decisions below being made deliberately.
+Community rule **submission** (`POPUP_API_SUBMIT_LOGIC` -> `submitLogic` in `src/api/submissions.ts`) is live for workspaces with the `logic_submission` gateway capability, and runs a fail-closed local detector screen (`screenSubmissionPayload`) across `rule_name`, `pattern`, `cues`, and `description` before any outbound POST. Community rule-pack **retrieval** (`POPUP_COMMUNITY_FETCH_COMMUNITY_RULES`) remains stubbed off in the service worker and returns an error (`src/service-worker/index.ts`). Nothing is downloaded from community packs until the trust decisions below are completed.
 
 ## 1. What an attacker gains by controlling a rule pack
 

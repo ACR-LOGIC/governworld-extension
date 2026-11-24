@@ -111,8 +111,11 @@ function tryLoadPacksSyncInNode(clinicMode: ClinicMode = "general"): boolean {
   }
 }
 
-export function isMedicalDictionaryLoaded(): boolean {
-  return activePacks !== null || legacyTerms !== null;
+export function isMedicalDictionaryLoaded(clinicMode?: ClinicMode): boolean {
+  if (activePacks !== null) {
+    return !clinicMode || loadedForMode === clinicMode;
+  }
+  return false;
 }
 
 export function resetMedicalDictionaryForTests(disableAutoLoad = false): void {

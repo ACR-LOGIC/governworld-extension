@@ -31,7 +31,7 @@ import {
   clearManagementEnrollment,
   type ManagementEnrollment,
 } from "../shared/managedPolicy.js";
-import { getInstallationId } from "../api/config.js";
+import { getInstallationId, isTrustedPolicyPublicKeyConfigured, validateApiUrl } from "../api/config.js";
 import {
   ALWAYS_ON_ORIGINS,
   describeProtectionState,
@@ -57,7 +57,7 @@ import {
 import { evaluateComplianceScore, type ComplianceAction } from "../shared/complianceScore.js";
 import { classifyDestination } from "../shared/destinationClassifier.js";
 import { BUNDLED_OCR_LANGUAGES } from "../shared/ocrLanguages.js";
-import { t, getCategoryLabel, getPresetLabel } from "../shared/i18n.js";
+import { t, getCategoryLabel, getDisplayCategoryLabel, getPresetLabel } from "../shared/i18n.js";
 import { MAX_DOC_PAGES, MAX_DOC_BYTES, MAX_DOC_BYTES_LABEL, MAX_DOCX_CHARS, resolvePageWindow, pageWindowLabel } from "../shared/docLimits.js";
 import type { AccountView } from "../shared/account.js";
 import type {
@@ -717,7 +717,8 @@ export function renderFindings(findings: Finding[]): void {
   const applyBtn = document.getElementById("apply-masks-btn") as HTMLButtonElement | null;
   if (!list || !count || !applyBtn) return;
   list.replaceChildren();
-  count.textContent = t(currentLang, "findings_detected_count", { count: findings.length });
+  const authoritativeTotal = Math.max(findings.length, lastState?.totalFindings ?? 0);
+  count.textContent = t(currentLang, "findings_detected_count", { count: authoritativeTotal });
   let selected = 0;
   let selectable = 0;
   for (const finding of findings) {
@@ -747,7 +748,7 @@ export function renderFindings(findings: Finding[]): void {
 
     const main = el("div", "finding__main");
     const head = el("div", "finding__head");
-    const category = el("div", "finding__category", getCategoryLabel(currentLang, finding.category));
+    const category = el("div", "finding__category", getDisplayCategoryLabel(currentLang, finding.category, finding.entityType));
     head.append(category);
     if (finding.entityType && finding.entityType !== finding.category) {
       const entityBadge = el("span", "finding__badge-attr", finding.entityType.toUpperCase());
@@ -1105,8 +1106,9 @@ function renderState(state: PopupState): void {
       liveScanVal.textContent = t(currentLang, "status_val_check_page");
       liveScanVal.setAttribute("data-tone", "warn");
     } else if (state.scanned) {
-      if (state.findings.length > 0) {
-        liveScanVal.textContent = t(currentLang, "status_val_found", { count: state.findings.length });
+      const authoritativeCount = Math.max(state.findings.length, state.totalFindings ?? 0);
+      if (authoritativeCount > 0) {
+        liveScanVal.textContent = t(currentLang, "status_val_found", { count: authoritativeCount });
         liveScanVal.setAttribute("data-tone", "warn");
       } else {
         liveScanVal.textContent = t(currentLang, "status_val_clean");
@@ -1255,7 +1257,7 @@ async function refreshReviewTelemetry(currentState?: PopupState | null): Promise
 
   const stateToUse = currentState ?? lastState;
   if (events.length === 0 && stateToUse?.scanned) {
-    totalFindings = stateToUse.findings.length;
+    totalFindings = Math.max(stateToUse.findings.length, stateToUse.totalFindings ?? 0);
     totalPages = 1;
   }
 
@@ -1477,10 +1479,15 @@ function coverageVerdict(state: PopupState): { text: string; tone: CoverageTone 
   switch (state.coverageStatus) {
     case "FULLY_SCANNED":
       return { text: t(currentLang, "coverage_status_full"), tone: "ok" };
-    case "NO_SENSITIVE_DATA_DETECTED":
+    case "NO_SENSITIVE_DATA_DETECTED": {
+      const authoritativeCount = Math.max(state.findings.length, state.totalFindings ?? 0);
+      if (authoritativeCount > 0) {
+        return { text: t(currentLang, "coverage_status_full"), tone: "ok" };
+      }
       // Only reachable when every discovered region was inspected, so this is
       // a genuine all-clear and may read as one.
       return { text: t(currentLang, "coverage_status_clean"), tone: "ok" };
+    }
     case "PARTIALLY_SCANNED":
       return { text: t(currentLang, "coverage_status_partial"), tone: "warn" };
     case "UNSUPPORTED_CONTENT_PRESENT":
@@ -1570,7 +1577,7 @@ function findingsToCsv(findings: Finding[]): string {
     const middle = p?.middle?.join("; ") ?? "";
     const credentials = p?.credentials?.join("; ") ?? "";
     return [
-      getCategoryLabel(currentLang, f.category),
+      getDisplayCategoryLabel(currentLang, f.category, f.entityType),
       `"${f.preview.replace(/"/g, '""')}"`,
       `${Math.round(f.confidence * 100)}%`,
       f.source,
@@ -1600,7 +1607,7 @@ function findingsToJson(findings: Finding[]): string {
     findings: findings.map((f) => ({
       id: f.id,
       category: f.category,
-      categoryLabel: getCategoryLabel(currentLang, f.category),
+      categoryLabel: getDisplayCategoryLabel(currentLang, f.category, f.entityType),
       confidence: f.confidence,
       source: f.source,
       attribute: f.attribute ?? null,
@@ -2088,7 +2095,7 @@ function renderDocFindings(): void {
 
       const main = el("div", "finding__main");
       const head = el("div", "finding__head");
-      const category = el("div", "finding__category", getCategoryLabel(currentLang, finding.category));
+      const category = el("div", "finding__category", getDisplayCategoryLabel(currentLang, finding.category, finding.entityType));
       head.append(category);
       if (finding.category === "custom") {
         const customBadge = el("span", "finding__badge-attr", "Drawn Box");
@@ -4315,18 +4322,48 @@ export async function initPopup(): Promise<void> {
         return;
       }
     }
+    if (!isTrustedPolicyPublicKeyConfigured()) {
+      if (officeManagerStatus) {
+        officeManagerStatus.textContent = "Managed mode unavailable — trusted policy signing key is not configured.";
+        officeManagerStatus.style.color = "var(--gw-amber, #f59e0b)";
+      }
+      if (officePairingInput) {
+        officePairingInput.style.display = "none";
+        officePairingInput.disabled = true;
+      }
+      if (officePairBtn) {
+        officePairBtn.style.display = "none";
+        officePairBtn.disabled = true;
+      }
+      if (officeUnpairBtn) officeUnpairBtn.style.display = "none";
+      return;
+    }
     if (officeManagerStatus) {
       officeManagerStatus.textContent = t(currentLang, "office_status_local");
       officeManagerStatus.style.color = "inherit";
     }
-    if (officePairingInput) officePairingInput.style.display = "block";
-    if (officePairBtn) officePairBtn.style.display = "inline-block";
+    if (officePairingInput) {
+      officePairingInput.style.display = "block";
+      officePairingInput.disabled = false;
+    }
+    if (officePairBtn) {
+      officePairBtn.style.display = "inline-block";
+      officePairBtn.disabled = false;
+    }
     if (officeUnpairBtn) officeUnpairBtn.style.display = "none";
   }
 
   void checkOfficeManagerPairingStatus();
 
   officePairBtn?.addEventListener("click", async () => {
+    if (!isTrustedPolicyPublicKeyConfigured()) {
+      if (officeManagerStatus) {
+        officeManagerStatus.textContent = "Managed mode unavailable — trusted policy signing key is not configured.";
+        officeManagerStatus.style.color = "var(--gw-crimson, #ef4444)";
+      }
+      return;
+    }
+
     const code = officePairingInput?.value.trim().toUpperCase();
     if (!code || code.length !== 6) {
       if (officeManagerStatus) {
@@ -4336,14 +4373,24 @@ export async function initPopup(): Promise<void> {
       return;
     }
 
+    const storedCoord = await chrome.storage.local.get("gw_coordinator_url");
+    const rawCoordUrl = typeof storedCoord.gw_coordinator_url === "string" ? storedCoord.gw_coordinator_url : "";
+    const coordCheck = validateApiUrl(rawCoordUrl);
+    if (!coordCheck.valid || !coordCheck.normalizedUrl) {
+      if (officeManagerStatus) {
+        officeManagerStatus.textContent = coordCheck.error ?? "HTTPS coordinator URL is not configured.";
+        officeManagerStatus.style.color = "var(--gw-crimson, #ef4444)";
+      }
+      return;
+    }
+    const coordinatorUrl = coordCheck.normalizedUrl;
+
     if (officeManagerStatus) {
       officeManagerStatus.textContent = t(currentLang, "office_connecting");
       officeManagerStatus.style.color = "var(--gw-cobalt, #2563eb)";
     }
 
     try {
-      // Connect to local coordinator
-      const coordinatorUrl = "http://127.0.0.1:4820";
       const res = await fetch(`${coordinatorUrl}/api/v1/coordinator/pair`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
