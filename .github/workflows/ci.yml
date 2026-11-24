@@ -42,6 +42,9 @@ jobs:
       - name: Verify Single-Source Version Parity
         run: npm run sync:version:check
 
+      - name: Build Extension (Chromium)
+        run: npm run build
+
       - name: Run Test Suite
         run: npm test
 
@@ -50,9 +53,6 @@ jobs:
 
       - name: Run Section 4 Hard CI Gates (G1-G9)
         run: xvfb-run --auto-servernum npm run gates:ci
-
-      - name: Build Extension (Chromium)
-        run: npm run build
 
       - name: Verify Built Manifest & Offline Assets
         run: npx vitest run tests/dist-manifest.test.ts tests/offline-assets.test.ts

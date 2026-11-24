@@ -1479,15 +1479,11 @@ function coverageVerdict(state: PopupState): { text: string; tone: CoverageTone 
   switch (state.coverageStatus) {
     case "FULLY_SCANNED":
       return { text: t(currentLang, "coverage_status_full"), tone: "ok" };
-    case "NO_SENSITIVE_DATA_DETECTED": {
-      const authoritativeCount = Math.max(state.findings.length, state.totalFindings ?? 0);
-      if (authoritativeCount > 0) {
-        return { text: t(currentLang, "coverage_status_full"), tone: "ok" };
-      }
-      // Only reachable when every discovered region was inspected, so this is
-      // a genuine all-clear and may read as one.
-      return { text: t(currentLang, "coverage_status_clean"), tone: "ok" };
-    }
+    case "NO_SENSITIVE_DATA_DETECTED":
+      return {
+        text: t(currentLang, Math.max(state.findings.length, state.totalFindings ?? 0) > 0 ? "coverage_status_full" : "coverage_status_clean"),
+        tone: "ok",
+      };
     case "PARTIALLY_SCANNED":
       return { text: t(currentLang, "coverage_status_partial"), tone: "warn" };
     case "UNSUPPORTED_CONTENT_PRESENT":
@@ -4321,22 +4317,6 @@ export async function initPopup(): Promise<void> {
         if (officeUnpairBtn) officeUnpairBtn.style.display = "inline-block";
         return;
       }
-    }
-    if (!isTrustedPolicyPublicKeyConfigured()) {
-      if (officeManagerStatus) {
-        officeManagerStatus.textContent = "Managed mode unavailable — trusted policy signing key is not configured.";
-        officeManagerStatus.style.color = "var(--gw-amber, #f59e0b)";
-      }
-      if (officePairingInput) {
-        officePairingInput.style.display = "none";
-        officePairingInput.disabled = true;
-      }
-      if (officePairBtn) {
-        officePairBtn.style.display = "none";
-        officePairBtn.disabled = true;
-      }
-      if (officeUnpairBtn) officeUnpairBtn.style.display = "none";
-      return;
     }
     if (officeManagerStatus) {
       officeManagerStatus.textContent = t(currentLang, "office_status_local");
