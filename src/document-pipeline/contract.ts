@@ -60,8 +60,13 @@ export interface OffscreenPreviewRequest {
   op: "preview";
   jobId: string;
   kind: DocKind;
-  /** Base64-encoded document bytes (extension messaging is JSON-serialized). */
-  bytes: string;
+  /**
+   * Key of the document's bytes in the shared document store (see
+   * shared/docStore.ts). The bytes are staged in IndexedDB by the service
+   * worker, so the message never carries a large base64 copy. A legacy
+   * `bytes` base64 string is still accepted by the offscreen document.
+   */
+  documentKey: string;
   name: string;
   mimeType: string;
   enabledCategories: FindingCategory[];
@@ -88,8 +93,8 @@ export interface OffscreenRedactRequest {
   op: "redact";
   jobId: string;
   kind: DocKind;
-  /** Base64-encoded document bytes (extension messaging is JSON-serialized). */
-  bytes: string;
+  /** Key of the staged document bytes in the shared document store. */
+  documentKey: string;
   name: string;
   mimeType: string;
   boxes: { pageIndex: number; rects: Rect[] }[];
@@ -118,8 +123,8 @@ export interface OffscreenCountRequest {
   op: "count";
   jobId: string;
   kind: DocKind;
-  /** Base64-encoded document bytes (extension messaging is JSON-serialized). */
-  bytes: string;
+  /** Key of the staged document bytes in the shared document store. */
+  documentKey: string;
   name: string;
   mimeType: string;
 }

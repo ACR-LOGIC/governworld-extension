@@ -26,6 +26,7 @@ export type AuditAction =
   | "doc_previewed"
   | "doc_redacted"
   | "doc_cleared"
+  | "doc_cleanup_failed"
   | "session_cleared"
   | "preset_applied"
   | "preset_overridden"
@@ -52,6 +53,7 @@ export const AUDIT_ACTIONS: readonly AuditAction[] = [
   "doc_previewed",
   "doc_redacted",
   "doc_cleared",
+  "doc_cleanup_failed",
   "session_cleared",
   "preset_applied",
   "preset_overridden",

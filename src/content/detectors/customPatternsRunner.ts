@@ -7,6 +7,11 @@ import type { RawMatch } from "../detect.js";
 /**
  * Chunked custom-pattern scanner with offset preservation and honest
  * partial-coverage reporting (Priority 0 — Item 2 & Priority 1 — Item 7).
+ *
+ * Chunks overlap so a pattern spanning a chunk boundary is seen whole: each
+ * chunk's scan text extends `overlap` past its nominal end, and a match found
+ * in that extension is "owned" by the earliest chunk that produces it (chunks
+ * are processed in order), so duplicates across the overlap are deterministic.
  */
 export const CHUNK = 50_000;
 export const OVERLAP = 512;
@@ -129,7 +134,12 @@ export function runCustomPatternsWithStatus(
         break;
       }
 
-      const chunkText = text.slice(chunk.start, chunk.end);
+      // Scan past the nominal chunk end by the overlap so a pattern that
+      // starts near the boundary and extends beyond `chunk.end` still matches.
+      // Capped at effectiveLength: over-scanning past the scan budget would
+      // under-report what was scanned.
+      const scanEnd = Math.min(effectiveLength, chunk.end + overlap);
+      const chunkText = text.slice(chunk.start, scanEnd);
       re.lastIndex = 0;
       let m: RegExpExecArray | null;
 
@@ -189,7 +199,10 @@ export function runCustomPatternsWithStatus(
             if (!hasCue) continue;
           }
 
-          const dedupKey = `${pat.category}:${globalStart}:${globalEnd}:${value}`;
+          // Deduplicate on absolute offsets. A match found in the overlap of
+          // two chunks is produced by both, but the earlier chunk wins
+          // deterministically because chunks are scanned in order.
+          const dedupKey = `${globalStart}:${globalEnd}:${value}`;
           if (seenKeys.has(dedupKey)) continue;
           seenKeys.add(dedupKey);
           patternMatchCount += 1;
@@ -206,7 +219,9 @@ export function runCustomPatternsWithStatus(
         // Ignore individual pattern runtime failure and continue
       }
 
-      maxScannedOffset = Math.max(maxScannedOffset, chunk.end);
+      // Honest coverage: the furthest absolute offset any chunk actually
+      // scanned (including the overlap extension), not the nominal end.
+      maxScannedOffset = Math.max(maxScannedOffset, scanEnd);
     }
   }
 
@@ -221,7 +236,9 @@ export function runCustomPatternsWithStatus(
   return {
     matches,
     partiallyScanned,
-    scannedChars: partiallyScanned ? maxScannedOffset : totalChars,
+    // Always the actual coverage: when the scan ran to the end this equals
+    // totalChars, but a budget or cap stop reports exactly where it stopped.
+    scannedChars: maxScannedOffset,
     totalChars,
   };
 }

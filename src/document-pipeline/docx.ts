@@ -232,6 +232,52 @@ function measuringContext(): CanvasRenderingContext2D {
 }
 
 /**
+ * Word-level tokens for one laid-out DOCX line, sized to each word's real
+ * text extent.
+ *
+ * A single token per line was not usable geometry: any finding derived from
+ * it spanned the whole line, so a redaction box over a sensitive word also
+ * covered innocent text around it. Measuring each word and advancing a cursor
+ * places boxes on the words themselves. All words of a line share one
+ * `lineIndex`, mirroring the PDF text-layer convention (pdf.ts), so
+ * `rectsForSpans` merges only the words a match actually covers.
+ *
+ * Conservative fallback: a word whose width cannot be measured (zero or
+ * non-finite) is skipped rather than given a guessed box — under-covering a
+ * word is safer than over-covering innocent text.
+ */
+function lineTokens(
+  ctx: CanvasRenderingContext2D,
+  line: string,
+  y: number,
+  fontPx: number,
+  lineIndex: number
+): OcrToken[] {
+  const out: OcrToken[] = [];
+  let x = MARGIN_PX;
+  for (const part of line.split(/(\s+)/)) {
+    if (part === "") continue;
+    const width = ctx.measureText(part).width;
+    if (!Number.isFinite(width)) break;
+    const isWord = !/^\s+$/.test(part);
+    if (isWord) {
+      const clampedWidth = Math.max(0, Math.min(width, PAGE_WIDTH_PX - x));
+      const tokenX = Math.min(x, Math.max(0, PAGE_WIDTH_PX - 1));
+      if (clampedWidth > 0 && tokenX >= 0) {
+        out.push({
+          text: part,
+          confidence: 100,
+          lineIndex,
+          bbox: { x: tokenX, y, width: clampedWidth, height: fontPx },
+        });
+      }
+    }
+    x += width;
+  }
+  return out;
+}
+
+/**
  * How many laid-out pages a DOCX produces, without drawing any of them.
  *
  * Word files have no intrinsic page count - pages are synthesised from the text
@@ -268,25 +314,15 @@ export async function loadDocxPages(bytes: ArrayBuffer): Promise<{ pages: DocxPa
         pctx.fillStyle = "#111111";
         pctx.textBaseline = "top";
         let y = MARGIN_PX;
+        let lineIndex = 0;
         const tokens: OcrToken[] = [];
         for (const line of pageLines) {
           if (line !== "") {
             pctx.fillText(line, MARGIN_PX, y);
-            // Measured from the context that just drew the line, so the box is the
-            // text's real extent. Clamped to the page because a line that overflowed
-            // the layout would otherwise produce a rect the painter cannot cover.
-            const measured = pctx.measureText(line).width;
-            const width = Math.min(measured, PAGE_WIDTH_PX - MARGIN_PX);
-            if (width > 0) {
-              tokens.push({
-                text: line,
-                confidence: 100,
-                lineIndex: tokens.length,
-                bbox: { x: MARGIN_PX, y, width, height: fontPx },
-              });
-            }
+            tokens.push(...lineTokens(pctx, line, y, fontPx, lineIndex));
           }
           y += LINE_HEIGHT;
+          lineIndex += 1;
         }
         return {
           index,

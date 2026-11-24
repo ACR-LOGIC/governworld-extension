@@ -8,14 +8,24 @@
  * picked back up by the worker.
  *
  * This lives in one place on purpose. The popup and the worker previously each
- * carried its own copy of `openDb`, and the copies drifted into a failure
- * mode where the cached connection went stale and every later transaction
- * threw forever, silently disabling the whole extension.
+ * carried its own copy of the connection logic, and the copies drifted into
+ * failure modes where the cached connection went stale or a blocked open hung
+ * forever. `docStore.ts` routes every operation through this module: this
+ * is the single IndexedDB connection manager.
  */
 
-const DB_NAME = "governworld-redaction";
-const DB_VERSION = 1;
-const STORE = "docfiles";
+/**
+ * The database and store layout, exported so other modules can reference the
+ * identity of the document store. docStore.ts routes every operation through
+ * this module — docDb.ts is the single IndexedDB connection manager.
+ *
+ * Version 2 added the `docfilemeta` store (write timestamps for TTL expiry).
+ */
+export const DB_NAME = "governworld-redaction";
+export const DB_VERSION = 2;
+export const STORE = "docfiles";
+/** Per-key writtenAt timestamps (ms), used for TTL expiry of staged documents. */
+export const DOC_META_STORE = "docfilemeta";
 
 /**
  * Session-scoped marker: a document has been staged and must not be purged.
@@ -133,7 +143,9 @@ export function openDocDb(): Promise<IDBDatabase> {
       return;
     }
     req.onupgradeneeded = () => {
-      if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE);
+      for (const store of [STORE, DOC_META_STORE]) {
+        if (!req.result.objectStoreNames.contains(store)) req.result.createObjectStore(store);
+      }
     };
     req.onsuccess = () => {
       const db = req.result;
@@ -220,6 +232,80 @@ async function commitWrite(commit: (tx: IDBTransaction) => void, label: string):
 
 export async function docStoreFile(fileKey: string, bytes: ArrayBuffer): Promise<void> {
   await commitWrite((tx) => tx.objectStore(STORE).put(bytes, fileKey), "store the file");
+  await docPutMeta(fileKey, Date.now());
+}
+
+/**
+ * Record when a document key was last written. Best-effort: a failure here
+ * must not fail the data write, only the TTL bookkeeping.
+ */
+export async function docPutMeta(key: string, writtenAt: number): Promise<void> {
+  const db = await openDocDb();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const tx = db.transaction(DOC_META_STORE, "readwrite");
+      tx.objectStore(DOC_META_STORE).put(writtenAt, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error ?? new Error("Could not record document write time"));
+    });
+  } catch {
+    // Bookkeeping only; the document itself is stored.
+  }
+}
+
+/**
+ * Roots of documents whose write timestamp is older than `maxAgeMs` — used by
+ * the TTL purge to decide what to delete. A root is the key's first segment,
+ * matching the prefix rule `docDeleteByPrefix` uses.
+ */
+export async function docListStaleMetaRoots(maxAgeMs: number): Promise<string[]> {
+  const cutoff = Date.now() - maxAgeMs;
+  const db = await openDocDb();
+  const roots = new Set<string>();
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(DOC_META_STORE, "readonly");
+    const req = tx.objectStore(DOC_META_STORE).openCursor();
+    req.onsuccess = () => {
+      const cursor = req.result;
+      if (!cursor) {
+        resolve();
+        return;
+      }
+      const key = String(cursor.key);
+      const writtenAt = typeof cursor.value === "number" ? cursor.value : 0;
+      if (writtenAt > 0 && writtenAt < cutoff) {
+        roots.add(key.split("::")[0] || key);
+      }
+      cursor.continue();
+    };
+    req.onerror = () => reject(req.error ?? new Error("Could not list expired document records"));
+    tx.onerror = () => reject(tx.error ?? new Error("Could not list expired document records"));
+  });
+  return [...roots];
+}
+
+/** Best-effort removal of write timestamps for one document root. */
+export async function docDeleteMetaByPrefix(prefix: string): Promise<number> {
+  if (!prefix) return 0;
+  const db = await openDocDb();
+  let deleted = 0;
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(DOC_META_STORE, "readwrite");
+    const store = tx.objectStore(DOC_META_STORE);
+    const req = store.getAllKeys();
+    req.onsuccess = () => {
+      for (const rawKey of req.result ?? []) {
+        const key = String(rawKey);
+        if (key === prefix || key.startsWith(`${prefix}::`)) {
+          store.delete(rawKey);
+          deleted += 1;
+        }
+      }
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error ?? new Error("Could not delete document timestamps"));
+  });
+  return deleted;
 }
 
 export async function docDeleteFile(fileKey: string): Promise<void> {

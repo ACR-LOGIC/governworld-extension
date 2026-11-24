@@ -70,6 +70,26 @@ describe("normalizeUnicodeWithMapping", () => {
     expect(result.normalized).toBe("café");
     expect(result.changed).toBe(false);
   });
+
+  it("removes every zero-width character, including consecutive ones", () => {
+    // Regression: the character-level regexes in unicode.ts used to carry the
+    // `g` flag, so per-character `.test()` calls alternated between matching
+    // and not matching via `lastIndex` and silently missed characters.
+    const result = normalizeUnicodeWithMapping("\u200B\u200C\u200D\u200B\uFEFF");
+    expect(result.normalized).toBe("");
+    expect(result.changed).toBe(true);
+  });
+
+  it("replaces every non-breaking space, including consecutive ones", () => {
+    const result = normalizeUnicodeWithMapping("a\u00A0\u00A0b");
+    expect(result.normalized).toBe("a  b");
+    expect(result.changed).toBe(true);
+  });
+
+  it("normalizes strings alternating zero-width and regular characters", () => {
+    const result = normalizeUnicodeWithMapping("a\u200Bb\u200Cc\u200Bd");
+    expect(result.normalized).toBe("abcd");
+  });
 });
 
 describe("mapNormalizedToOriginalOffset", () => {

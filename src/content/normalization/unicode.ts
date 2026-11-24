@@ -15,9 +15,11 @@ export interface UnicodeNormalizationResult {
   changed: boolean;
 }
 
-const ZERO_WIDTH_RE = /[\u200B-\u200D\uFEFF]/g;
-const NBSP_RE = /\u00A0/g;
-const MULTI_SPACE_RE = / {2,}/g;
+// No `g` flags: these run as per-character `.test()` calls, and a global
+// regex would carry state in `lastIndex`, making consecutive calls alternate
+// between matching and not matching and silently missing characters.
+const ZERO_WIDTH_RE = /[\u200B-\u200D\uFEFF]/;
+const NBSP_RE = /\u00A0/;
 /** Any Unicode decimal digit (full-width, Arabic-Indic, Devanagari, …). */
 const FOREIGN_DIGIT_RE = /\p{Nd}/u;
 /**

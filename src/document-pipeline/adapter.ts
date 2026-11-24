@@ -23,6 +23,12 @@ export interface CountInput {
   bytes: ArrayBuffer;
   name: string;
   mimeType: string;
+  /**
+   * Key of the document's staged bytes in the shared document store. When
+   * present, the offscreen document reads the bytes from IndexedDB instead of
+   * receiving them in the message.
+   */
+  documentKey?: string;
 }
 
 export interface DocumentInput {
@@ -52,6 +58,13 @@ export interface DocumentInput {
    * message size limit.
    */
   previewKeyPrefix: string;
+  /**
+   * Key of the document's bytes in the shared document store (shared/docStore.ts).
+   * When present, the offscreen document reads the bytes from IndexedDB instead
+   * of receiving them in the message — documents are large, and big base64
+   * strings are both slow to transfer and memory-hungry in both ends.
+   */
+  documentKey?: string;
   /** Padding (px) added around applied redaction boxes. */
   padding: number;
   /** Preview pages already produced for this document (used for the redact summary). */

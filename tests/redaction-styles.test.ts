@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 import { describe, it, expect, beforeEach } from "vitest";
 import { applyBoxes } from "../src/document-pipeline/render.js";
-import { verifyCanvasRegions, REDACTION_DARK_LUMINANCE, REDACTION_WHITE_LUMINANCE } from "../src/document-pipeline/verify.js";
+import { verifyCanvasRegions, regionKey, REDACTION_DARK_LUMINANCE, REDACTION_WHITE_LUMINANCE } from "../src/document-pipeline/verify.js";
 import { normalizeRedactionOptions, validateMessage } from "../src/shared/messages.js";
 import type { Rect, RedactionOptions } from "../src/shared/types.js";
 
@@ -64,6 +64,20 @@ class MockCanvasRenderingContext2D {
 
   strokeRect(_x: number, _y: number, _w: number, _h: number) {}
   setLineDash(_dash: number[]) {}
+
+  beginPathCount = 0;
+  rectCalls: Array<{ x: number; y: number; width: number; height: number }> = [];
+  clipCount = 0;
+
+  beginPath() {
+    this.beginPathCount += 1;
+  }
+  rect(x: number, y: number, width: number, height: number) {
+    this.rectCalls.push({ x, y, width, height });
+  }
+  clip() {
+    this.clipCount += 1;
+  }
 
   fillText(text: string, x: number, y: number) {
     this.drawnTexts.push({ text, x, y, fillStyle: this.fillStyle });
@@ -281,6 +295,68 @@ describe("Post-Redaction Verification for Custom Styles", () => {
     expect(result.checked).toBe(1);
     expect(result.dark).toBe(1);
     expect(result.failures).toHaveLength(0);
+  });
+
+  it("clips the stamp to the redaction rectangle", () => {
+    // Regression (Fix 10): the stamp must be clipped to the box so it cannot
+    // extend onto innocent text around the redaction.
+    const box: Rect = { x: 20, y: 20, width: 60, height: 30 };
+    applyBoxes(canvas as unknown as HTMLCanvasElement, [box], { style: "stamp", stampText: "[REDACTED]" });
+    const ctx = canvas.getContext("2d") as unknown as MockCanvasRenderingContext2D;
+    expect(ctx.clipCount).toBe(1);
+    expect(ctx.rectCalls.length).toBeGreaterThan(0);
+  });
+
+  it("verifies custom fill colors against the configured fill luminance", () => {
+    // Regression (Fix 9): a custom fill color like mid-gray used to be rejected
+    // by the hard-coded dark-luminance rule even though applyBoxes applied it.
+    const box: Rect = { x: 20, y: 20, width: 60, height: 30 };
+    for (let y = 15; y < 60; y++) {
+      for (let x = 15; x < 90; x++) {
+        const idx = (y * canvas.width + x) * 4;
+        canvas.pixelData[idx] = 95;
+        canvas.pixelData[idx + 1] = 95;
+        canvas.pixelData[idx + 2] = 95;
+        canvas.pixelData[idx + 3] = 255;
+      }
+    }
+    const result = verifyCanvasRegions(
+      canvas as unknown as HTMLCanvasElement,
+      [box],
+      2,
+      "test",
+      { style: "blackout", fillColor: "#636363" }
+    );
+    expect(result.failures).toHaveLength(0);
+    expect(result.dark).toBe(1);
+  });
+
+  it("records per-region identity and pass status by page + rect", () => {
+    // Regression (Fix 6): callers match expectations against verification by
+    // page and region identity, not by comparing region counts.
+    const box: Rect = { x: 20, y: 20, width: 60, height: 30 };
+    applyBoxes(canvas as unknown as HTMLCanvasElement, [box], { style: "blackout", padding: 2 });
+    const result = verifyCanvasRegions(
+      canvas as unknown as HTMLCanvasElement,
+      [box],
+      2,
+      "test",
+      { style: "blackout" },
+      7
+    );
+    expect(result.regions).toHaveLength(1);
+    expect(result.regions[0].key).toBe(regionKey(7, box));
+    expect(result.regions[0].checked).toBe(true);
+    expect(result.regions[0].passed).toBe(true);
+  });
+
+  it("marks regions outside the page as checked but not passed", () => {
+    const box: Rect = { x: 500, y: 10, width: 40, height: 40 };
+    const result = verifyCanvasRegions(canvas as unknown as HTMLCanvasElement, [box], 2, "test", { style: "blackout" }, 0);
+    expect(result.regions.length).toBe(1);
+    expect(result.regions[0].checked).toBe(false);
+    expect(result.regions[0].passed).toBe(false);
+    expect(result.failures.length).toBeGreaterThan(0);
   });
 });
 

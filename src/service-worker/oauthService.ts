@@ -56,7 +56,7 @@ export async function runOAuthConnectFlow(
 ): Promise<void> {
   try {
     const state = await generateOAuthState();
-    const pkce = await generatePkcePair();
+    const pkce = await generatePkcePair(state);
     const authorizeUrl = await buildAuthorizeUrl(state, pkce.codeChallenge);
 
     // Prefer chrome.identity.launchWebAuthFlow() with PKCE when available
@@ -66,8 +66,10 @@ export async function runOAuthConnectFlow(
         await runOAuthCallbackFlow(flowResult.code, flowResult.state, requestId, callbacks, pkce.codeVerifier);
         return;
       }
-      // If user explicitly cancelled or launchWebAuthFlow reported an error, surface it
-      if (flowResult.error && !flowResult.error.includes("not available")) {
+      // If the identity API is genuinely unavailable, fall back to the tab-based
+      // flow. Any other error (user cancelled, redirect malformed, etc.) is
+      // surfaced instead of silently retrying.
+      if (flowResult.error && !flowResult.unavailable) {
         callbacks.notifyPopup({
           type: "POPUP_OAUTH_STATUS",
           requestId,
@@ -114,7 +116,7 @@ export async function runOAuthCallbackFlow(
     return;
   }
   const client = new GovernWorldApiClient(await getApiUrl());
-  const result = await exchangeCodeForTokens(client, code, explicitCodeVerifier);
+  const result = await exchangeCodeForTokens(client, code, state, explicitCodeVerifier);
   if (!result.ok) {
     callbacks.notifyPopup({
       type: "POPUP_OAUTH_STATUS",

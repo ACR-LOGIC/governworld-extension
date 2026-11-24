@@ -19,6 +19,8 @@ import {
   docClearFiles,
   docListKeys,
   docGetStagedStats,
+  docListStaleMetaRoots,
+  docDeleteMetaByPrefix,
   markDocumentStaged,
   isDocumentStaged,
   getStagedFileKey,
@@ -33,9 +35,6 @@ import type { PurgeStagedDataResult, StagedStorageAudit } from "../shared/types.
  * never stored — only masked previews and rectangles.
  */
 
-const DB_NAME = "governworld-redaction";
-const DB_VERSION = 1;
-const STORE = "docfiles";
 const LAST_DOC_KEY = "lastDocId";
 /**
  * Descriptor for the in-flight/last document session, minus the file bytes.
@@ -56,6 +55,13 @@ export interface DocSession {
   mimeType: string;
   kind: DocKind;
   bytes: ArrayBuffer;
+  /**
+   * SHA-256 of `bytes` at preview time. Redaction requires the bytes to still
+   * match: if the file was swapped after the preview, the boxes could be
+   * measuring something else and the pixel verification would still pass
+   * (it verifies the output against the boxes, not against the original).
+   */
+  digest: string;
   pages: DocumentPage[];
   categories: FindingCategory[];
   /**
@@ -94,6 +100,13 @@ let lastDocId: string | null = null;
 export async function storeFile(fileKey: string, bytes: ArrayBuffer): Promise<void> {
   await markDocumentStaged(fileKey);
   await docStoreFile(fileKey, bytes);
+}
+
+/** SHA-256 of the given bytes, lowercase hex (64 chars). */
+export async function sha256Hex(bytes: ArrayBuffer | Uint8Array): Promise<string> {
+  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  const digest = await crypto.subtle.digest("SHA-256", view.slice().buffer as ArrayBuffer);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 export async function hasStagedDocument(): Promise<boolean> {
@@ -143,6 +156,8 @@ interface PersistedSession {
   name: string;
   mimeType: string;
   kind: DocKind;
+  /** Present in records written after digest binding was introduced. */
+  digest?: string;
   pages: DocumentPage[];
   categories: FindingCategory[];
   /** Absent in a record written before windowed passes existed. */
@@ -160,6 +175,7 @@ function persistSession(session: DocSession): void {
     name: session.name,
     mimeType: session.mimeType,
     kind: session.kind,
+    digest: session.digest,
     pages: session.pages,
     categories: session.categories,
     pageOffset: session.pageOffset,
@@ -207,6 +223,9 @@ export async function restoreLastSession(): Promise<DocSession | null> {
     typeof record.pageOffset === "number" && Number.isSafeInteger(record.pageOffset) && record.pageOffset >= 0
       ? record.pageOffset
       : 0;
+  // Compute a fresh digest on restore: an older persisted record has none,
+  // and either way the session must carry the digest of the bytes it holds.
+  const digest = await sha256Hex(bytes);
   const session: DocSession = {
     docId: record.docId,
     fileKey: record.fileKey,
@@ -214,6 +233,7 @@ export async function restoreLastSession(): Promise<DocSession | null> {
     mimeType: record.mimeType,
     kind: record.kind,
     bytes,
+    digest,
     pages: record.pages,
     categories: Array.isArray(record.categories) ? record.categories : uniqueCategories(record.pages),
     pageOffset,
@@ -322,6 +342,55 @@ export async function purgeOrphanedStagedKeys(): Promise<number> {
   return deletedCount;
 }
 
+/**
+ * Age after which staged documents are purged by the TTL sweep. Temporary
+ * documents (popup previews, redaction outputs) are meant to be short-lived;
+ * this bounds how long they can linger in IndexedDB after cleanup fails.
+ */
+export const STAGED_DOCUMENT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+export interface ExpiredDocumentPurgeResult {
+  /** Roots that were actually deleted (best effort). */
+  roots: string[];
+  deletedKeys: number;
+  /** Roots that could not be deleted; surfaced, never swallowed. */
+  failures: string[];
+}
+
+/**
+ * Delete staged documents whose write timestamp is older than the TTL.
+ *
+ * Roots with live sessions or in-flight jobs are skipped. Failures are
+ * collected per root rather than thrown, so the caller can report them
+ * visibly instead of losing the whole sweep.
+ */
+export async function purgeExpiredDocuments(
+  maxAgeMs: number = STAGED_DOCUMENT_TTL_MS
+): Promise<ExpiredDocumentPurgeResult> {
+  let roots: string[];
+  try {
+    roots = await docListStaleMetaRoots(maxAgeMs);
+  } catch {
+    return { roots: [], deletedKeys: 0, failures: ["Could not list expired document records."] };
+  }
+  const liveRoots = await collectLiveStagedRoots().catch(() => new Set<string>());
+  const expired = roots.filter((root) => root.length > 0 && !liveRoots.has(root));
+
+  const deletedRoots: string[] = [];
+  const failures: string[] = [];
+  let deletedKeys = 0;
+  for (const root of expired) {
+    try {
+      deletedKeys += await docDeleteByPrefix(root);
+      deletedRoots.push(root);
+    } catch {
+      failures.push(root);
+    }
+    await docDeleteMetaByPrefix(root).catch(() => undefined);
+  }
+  return { roots: deletedRoots, deletedKeys, failures };
+}
+
 export async function getStagedStorageAudit(): Promise<StagedStorageAudit> {
   const [rawStats, liveRoots] = await Promise.all([
     docGetStagedStats().catch(() => ({ keyCount: 0, totalBytes: 0, byPrefix: {} })),
@@ -417,7 +486,13 @@ export async function countDocument(input: {
   if (!bytes) throw new Error("The selected file is no longer available. Please re-open it.");
   if (bytes.byteLength > MAX_DOC_BYTES) throw new Error("Document is too large to process on this device.");
 
-  const countInput: CountInput = { kind: input.kind, bytes, name: input.name, mimeType: input.mimeType };
+  const countInput: CountInput = {
+    kind: input.kind,
+    bytes,
+    name: input.name,
+    mimeType: input.mimeType,
+    documentKey: input.fileKey,
+  };
   const total = await pipeline.count(countInput);
   // A document always has at least one page; anything else is a bug or a lie.
   return Number.isSafeInteger(total) && total >= 1 ? total : 1;
@@ -439,6 +514,9 @@ export async function previewDocument(
   const bytes = await readFile(fileKey);
   if (!bytes) throw new Error("The selected file is no longer available. Please re-open it.");
   if (bytes.byteLength > MAX_DOC_BYTES) throw new Error("Document is too large to process on this device.");
+  // Digest at preview time; redaction re-checks it so boxes can never be
+  // painted onto bytes the user has since replaced.
+  const digest = await sha256Hex(bytes);
 
   const settings = await loadSettings();
   const customPatterns = await loadCustomPatterns();
@@ -469,6 +547,7 @@ export async function previewDocument(
       ocrLanguage: settings.ocrLanguage,
       customPatterns,
       previewKeyPrefix: fileKey,
+      documentKey: fileKey,
     });
     if (cancelledFileKeys.has(fileKey)) {
       throw new DocumentCancelledError();
@@ -492,14 +571,15 @@ export async function previewDocument(
     findings: p.findings.filter((f) => meetsThreshold(settings, f.category, f.confidence)),
   }));
 
-  sessions.set(docId, {
-    docId,
-    fileKey,
-    name,
-    mimeType,
-    kind,
-    bytes,
-    pages,
+    sessions.set(docId, {
+      docId,
+      fileKey,
+      name,
+      mimeType,
+      kind,
+      bytes,
+      digest,
+      pages,
     categories: uniqueCategories(pages),
     pageOffset: pageWindow.offset,
     // Never claim a total smaller than what was scanned: if the count pass is
@@ -531,6 +611,13 @@ export async function redactDocument(
   const session = sessions.get(docId);
   if (!session || session.fileKey !== fileKey || session.kind !== kind || session.name !== name) {
     throw new Error("This document is no longer loaded. Please re-open it.");
+  }
+  // Require the original document bytes: if they changed since the preview,
+  // the boxes describe a different file and redacting now would paint them
+  // onto the wrong content while every pixel check still passes.
+  const currentDigest = await sha256Hex(session.bytes);
+  if (currentDigest !== session.digest) {
+    throw new Error("This document has changed since it was previewed. Please re-open it.");
   }
   const settings = await loadSettings();
   const selectedIds = new Set(findingIds);
@@ -579,6 +666,9 @@ export async function redactDocument(
       bytes: session.bytes,
       name: session.name,
       mimeType: session.mimeType,
+      // The same key the preview staged the bytes under; the offscreen
+      // document reads them from the shared store instead of a base64 copy.
+      documentKey: session.fileKey,
       enabledCategories: settings.enabledCategories,
       maxPages: MAX_DOC_PAGES,
       // The same window the findings came from. A different one here paints the

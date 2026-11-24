@@ -71,6 +71,9 @@ describe("Gate G4 — Deterministic Golden Redaction Outputs", () => {
       textBaseline: "",
       save() {},
       restore() {},
+      beginPath() {},
+      rect() {},
+      clip() {},
       fillRect(x: number, y: number, w: number, h: number) {
         fills.push({ x, y, w, h, fillStyle: this.fillStyle });
       },

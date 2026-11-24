@@ -9,7 +9,7 @@ import { loadImagePage, type ImagePage } from "./image.js";
 import { loadDocxPages, countDocxPages } from "./docx.js";
 import { findingsFromOcrPages } from "./core.js";
 import { applyBoxes, canvasToPngBytes, pagesToPdf } from "./render.js";
-import { pagePixelVerification, verifyCanvasRegions, verifyEncodedPng, type RedactionVerification, type RegionCoverage } from "./verify.js";
+import { pagePixelVerification, regionKey, verifyCanvasRegions, verifyEncodedPng, type RedactionVerification, type RegionCoverage } from "./verify.js";
 import { DocumentCancelledError } from "./contract.js";
 import {
   previewKey as previewStoreKey,
@@ -341,15 +341,37 @@ export async function runDocumentRedact(
   // Verify the page bitmaps as they are painted. For flattened output these are
   // the exact pixels that end up on each output page, so a painter that silently
   // no-ops is caught here rather than being reported to the user as a success.
-  const totals: RegionCoverage = { checked: 0, dark: 0, failures: [] };
+  //
+  // The expectation registry is built from the request, not from the scan: every
+  // requested region must show up in the coverage as checked AND passed. The old
+  // contract only compared counts, so a run could report success while one of
+  // several requested regions was never checked at all.
+  const expectedRegions = new Set<string>();
+  for (const b of boxes) {
+    for (const rect of b.rects) {
+      expectedRegions.add(regionKey(b.pageIndex, rect));
+    }
+  }
+  const verifiedPassedKeys = new Set<string>();
+  const totals: RegionCoverage = { checked: 0, dark: 0, failures: [], regions: [] };
   for (const page of pages) {
     const rects = boxMap.get(page.index);
     if (!rects || rects.length === 0) continue;
     applyBoxes(page.canvas, rects, padding, options);
-    const coverage = verifyCanvasRegions(page.canvas, rects, padding, `page ${page.index + 1}`, options);
+    const coverage = verifyCanvasRegions(page.canvas, rects, padding, `page ${page.index + 1}`, options, page.index);
     totals.checked += coverage.checked;
     totals.dark += coverage.dark;
     totals.failures.push(...coverage.failures);
+    for (const region of coverage.regions) {
+      if (region.checked && region.passed) verifiedPassedKeys.add(region.key);
+    }
+  }
+  for (const key of expectedRegions) {
+    if (!verifiedPassedKeys.has(key)) {
+      totals.failures.push(
+        `Expected redaction region ${key} was not verified as covered on its page.`
+      );
+    }
   }
   const redactedCount = boxes.reduce((n, b) => n + b.rects.length, 0);
 

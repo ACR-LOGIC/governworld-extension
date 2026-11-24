@@ -52,6 +52,11 @@ export function applyBoxes(
       ctx.font = `bold ${fontSize}px sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
+      // Clip to the redaction rectangle: an unclipped stamp wider or taller
+      // than the box bleeds onto innocent text around it.
+      ctx.beginPath();
+      ctx.rect(x, y, w, h);
+      ctx.clip();
       ctx.fillText(stampText, x + w / 2, y + h / 2);
       ctx.restore();
     }

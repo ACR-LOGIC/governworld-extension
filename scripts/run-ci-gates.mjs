@@ -12,7 +12,10 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const BASELINES_PATH = join(ROOT, "docs", "benchmarks", "ci-baselines.json");
 
 const VITEST_BIN = join("node_modules", "vitest", "vitest.mjs");
-const TSC_BIN = join("node_modules", "typescript", "bin", "tsc");
+// The `typescript` package is the TS6 compatibility alias (tsc6 binary) while
+// native TS7 ships as `@typescript/native` until typescript-eslint supports the
+// TS7 compiler API (typescript-eslint#10940).
+const TSC_BIN = join("node_modules", "typescript", "bin", "tsc6");
 const ESLINT_BIN = join("node_modules", "eslint", "bin", "eslint.js");
 
 const ALL_GATES = ["G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9"];
@@ -66,7 +69,7 @@ try {
   if (!isTargeted) {
     console.log("\n=== CI Hard Gates: Static Parity, Typecheck, Security Lint & Build ===");
     runNode(TSC_BIN, ["--noEmit"]);
-    runNode(ESLINT_BIN, ["scripts/", "build.mjs"]);
+    runNode(ESLINT_BIN, ["scripts/", "build.mjs", "src/"]);
     runNode("scripts/sync-sidepanel.mjs", ["--check"]);
     runNode("scripts/sync-version.mjs", ["--check"]);
     runNode("scripts/verify-release-digests.mjs", []);

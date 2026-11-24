@@ -50,6 +50,9 @@ vi.mock('../src/shared/audit.js', () => ({
 }));
 
 vi.mock('../src/service-worker/documents.js', () => ({
+  // Deterministic stand-in for the SHA-256 hex of a byte buffer; the audit
+  // integrity tests only need a stable, well-formed value.
+  sha256Hex: async () => 'a'.repeat(64),
   previewDocument: async () => ({ pages: [] }),
   redactDocument: async () => {
     if (redactShouldThrow) throw new Error('pipeline failure');

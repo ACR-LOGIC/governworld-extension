@@ -1,5 +1,10 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 import { MAX_MESSAGE_BYTES } from "./types.js";
+import { openDocDb, docPutMeta, DB_NAME, DB_VERSION, STORE } from "./docDb.js";
+
+// Re-exported for compatibility: the database/store layout lives in docDb.ts,
+// the single connection manager for the document store.
+export { DB_NAME, DB_VERSION, STORE };
 
 /**
  * Shared IndexedDB handle for document bytes and rendered page previews.
@@ -13,12 +18,10 @@ import { MAX_MESSAGE_BYTES } from "./types.js";
  * the size guard doing its job.
  *
  * The database and store are shared with the service worker so staged files
- * survive popup reloads; this module is the single place that knows the layout.
+ * survive popup reloads; docDb.ts is the single connection manager, and every
+ * operation here goes through it (bounded open, timeouts, stale-connection
+ * recovery).
  */
-
-export const DB_NAME = "governworld-redaction";
-export const DB_VERSION = 1;
-export const STORE = "docfiles";
 
 /** Keys are derived from a validated fileKey, so the shape is known. */
 export const PREVIEW_KEY_RE = /^[A-Za-z0-9_-]{1,64}::preview::\d{1,4}$/;
@@ -134,33 +137,16 @@ export function isRedactedDocRef(value: unknown): value is RedactedDocRef {
   return true;
 }
 
-let dbPromise: Promise<IDBDatabase> | null = null;
-
-export function openDocDb(): Promise<IDBDatabase> {
-  if (dbPromise) return dbPromise;
-  dbPromise = new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
-      if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE);
-    };
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error ?? new Error("IndexedDB is unavailable"));
-  });
-  // A failed open must not poison every later call.
-  dbPromise.catch(() => {
-    dbPromise = null;
-  });
-  return dbPromise;
-}
-
 export async function putDocBytes(key: string, bytes: ArrayBuffer): Promise<void> {
   const db = await openDocDb();
-  return new Promise((resolve, reject) => {
+  await new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, "readwrite");
     tx.objectStore(STORE).put(bytes, key);
-    tx.oncomplete = () => resolve();
+    tx.oncomplete = () => resolve(null);
     tx.onerror = () => reject(tx.error ?? new Error("Could not store the document bytes"));
   });
+  // Write timestamp, used by the TTL purge. Best-effort.
+  await docPutMeta(key, Date.now()).catch(() => undefined);
 }
 
 export async function getDocBytes(key: string): Promise<ArrayBuffer | null> {
