@@ -4959,6 +4959,22 @@ export function getCategoryLabel(first: string, second?: string): string {
 }
 
 /**
+ * Resolve user-facing category label using authoritative `entityType` when present
+ * (e.g. medical conditions, medications, procedures) so dictionary findings are not
+ * mislabeled as Medical Record Numbers.
+ */
+export function getDisplayCategoryLabel(lang: string, category: string, entityType?: string): string {
+  if (entityType) {
+    const norm = entityType.toLowerCase();
+    if (norm === "medical_condition" || norm === "diagnosis") return "Medical Condition";
+    if (norm === "medication" || norm === "prescription" || norm.startsWith("medication:")) return "Medication";
+    if (norm === "medical_procedure") return "Medical Procedure";
+    if (norm === "medical_term" || norm.startsWith("medical_abbrev:")) return "Medical Term";
+  }
+  return getCategoryLabel(lang, category);
+}
+
+/**
  * Get translated label for a compliance preset.
  * Supports both `getPresetLabel(lang, presetId)` and `getPresetLabel(presetId, lang)`.
  */

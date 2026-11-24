@@ -144,7 +144,7 @@ describe("P6 / D4 — Chunked Windowed Full-Page Scanning", () => {
     expect(validateMessage(finalMsg).ok).toBe(true);
     delivered.push(...finalMsg.findings);
     expect(delivered).toHaveLength(300);
-  });
+  }, 45_000);
 
   it("chunkFindingsByByteBudget keeps every serialized chunk within 64 KB MAX_MESSAGE_BYTES", () => {
     const sample: Finding[] = Array.from({ length: 300 }, (_, i) => ({

@@ -542,7 +542,7 @@ sequenceDiagram
 
 The extension is **fully functional in standalone local mode**.
 - **Local-first by default:** detection, OCR, and redaction run on-device. Default install declares **no install-time host permissions** (optional `http://*/*` + `https://*/*` exists only for user-approved Always-on paste protection).
-- **Gated/disabled integrations:** cloud/community submission and retrieval paths are stubbed or unavailable by default in this build; optional account/license flows are explicit and separate from scan/redaction content. Local protection flows do not transmit page/document/scan content.
+- **Gated/disabled integrations:** cloud scanning is disabled (`CLOUD_NOT_ALLOWED`). Community rule **submission** (`Share Rule` -> `/api/v1/extension/submissions`) is live only when explicitly triggered by the user and authorized by the workspace `logic_submission` gateway capability; all submission fields (`rule_name`, `pattern`, `cues`, `description`) are screened locally before transmission and fail closed if sensitive content is detected. Community rule **retrieval** remains stubbed/offline in this build. Local scanning and masking never transmit page/document/scan content.
 - **API-ready architecture:** interfaces/hooks exist for future optional integrations, but core functionality does not depend on them.
 
 ---

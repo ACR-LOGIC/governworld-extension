@@ -26,6 +26,8 @@ export interface OverlayController {
   clear(): void;
   destroy(): void;
   setRecalculator?(fn: () => OverlayRect[] | void): void;
+  isConnected?(): boolean;
+  getRenderedCount?(): number;
 }
 
 const HIGHLIGHT_COLOR = "rgba(255, 193, 7, 0.35)";
@@ -109,10 +111,35 @@ export function createOverlay(
 
   const paint = () => {
     if (destroyed) return;
+    if (rects.length > 0 && !host.isConnected && root.body) {
+      root.body.appendChild(host);
+    }
     layer.replaceChildren();
-    const vw = root.defaultView?.innerWidth ?? window.innerWidth;
-    const vh = root.defaultView?.innerHeight ?? window.innerHeight;
+    const vw = Math.max(
+      1,
+      root.defaultView?.innerWidth ||
+        root.documentElement?.clientWidth ||
+        (typeof window !== "undefined" ? window.innerWidth : 0) ||
+        1024
+    );
+    const vh = Math.max(
+      1,
+      root.defaultView?.innerHeight ||
+        root.documentElement?.clientHeight ||
+        (typeof window !== "undefined" ? window.innerHeight : 0) ||
+        768
+    );
     for (const rect of rects) {
+      if (
+        !Number.isFinite(rect.x) ||
+        !Number.isFinite(rect.y) ||
+        !Number.isFinite(rect.width) ||
+        !Number.isFinite(rect.height) ||
+        rect.width <= 0 ||
+        rect.height <= 0
+      ) {
+        continue;
+      }
       if (rect.x + rect.width < 0 || rect.y + rect.height < 0 || rect.x > vw || rect.y > vh) {
         continue; // off-viewport; skip
       }
@@ -185,6 +212,12 @@ export function createOverlay(
     },
     setRecalculator(fn) {
       recalculator = fn;
+    },
+    isConnected() {
+      return !destroyed && host.isConnected;
+    },
+    getRenderedCount() {
+      return layer.childElementCount;
     },
     clear() {
       rects = [];

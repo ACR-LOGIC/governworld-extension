@@ -601,7 +601,7 @@ describe("UI/UX Redesign Behavioral Flows (JSDOM)", () => {
     (document.getElementById("office-pair-btn") as HTMLButtonElement).click();
     await flushAsync();
     const officeStatus = document.getElementById("office-manager-status") as HTMLElement;
-    expect(officeStatus.textContent).toContain("Unable to reach Office Coordinator at 127.0.0.1:4820");
+    expect(officeStatus.textContent).toContain("Managed mode unavailable");
     expect(officeStatus.textContent).not.toContain("GovernWorld Medical Practice");
     expect("gw_coordinator_policy" in localStore).toBe(false);
     expect((document.getElementById("mode-badge") as HTMLElement).textContent).toBe("LOCAL");

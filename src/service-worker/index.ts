@@ -35,6 +35,9 @@ import {
   syncPolicy,
   submitLogic,
   getCachedCapabilities,
+  hasCapability,
+  isTrustedPolicyPublicKeyConfigured,
+  validateApiUrl,
 } from "../api/index.js";
 import { parseAccountView, NO_ACCOUNT } from "../shared/account.js";
 import type { AccountView } from "../shared/account.js";
@@ -937,7 +940,7 @@ function buildPopupState(
     scanned: session !== null,
     truncated: (session?.stats.truncated ?? false) || (session?.stats.findingsTruncated ?? false) || hasIncompleteWindows,
     findingsTruncated: session?.stats.findingsTruncated,
-    totalFindings: session?.stats.totalFindings,
+    totalFindings: session ? Math.max(session.findings.length, session.stats.totalFindings ?? 0) : undefined,
     visibleChars: session?.stats.visibleChars ?? 0,
     // Only meaningful when the scan read nothing: the page's document-sized
     // images, which the popup offers to send through the Document Studio.
@@ -970,6 +973,7 @@ async function stateForActiveTab(explicitTabId?: number, autoPinInitial = false)
 }
 
 async function handlePopupPinTab(tabId: number | null, pinCurrent: boolean | undefined, requestId: string): Promise<void> {
+  let pinError: { code: string; userMessage: string } | undefined;
   if (pinCurrent === true) {
     const active = await getActiveTab();
     if (active?.id && active.url) {
@@ -984,6 +988,10 @@ async function handlePopupPinTab(tabId: number | null, pinCurrent: boolean | und
       });
     } else {
       await writePinnedTarget({ status: "unpinned", pinnedTabId: null });
+      pinError = {
+        code: "NO_SCANNABLE_TAB",
+        userMessage: "No scannable tab is active. Switch to a standard web page (http/https) and try pinning again.",
+      };
     }
   } else if (tabId === null) {
     await writePinnedTarget({ status: "unpinned", pinnedTabId: null });
@@ -1006,9 +1014,16 @@ async function handlePopupPinTab(tabId: number | null, pinCurrent: boolean | und
       });
     } else {
       await writePinnedTarget({ status: "unpinned", pinnedTabId: null });
+      pinError = {
+        code: "UNSUPPORTED_TAB",
+        userMessage: "Selected tab cannot be scanned or pinned. Choose a standard web page (http/https).",
+      };
     }
   }
   const state = await stateForActiveTab();
+  if (pinError) {
+    state.error = pinError;
+  }
   notifyPopup({ type: "POPUP_STATE", requestId, state });
 }
 
@@ -2618,6 +2633,19 @@ async function handleManagementEnroll(
   },
   requestId: string,
 ): Promise<void> {
+  if (!isTrustedPolicyPublicKeyConfigured()) {
+    await handleManagementGetStatus(requestId);
+    return;
+  }
+  let normalizedCoordinatorUrl: string | undefined;
+  if (typeof msg.coordinatorUrl === "string" && msg.coordinatorUrl.trim()) {
+    const urlCheck = validateApiUrl(msg.coordinatorUrl);
+    if (!urlCheck.valid || !urlCheck.normalizedUrl) {
+      await handleManagementGetStatus(requestId);
+      return;
+    }
+    normalizedCoordinatorUrl = urlCheck.normalizedUrl;
+  }
   const deviceId = await getInstallationId();
   const enrollment: ManagementEnrollment = {
     organization_id: msg.organizationId,
@@ -2626,7 +2654,7 @@ async function handleManagementEnroll(
     employee_email: msg.employeeEmail,
     device_id: deviceId,
     enrolled_at: new Date().toISOString(),
-    coordinator_url: msg.coordinatorUrl,
+    ...(normalizedCoordinatorUrl ? { coordinator_url: normalizedCoordinatorUrl } : {}),
     management_mode: "MANAGE",
   };
   await saveManagementEnrollment(enrollment);
@@ -2696,6 +2724,17 @@ async function handleApiSubmitLogic(patternId: string, requestId: string): Promi
   }
 
   const tokens = await getStoredTokens();
+  const capabilities = await getCachedCapabilities();
+  if (!tokens?.access_token || !hasCapability(capabilities, "logic_submission")) {
+    notifyPopup({
+      type: "POPUP_API_SUBMIT_RESULT",
+      requestId,
+      success: false,
+      error: "Gateway authorization required: connect your workspace with logic_submission capability to share rules.",
+    });
+    return;
+  }
+
   const client = new GovernWorldApiClient(await getApiUrl());
   const res = await submitLogic(
     client,
@@ -2706,7 +2745,8 @@ async function handleApiSubmitLogic(patternId: string, requestId: string): Promi
       cues: target.contextCues ?? [],
       description: target.name,
     },
-    tokens?.access_token
+    tokens.access_token,
+    { capabilities, requireCapability: true }
   );
 
   if (!res.ok) {
