@@ -14,8 +14,9 @@ import { getDocBytes } from "../shared/docStore.js";
 /**
  * Offscreen document entry point. This page exists only to host pdf.js +
  * tesseract workers and to do canvas work — capabilities a service worker
- * lacks. It has no UI and processes one job at a time, always replying over
- * the dedicated port it opened to the service worker.
+ * lacks. It has no UI; document jobs are dispatched through a bounded
+ * scheduler (`MAX_CONCURRENT_DOCUMENT_JOBS`) and always reply over the
+ * dedicated port it opened to the service worker.
  *
  * MAX_DOC_PAGES comes from the shared contract rather than a local copy: the
  * cap is a policy value the popup discloses to the user, and a second copy here
