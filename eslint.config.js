@@ -31,10 +31,14 @@ export default [
     },
   },
   // TypeScript sources: the TS6 programmatic API via the typescript-eslint
-  // parser, plus the same security rules the scripts get. Typescript 7 ships
-  // no compiler API for tooling yet (see typescript-eslint#10940), so the
-  // `typescript` package here is the TS6 compatibility alias while
-  // `@typescript/native` carries the native TS7 compiler for the tsc command.
+  // parser, plus the security rules promoted to error. TS tracking:
+  // typescript-eslint#10940 is still open as of 2026-11 — the maintainer says
+  // "we're still waiting for the API to release" (2026-04); WIP TS 7.1 support
+  // exists with `projectService.EXPERIMENTAL_backend` since typescript-eslint
+  // 8.73.0 (2026-11), and TS 7.1 beta shipped 2026-10 with a new programmatic
+  // API. So the `typescript` package here is the TS6 compatibility alias while
+  // `@typescript/native` carries the native TS7 compiler; switch when a
+  // typescript-eslint release states TS 7 support.
   {
     files: ["src/**/*.ts"],
     languageOptions: {
