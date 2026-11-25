@@ -81,6 +81,7 @@ function hasRiskyQuantifiedGroup(source: string): boolean {
   let inClass = false;
 
   for (let index = 0; index < source.length; index++) {
+    // eslint-disable-next-line security/detect-object-injection
     const character = source[index];
     if (escaped) {
       escaped = false;
@@ -125,6 +126,7 @@ function hasAdjacentQuantifiers(source: string): boolean {
 function hasBackreferenceOrLookaround(source: string): boolean {
   let escaped = false;
   for (let index = 0; index < source.length; index++) {
+    // eslint-disable-next-line security/detect-object-injection
     const character = source[index];
     if (escaped) {
       if (/[1-9k]/.test(character)) return true;
@@ -222,7 +224,9 @@ function commonPrefix(examples: string[]): string {
   );
   let prefix = "";
   for (let i = 0; i < shortest.length; i++) {
+    // eslint-disable-next-line security/detect-object-injection
     const ch = shortest[i];
+    // eslint-disable-next-line security/detect-object-injection
     const count = examples.filter((e) => e[i] === ch).length;
     if (count >= threshold) {
       prefix += ch;
@@ -262,6 +266,7 @@ function lengthStats(examples: string[]): {
   const min = lengths[0] ?? 0;
   const max = lengths[lengths.length - 1] ?? 0;
   const mid = Math.floor(lengths.length / 2);
+  // eslint-disable-next-line security/detect-object-injection
   const median = lengths[mid] ?? 0;
   return { min, max, median };
 }
@@ -342,6 +347,7 @@ function synthesizePattern(
     const segPatterns: string[] = [];
     for (let si = 0; si < maxSegs; si++) {
       const segExamples = segments
+        // eslint-disable-next-line security/detect-object-injection
         .map((s) => s[si] ?? "")
         .filter((s) => s.length > 0);
       if (segExamples.length === 0) continue;
@@ -371,6 +377,7 @@ function synthesizePattern(
     });
     for (let si = 0; si < segPatterns.length; si++) {
       const segExamples = bodies
+        // eslint-disable-next-line security/detect-object-injection
         .map((b) => b.split(separator)[si] ?? "")
         .filter((s) => s.length > 0);
       const segStats = lengthStats(segExamples);
@@ -574,6 +581,7 @@ export function testPattern(
     re.lastIndex = 0;
     let matchCount = 0;
     let match: RegExpExecArray | null;
+    // eslint-disable-next-line security/detect-object-injection
     while ((match = re.exec(testCases[caseIndex])) !== null && matchCount < 1000) {
       if (Date.now() - startTime > TIME_BUDGET_MS) break;
       matchCount += 1;

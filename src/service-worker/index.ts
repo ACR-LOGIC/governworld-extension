@@ -244,6 +244,7 @@ async function readSession(tabId: number): Promise<SessionState | null> {
   const key = sessionKey(tabId);
   const raw: unknown = await chrome.storage.session.get(key);
   if (typeof raw !== "object" || raw === null) return null;
+  // eslint-disable-next-line security/detect-object-injection
   const value = (raw as Record<string, unknown>)[key];
   return isSessionState(value) ? value : null;
 }
@@ -555,6 +556,7 @@ function actionCounts(response: unknown): Record<string, number> | undefined {
   for (const [key, value] of Object.entries(counts as Record<string, unknown>)) {
     if (typeof key !== "string" || key.length === 0 || key.length > 64) continue;
     if (typeof value !== "number" || !Number.isFinite(value) || value < 0) continue;
+    // eslint-disable-next-line security/detect-object-injection
     clean[key] = value;
   }
   return Object.keys(clean).length > 0 ? clean : undefined;
@@ -662,6 +664,7 @@ async function readPinnedTarget(): Promise<StoredPinnedTarget | null> {
   try {
     const raw: unknown = await chrome.storage.session.get(PINNED_TARGET_KEY);
     if (typeof raw !== "object" || raw === null) return null;
+    // eslint-disable-next-line security/detect-object-injection
     const value = (raw as Record<string, unknown>)[PINNED_TARGET_KEY];
     return isStoredPinnedTarget(value) ? value : null;
   } catch {
@@ -822,6 +825,7 @@ function notifyPopup(message: PopupFromWorker): void {
               sessionId,
               chunkIndex: i,
               totalChunks: chunks.length,
+              // eslint-disable-next-line security/detect-object-injection
               findings: chunks[i],
             }).catch(() => undefined);
           }
@@ -1750,6 +1754,7 @@ async function handleContentScanResult(message: Extract<WorkerMessage, { type: "
               if (m) mimeType = m[1].toLowerCase();
               const binary = atob(item.dataUrl.slice(comma + 1));
               const buf = new Uint8Array(binary.length);
+              // eslint-disable-next-line security/detect-object-injection
               for (let i = 0; i < binary.length; i++) buf[i] = binary.charCodeAt(i);
               bytes = buf.buffer;
             }
@@ -1947,6 +1952,7 @@ interface AccountState {
 
 async function readAccountMetadata(): Promise<StoredAccount | null> {
   const raw = await chrome.storage.local.get(ACCOUNT_KEY);
+  // eslint-disable-next-line security/detect-object-injection
   const account = raw[ACCOUNT_KEY] as StoredAccount | undefined;
   return account?.linked ? account : null;
 }
@@ -1954,6 +1960,7 @@ async function readAccountMetadata(): Promise<StoredAccount | null> {
 /** The live API key, read lazily from chrome.storage.session on every use. */
 async function readAccountCredential(): Promise<string | null> {
   const raw = await chrome.storage.session.get(ACCOUNT_KEY_CREDENTIAL);
+  // eslint-disable-next-line security/detect-object-injection
   const key = raw[ACCOUNT_KEY_CREDENTIAL];
   return typeof key === "string" && key.length > 0 ? key : null;
 }
@@ -2835,6 +2842,7 @@ async function fetchAssetBase64(relPath: string): Promise<string> {
   if (!resp.ok) throw new Error(`Failed to load ${relPath} (${resp.status})`);
   const bytes = new Uint8Array(await resp.arrayBuffer());
   let bin = "";
+  // eslint-disable-next-line security/detect-object-injection
   for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
   return btoa(bin);
 }

@@ -160,6 +160,7 @@ export function isAuditEvent(value: unknown): value is AuditEvent {
 export function canonicalEventLine(event: AuditEvent): string {
   const ordered: Record<string, unknown> = {};
   for (const key of ["ts", "action", "host", "counts", "docHash", "pages", "presetId", "policyId", "policyAction", "gatewayOrigin", "enabledCategories", "complianceScore", "complianceBand", "complianceReason", "destinationCategory", "complianceAction", "prevHash", "outcome"] as const) {
+    // eslint-disable-next-line security/detect-object-injection
     if (event[key] !== undefined) ordered[key] = event[key];
   }
   return JSON.stringify(ordered);
@@ -200,6 +201,7 @@ export function getAuditWriterRole(): AuditWriterRole {
 
 export async function loadAuditLog(): Promise<AuditEvent[]> {
   const raw = await chrome.storage.local.get(AUDIT_KEY);
+  // eslint-disable-next-line security/detect-object-injection
   const value = raw[AUDIT_KEY];
   if (!Array.isArray(value)) return [];
   return value.filter(isAuditEvent);
@@ -233,6 +235,7 @@ export async function verifyAuditChain(events: AuditEvent[]): Promise<ChainVerif
 
   for (let i = 1; i < events.length; i++) {
     const prev = events[i - 1];
+    // eslint-disable-next-line security/detect-object-injection
     const current = events[i];
     if (isChainedLog) {
       if (current.prevHash === undefined) {
@@ -517,6 +520,7 @@ export async function exportSignedAuditLog(): Promise<SignedAuditExport> {
     try {
       if (typeof chrome !== "undefined" && chrome?.storage?.local) {
         const raw = await chrome.storage.local.get(AUDIT_CHECKPOINT_KEY);
+        // eslint-disable-next-line security/detect-object-injection
         const state = raw[AUDIT_CHECKPOINT_KEY];
         if (isRecord(state) && typeof state.lastSequenceNumber === "number") {
           seq = state.lastSequenceNumber + 1;

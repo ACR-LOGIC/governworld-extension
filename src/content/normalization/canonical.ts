@@ -23,6 +23,7 @@ function toCanonicalSegments(
 ): { canonicalSegments: CanonicalSegment[]; textNodeCount: number } {
   let textNodeCount = 0;
   const canonicalSegments: CanonicalSegment[] = rawSegments.map((seg, i) => {
+    // eslint-disable-next-line security/detect-object-injection
     const segStart = segmentStarts[i] ?? 0;
     const node = nodeIds.get(seg.nodeId);
     const isInput = node && (node.nodeName === "INPUT" || node.nodeName === "TEXTAREA");

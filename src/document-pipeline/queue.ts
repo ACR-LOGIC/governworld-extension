@@ -185,6 +185,7 @@ export class DocumentBatchQueue {
   public clearFinished(): void {
     const before = this.jobs.length;
     for (let i = this.jobs.length - 1; i >= 0; i--) {
+      // eslint-disable-next-line security/detect-object-injection
       const s = this.jobs[i].status;
       if (s === "complete" || s === "failed" || s === "canceled") this.jobs.splice(i, 1);
     }

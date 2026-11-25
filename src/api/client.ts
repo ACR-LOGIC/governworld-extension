@@ -91,6 +91,7 @@ export class GovernWorldApiClient {
     if (typeof responseBody === "object" && responseBody !== null) {
       const bodyRec = responseBody as Record<string, unknown>;
       for (const field of ["error", "code", "oauth_error"] as const) {
+        // eslint-disable-next-line security/detect-object-injection
         const val = bodyRec[field];
         if (typeof val === "string" && KNOWN_OAUTH_ERRORS.has(val.trim().toLowerCase())) {
           oauthError = val.trim().toLowerCase();

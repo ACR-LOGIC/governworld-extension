@@ -46,6 +46,7 @@ export interface PkcePair {
 function base64UrlEncode(bytes: Uint8Array): string {
   let binary = "";
   for (let i = 0; i < bytes.byteLength; i++) {
+    // eslint-disable-next-line security/detect-object-injection
     binary += String.fromCharCode(bytes[i]);
   }
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -91,6 +92,7 @@ export async function getStoredPkceVerifier(state?: string): Promise<string | nu
     if (typeof chrome !== "undefined" && chrome.storage?.session) {
       const key = pkceVerifierKey(state);
       const stored = await chrome.storage.session.get(key);
+      // eslint-disable-next-line security/detect-object-injection
       const verifier = stored[key];
       if (typeof verifier === "string" && verifier.length >= 43) {
         return verifier;
@@ -116,6 +118,7 @@ export async function getStoredTokens(): Promise<AuthTokens | null> {
   try {
     if (typeof chrome !== "undefined" && chrome.storage?.session) {
       const stored = await chrome.storage.session.get(SESSION_KEY_AUTH_TOKENS);
+      // eslint-disable-next-line security/detect-object-injection
       const tokens = stored[SESSION_KEY_AUTH_TOKENS] as AuthTokens | undefined;
       if (tokens && typeof tokens.access_token === "string") {
         return tokens;
@@ -153,6 +156,7 @@ export async function getAuthMetadata(): Promise<StoredAuthMetadata | null> {
   try {
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
       const stored = await chrome.storage.local.get(LOCAL_KEY_AUTH_METADATA);
+      // eslint-disable-next-line security/detect-object-injection
       return (stored[LOCAL_KEY_AUTH_METADATA] as StoredAuthMetadata) ?? null;
     }
   } catch {
@@ -281,6 +285,7 @@ export async function verifyOAuthState(state: string): Promise<boolean> {
     if (typeof chrome !== "undefined" && chrome.storage?.session) {
       const key = OAUTH_STATE_KEY_PREFIX + state;
       const stored = await chrome.storage.session.get(key);
+      // eslint-disable-next-line security/detect-object-injection
       if (stored[key]) {
         await chrome.storage.session.remove(key);
         return true;

@@ -441,6 +441,7 @@ async function hydrateFromSession(): Promise<void> {
     return;
   }
 
+  // eslint-disable-next-line security/detect-object-injection
   session = loadSessionFromStorage(raw[SESSION_KEY]);
   if (!session) {
     if (dom.stageStatus) dom.stageStatus.textContent = "That document is no longer available. Reopen it from the extension.";
@@ -645,7 +646,9 @@ function wire(): void {
   });
   dom.undoDrawn?.addEventListener("click", () => {
     for (let i = findings.length - 1; i >= 0; i--) {
+      // eslint-disable-next-line security/detect-object-injection
       if (findings[i].custom) {
+        // eslint-disable-next-line security/detect-object-injection
         selected.delete(findings[i].id);
         findings.splice(i, 1);
         break;

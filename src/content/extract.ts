@@ -342,6 +342,7 @@ export function segmentIndexAt(segmentStarts: number[], combinedLength: number, 
   let hi = segmentStarts.length - 1;
   while (lo <= hi) {
     const mid = (lo + hi) >> 1;
+    // eslint-disable-next-line security/detect-object-injection
     if (segmentStarts[mid] <= offset) {
       lo = mid + 1;
     } else {
@@ -375,7 +376,9 @@ export function mapRange(
   let segIdx = firstSeg;
   let cursor = start;
   while (segIdx < segments.length && cursor < end) {
+    // eslint-disable-next-line security/detect-object-injection
     const seg = segments[segIdx];
+    // eslint-disable-next-line security/detect-object-injection
     const segStart = segmentStarts[segIdx];
     const segEnd = segStart + seg.text.length;
     const localStart = cursor - segStart;
@@ -433,6 +436,7 @@ export function buildRedactedText(
       const chars = Array.from(seg.text);
       for (const range of ranges) {
         for (let i = range.start; i < range.end; i++) {
+          // eslint-disable-next-line security/detect-object-injection
           chars[i] = MASK_CHAR;
         }
       }
@@ -462,6 +466,7 @@ export function maskCombinedRange(
       const fs = Math.max(lo, f.startOffset);
       const fe = Math.min(hi, f.endOffset);
       if (fe <= fs) continue;
+      // eslint-disable-next-line security/detect-object-injection
       for (let i = fs - lo; i < fe - lo; i++) chars[i] = MASK_CHAR;
     }
     return chars.join("");
@@ -511,7 +516,9 @@ export function selectionCombinedSpan<TNode>(
     if (isLive && !isLive(node)) continue;
     const segIdx = segmentIndexById.get(nodeId);
     if (segIdx === undefined) continue;
+    // eslint-disable-next-line security/detect-object-injection
     const seg = segments[segIdx];
+    // eslint-disable-next-line security/detect-object-injection
     const segStart = segmentStarts[segIdx];
     const a = range.comparePoint(node, seg.startOffset);
     const b = range.comparePoint(node, seg.endOffset);

@@ -1273,7 +1273,9 @@ function detectSecrets(text: string): RawMatch[] {
     if (overlapIdx === -1) {
       out.push(m);
     } else {
+      // eslint-disable-next-line security/detect-object-injection
       if (m.confidence > out[overlapIdx].confidence) {
+        // eslint-disable-next-line security/detect-object-injection
         out[overlapIdx] = m;
       }
     }
@@ -1483,6 +1485,7 @@ export function detectWithCoverage(
   let partiallyScanned = false;
 
   for (const category of enabledCategories) {
+    // eslint-disable-next-line security/detect-object-injection
     const detector = DETECTORS[category];
     if (!detector) continue;
     for (const match of detector(searchText)) {

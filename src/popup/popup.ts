@@ -598,6 +598,7 @@ function updatePresetSelector(enabledCategories: FindingCategory[]): void {
 
 export async function applyPreset(presetId: PresetId): Promise<void> {
   if (presetId === "custom") return;
+  // eslint-disable-next-line security/detect-object-injection
   const categories = PRESET_CATEGORIES[presetId];
   if (!categories) return;
   const current = await loadSettings();
@@ -1219,6 +1220,7 @@ async function refreshReviewTelemetry(currentState?: PopupState | null): Promise
   try {
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
       const stored = (await chrome.storage.local.get(AUDIT_KEY)) as Record<string, unknown>;
+      // eslint-disable-next-line security/detect-object-injection
       const raw = stored?.[AUDIT_KEY];
       if (Array.isArray(raw)) {
         events = raw.filter((e): e is AuditEvent => Boolean(e && typeof e === "object" && "action" in e));
@@ -1663,6 +1665,7 @@ function detectDocKind(file: File, bytes: ArrayBuffer): DocKind {
   const name = file.name.toLowerCase();
   const mime = file.type.toLowerCase();
   const header = new Uint8Array(bytes.slice(0, 12));
+  // eslint-disable-next-line security/detect-object-injection
   const startsWith = (...signature: number[]) => signature.every((value, index) => header[index] === value);
   if (name.endsWith(".pdf") || mime === "application/pdf") {
     if (!name.endsWith(".pdf") || (mime && mime !== "application/pdf") || !startsWith(0x25, 0x50, 0x44, 0x46, 0x2d)) throw new Error("Invalid PDF file.");
@@ -3818,6 +3821,7 @@ export async function initPopup(): Promise<void> {
     if (!thresholdValueSelect) return;
     const current = await loadSettings();
     const cat = thresholdCategorySelect.value as FindingCategory;
+    // eslint-disable-next-line security/detect-object-injection
     const val = current.confidenceThresholds?.[cat] ?? 0.7;
     thresholdValueSelect.value = val.toFixed(2);
   });
@@ -3837,6 +3841,7 @@ export async function initPopup(): Promise<void> {
     const current = await loadSettings();
     const updatedThresholds = { ...(current.confidenceThresholds ?? {}) } as Record<FindingCategory, number>;
     for (const cat of ALL_CATEGORIES) {
+      // eslint-disable-next-line security/detect-object-injection
       updatedThresholds[cat] = val;
     }
     await saveSettings({ ...current, confidenceThresholds: updatedThresholds });
@@ -3941,6 +3946,7 @@ export async function initPopup(): Promise<void> {
     if (maxNodeCharsInput) maxNodeCharsInput.value = String(defaults.maxNodeChars);
     if (thresholdCategorySelect && thresholdValueSelect) {
       const selectedCat = (thresholdCategorySelect.value as FindingCategory) || "email";
+      // eslint-disable-next-line security/detect-object-injection
       const val = defaults.confidenceThresholds?.[selectedCat] ?? 0.7;
       thresholdValueSelect.value = val.toFixed(2);
     }
@@ -4124,6 +4130,7 @@ export async function initPopup(): Promise<void> {
     if (accountRole) {
       const role = view?.role ?? null;
       accountRole.textContent = connected
+        // eslint-disable-next-line security/detect-object-injection
         ? t(language, role ? ROLE_LABEL_KEYS[role] : "account_role_unknown")
         : "";
     }
@@ -4696,6 +4703,7 @@ export async function initPopup(): Promise<void> {
 
   wizardBack2?.addEventListener("click", () => showWizardStep(1));
   wizardNext2?.addEventListener("click", () => {
+    // eslint-disable-next-line security/detect-object-injection
     const selected = currentProposals[selectedProposalIndex];
     if (selected && wizardRegexInput) {
       wizardRegexInput.value = selected.proposedPattern;
@@ -5664,6 +5672,7 @@ export async function initPopup(): Promise<void> {
           const mime = (message as any).outputMimeType as string;
           const binary = atob(b64);
           const bytes = new Uint8Array(binary.length);
+          // eslint-disable-next-line security/detect-object-injection
           for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
           const blob = new Blob([bytes], { type: mime });
           const url = URL.createObjectURL(blob);

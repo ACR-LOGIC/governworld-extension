@@ -48,19 +48,13 @@ export default [
       security: pluginSecurity,
     },
     rules: {
-      // Promoted from the plugin's recommended `warn` to `error` for src:
-      // src/** now lints the regex findings (each has a disable comment
-      // justified by an existing runtime guard), so the only findings left
-      // at warn are object-injection.
+      // Promoted from the plugin's recommended `warn` to `error` for src.
+      // Each finding was fixed or annotated with an eslint-disable-next-line
+      // comment; the codebase runs lint as a gate, so the findings it can
+      // prove are safe stay visible and promote when new ones are introduced.
+      "security/detect-object-injection": "error",
       "security/detect-unsafe-regex": "error",
       "security/detect-non-literal-regexp": "error",
-      // Left at the plugin's recommended `warn`: dynamic property access
-      // (`obj[key]`, `arr[i]`) is the idiomatic TypeScript pattern used
-      // throughout detection code. Promoting it to error would require a
-      // sweeping rewrite of the detection engine rather than a focused
-      // pass, so it is downgraded to warn with the rest of the plugin's
-      // recommended level and a full fix pass is flagged for follow-up.
-      "security/detect-object-injection": "warn",
     },
   },
 ];

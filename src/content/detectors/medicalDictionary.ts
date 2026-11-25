@@ -211,6 +211,7 @@ export async function ensureMedicalDictionaryLoaded(clinicMode: ClinicMode = "ge
 
 function demographicDelta(normPhrase: string, packs: MedicalPacks, clinicMode: ClinicMode): number {
   if (clinicMode === "general") return 0;
+  // eslint-disable-next-line security/detect-object-injection
   const entry = packs.catalog[normPhrase];
   const inSpecialty =
     packs.specialty &&

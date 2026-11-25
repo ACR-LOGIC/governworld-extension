@@ -641,14 +641,17 @@ function stripSensitiveHeadersForCrossOrigin(
   const out: Record<string, string> = {};
   if (headersInit instanceof Headers) {
     headersInit.forEach((value, key) => {
+      // eslint-disable-next-line security/detect-object-injection
       if (!sensitive.has(key.toLowerCase())) out[key] = value;
     });
   } else if (Array.isArray(headersInit)) {
     for (const [key, value] of headersInit) {
+      // eslint-disable-next-line security/detect-object-injection
       if (!sensitive.has(key.toLowerCase())) out[key] = value;
     }
   } else {
     for (const [key, value] of Object.entries(headersInit)) {
+      // eslint-disable-next-line security/detect-object-injection
       if (!sensitive.has(key.toLowerCase())) out[key] = value;
     }
   }

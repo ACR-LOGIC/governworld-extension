@@ -80,8 +80,10 @@ function rectsForSpans(spans: TokenSpan<OcrToken>[]): Rect[] {
     for (const box of boxes) {
       const idx = merged.findIndex((m) => rectsIntersect(m, box));
       if (idx >= 0) {
+        // eslint-disable-next-line security/detect-object-injection
         const target = merged[idx];
         const combined = unionRect([target, box]);
+        // eslint-disable-next-line security/detect-object-injection
         merged[idx] = combined;
       } else {
         merged.push(box);
@@ -114,6 +116,7 @@ export function findingsFromOcrPages(
     const spans = tokenSpans(page.tokens);
     const matches = detect(page.fullText, enabledCategories, customPatterns);
     for (let i = 0; i < matches.length; i++) {
+      // eslint-disable-next-line security/detect-object-injection
       const match = matches[i];
       const covered = spans.filter((s) => s.start < match.end && s.end > match.start);
       if (covered.length === 0) continue;

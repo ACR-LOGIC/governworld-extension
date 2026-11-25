@@ -19,6 +19,7 @@ export function extractTableStructures(
   const tableElements = preCollectedTables ?? (typeof doc.querySelectorAll === "function" ? doc.querySelectorAll("table") : []);
 
   for (let t = 0; t < tableElements.length; t++) {
+    // eslint-disable-next-line security/detect-object-injection
     const table = tableElements[t];
     const tableId = `table_${t}`;
     const rows = table.querySelectorAll("tr");
@@ -27,11 +28,13 @@ export function extractTableStructures(
     let maxCols = 0;
 
     for (let r = 0; r < rows.length; r++) {
+      // eslint-disable-next-line security/detect-object-injection
       const row = rows[r];
       const cells = row.querySelectorAll("th, td");
       maxCols = Math.max(maxCols, cells.length);
 
       for (let c = 0; c < cells.length; c++) {
+        // eslint-disable-next-line security/detect-object-injection
         const cell = cells[c];
         const role: "header" | "cell" | "row-header" = cell.tagName === "TH" ? (r === 0 ? "header" : "row-header") : "cell";
         const cellId = `${tableId}_r${r}_c${c}`;
@@ -114,8 +117,10 @@ function buildCellIndex(): Map<Element, CellInfo> {
   for (const table of tables) {
     const rows = Array.from(table.rows);
     for (let r = 0; r < rows.length; r++) {
+      // eslint-disable-next-line security/detect-object-injection
       const cells = Array.from(rows[r].cells);
       for (let c = 0; c < cells.length; c++) {
+        // eslint-disable-next-line security/detect-object-injection
         const cell = cells[c];
         const isHeader = cell.tagName === "TH";
         index.set(cell, {

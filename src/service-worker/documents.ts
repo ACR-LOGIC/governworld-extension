@@ -141,6 +141,7 @@ export async function clearAllFiles(): Promise<void> {
 
 export async function loadLastDocId(): Promise<string | null> {
   const raw = await chrome.storage.session.get(LAST_DOC_KEY);
+  // eslint-disable-next-line security/detect-object-injection
   const value = raw[LAST_DOC_KEY];
   return typeof value === "string" && value ? value : null;
 }
@@ -207,6 +208,7 @@ export async function restoreLastSession(): Promise<DocSession | null> {
   if (live) return live;
 
   const raw = await chrome.storage.session.get(LAST_SESSION_KEY).catch(() => ({} as Record<string, unknown>));
+  // eslint-disable-next-line security/detect-object-injection
   const record = raw[LAST_SESSION_KEY] as PersistedSession | undefined;
   if (!record || typeof record.docId !== "string" || typeof record.fileKey !== "string" || !Array.isArray(record.pages)) {
     return null;
@@ -265,8 +267,10 @@ export async function clearSession(docId?: string, fileKey?: string): Promise<vo
     await docDeleteByPrefix(targetFileKey).catch(() => undefined);
   }
   const persisted = await chrome.storage.session.get([LAST_DOC_KEY, LAST_SESSION_KEY]).catch(() => ({} as Record<string, unknown>));
+  // eslint-disable-next-line security/detect-object-injection
   const persistedSession = persisted[LAST_SESSION_KEY] as PersistedSession | undefined;
   const matchesPersisted =
+    // eslint-disable-next-line security/detect-object-injection
     (targetDocId && (lastDocId === targetDocId || persisted[LAST_DOC_KEY] === targetDocId || persistedSession?.docId === targetDocId)) ||
     (targetFileKey && persistedSession?.fileKey === targetFileKey);
 
@@ -306,6 +310,7 @@ async function collectLiveStagedRoots(): Promise<Set<string>> {
   for (const fk of inFlightFileKeys) liveRoots.add(fk);
 
   const raw = await chrome.storage.session.get(LAST_SESSION_KEY).catch(() => ({} as Record<string, unknown>));
+  // eslint-disable-next-line security/detect-object-injection
   const persisted = raw[LAST_SESSION_KEY] as Partial<PersistedSession> | undefined;
   if (persisted && typeof persisted.fileKey === "string" && persisted.fileKey) {
     liveRoots.add(persisted.fileKey);

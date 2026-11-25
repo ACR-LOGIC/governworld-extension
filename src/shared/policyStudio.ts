@@ -309,6 +309,7 @@ export async function loadSitePolicies(): Promise<SitePolicy[]> {
   try {
     if (typeof chrome === "undefined" || !chrome.storage?.local) return [];
     const raw = await chrome.storage.local.get(SITE_POLICIES_KEY);
+    // eslint-disable-next-line security/detect-object-injection
     const arr = raw[SITE_POLICIES_KEY];
     if (!Array.isArray(arr)) return [];
     const valid: SitePolicy[] = [];
@@ -332,6 +333,7 @@ export async function saveSitePolicy(policy: SitePolicy): Promise<SitePolicy[]> 
   const existing = await loadSitePolicies();
   const idx = existing.findIndex((p) => p.id === policy.id);
   if (idx >= 0) {
+    // eslint-disable-next-line security/detect-object-injection
     existing[idx] = policy;
   } else {
     existing.push(policy);
@@ -351,6 +353,7 @@ export async function toggleSitePolicy(id: string): Promise<SitePolicy[]> {
   const existing = await loadSitePolicies();
   const idx = existing.findIndex((p) => p.id === id);
   if (idx >= 0) {
+    // eslint-disable-next-line security/detect-object-injection
     existing[idx].enabled = !existing[idx].enabled;
     await saveSitePolicies(existing);
   }

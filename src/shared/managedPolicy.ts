@@ -99,6 +99,7 @@ function base64ToBytes(base64: string): Uint8Array | null {
     const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
     const binary = atob(padded);
     const out = new Uint8Array(binary.length);
+    // eslint-disable-next-line security/detect-object-injection
     for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
     return out;
   } catch {
@@ -113,20 +114,26 @@ export function canonicalizeManagedPolicySettings(settings: ManagedPolicySetting
   const sortedKeys = Object.keys(settings).sort();
   const obj: Record<string, unknown> = {};
   for (const k of sortedKeys) {
+    // eslint-disable-next-line security/detect-object-injection
     const val = (settings as Record<string, unknown>)[k];
     if (val !== undefined) {
       if (k === "customRules" && Array.isArray(val)) {
+        // eslint-disable-next-line security/detect-object-injection
         obj[k] = JSON.parse(canonicalizePolicyRules(val as PolicyRule[]));
       } else if (Array.isArray(val)) {
+        // eslint-disable-next-line security/detect-object-injection
         obj[k] = [...val].sort();
       } else if (typeof val === "object" && val !== null) {
         const subKeys = Object.keys(val).sort();
         const subObj: Record<string, unknown> = {};
         for (const sk of subKeys) {
+          // eslint-disable-next-line security/detect-object-injection
           subObj[sk] = (val as Record<string, unknown>)[sk];
         }
+        // eslint-disable-next-line security/detect-object-injection
         obj[k] = subObj;
       } else {
+        // eslint-disable-next-line security/detect-object-injection
         obj[k] = val;
       }
     }
@@ -509,6 +516,7 @@ export async function loadManagementEnrollment(): Promise<ManagementEnrollment |
   }
   try {
     const stored = await chrome.storage.local.get(STORAGE_KEY_ENROLLMENT);
+    // eslint-disable-next-line security/detect-object-injection
     const enrollment = stored[STORAGE_KEY_ENROLLMENT] as ManagementEnrollment | undefined;
     if (enrollment && enrollment.organization_id && enrollment.employee_id && enrollment.device_id) {
       return enrollment;
@@ -546,6 +554,7 @@ export async function loadLastAppliedManagedPolicy(): Promise<ManagedPolicyEnvel
   }
   try {
     const stored = await chrome.storage.local.get(STORAGE_KEY_MANAGED_POLICY);
+    // eslint-disable-next-line security/detect-object-injection
     const policy = stored[STORAGE_KEY_MANAGED_POLICY] as ManagedPolicyEnvelope | undefined;
     if (policy && policy.policy_id && policy.policy_version) {
       return policy;

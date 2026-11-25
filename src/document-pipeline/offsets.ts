@@ -28,6 +28,7 @@ export interface TokenSpan<T extends OcrTokenLike> {
 /** The separator that precedes token `i`, given the token before it. */
 function separatorBefore(i: number, tokens: readonly OcrTokenLike[]): string {
   if (i === 0) return "";
+  // eslint-disable-next-line security/detect-object-injection
   return tokens[i].lineIndex !== tokens[i - 1].lineIndex ? "\n" : " ";
 }
 
@@ -35,6 +36,7 @@ function separatorBefore(i: number, tokens: readonly OcrTokenLike[]): string {
 export function assembleOcrText(tokens: readonly OcrTokenLike[]): string {
   let out = "";
   for (let i = 0; i < tokens.length; i++) {
+    // eslint-disable-next-line security/detect-object-injection
     out += separatorBefore(i, tokens) + tokens[i].text;
   }
   return out;
@@ -50,8 +52,10 @@ export function tokenSpans<T extends OcrTokenLike>(tokens: readonly T[]): TokenS
   for (let i = 0; i < tokens.length; i++) {
     const sep = separatorBefore(i, tokens);
     const start = pos + sep.length;
+    // eslint-disable-next-line security/detect-object-injection
     const end = start + tokens[i].text.length;
     pos = end;
+    // eslint-disable-next-line security/detect-object-injection
     spans.push({ start, end, token: tokens[i] });
   }
   return spans;

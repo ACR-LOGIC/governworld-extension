@@ -60,6 +60,7 @@ export interface StagedDataStats {
 export async function markDocumentStaged(fileKey?: string): Promise<void> {
   try {
     const payload: Record<string, unknown> = { [STAGED_MARKER_KEY]: Date.now() };
+    // eslint-disable-next-line security/detect-object-injection
     if (fileKey) payload[STAGED_FILE_KEY] = fileKey;
     await chrome.storage.session.set(payload);
   } catch {
@@ -72,6 +73,7 @@ export async function markDocumentStaged(fileKey?: string): Promise<void> {
 export async function isDocumentStaged(): Promise<boolean> {
   try {
     const raw = await chrome.storage.session.get(STAGED_MARKER_KEY);
+    // eslint-disable-next-line security/detect-object-injection
     return typeof raw[STAGED_MARKER_KEY] === "number";
   } catch {
     return false;
@@ -81,6 +83,7 @@ export async function isDocumentStaged(): Promise<boolean> {
 export async function getStagedFileKey(): Promise<string | null> {
   try {
     const raw = await chrome.storage.session.get(STAGED_FILE_KEY);
+    // eslint-disable-next-line security/detect-object-injection
     const val = raw[STAGED_FILE_KEY];
     return typeof val === "string" && val.length > 0 ? val : null;
   } catch {
@@ -419,9 +422,11 @@ export async function docGetStagedStats(): Promise<StagedDataStats> {
       const rootPrefix = key.split("::")[0] || key;
       stats.keyCount += 1;
       stats.totalBytes += bytes;
+      // eslint-disable-next-line security/detect-object-injection
       const entry = stats.byPrefix[rootPrefix] ?? { keyCount: 0, bytes: 0 };
       entry.keyCount += 1;
       entry.bytes += bytes;
+      // eslint-disable-next-line security/detect-object-injection
       stats.byPrefix[rootPrefix] = entry;
       cursor.continue();
     };

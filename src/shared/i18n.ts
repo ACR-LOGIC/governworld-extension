@@ -4926,7 +4926,9 @@ export function t(
     }
   }
 
+  // eslint-disable-next-line security/detect-object-injection
   const dict = UI_TRANSLATIONS[lang] ?? UI_TRANSLATIONS.en;
+  // eslint-disable-next-line security/detect-object-injection
   let text = dict[key] ?? UI_TRANSLATIONS.en[key] ?? key;
 
   if (params && typeof params === "object") {
@@ -4955,7 +4957,9 @@ export function getCategoryLabel(first: string, second?: string): string {
     cat = first;
   }
 
+  // eslint-disable-next-line security/detect-object-injection
   const catDict = CATEGORY_TRANSLATIONS[lang] ?? CATEGORY_TRANSLATIONS.en;
+  // eslint-disable-next-line security/detect-object-injection
   return catDict[cat] ?? CATEGORY_TRANSLATIONS.en[cat] ?? cat;
 }
 
@@ -4991,7 +4995,9 @@ export function getPresetLabel(first: string, second?: string): string {
     preset = first;
   }
 
+  // eslint-disable-next-line security/detect-object-injection
   const presetDict = PRESET_TRANSLATIONS[lang] ?? PRESET_TRANSLATIONS.en;
+  // eslint-disable-next-line security/detect-object-injection
   return presetDict[preset] ?? PRESET_TRANSLATIONS.en[preset] ?? preset;
 }
 

@@ -143,6 +143,7 @@ export function mapNormalizedToOriginalOffset(
     }
     return last?.originalIndex ?? 0;
   }
+  // eslint-disable-next-line security/detect-object-injection
   const entry = mapping[normalizedOffset];
   if (!entry) return normalizedOffset;
   if (isEnd) {
@@ -154,6 +155,7 @@ export function mapNormalizedToOriginalOffset(
 export function mapOriginalToNormalizedOffset(mapping: UnicodeMapping[], originalOffset: number): number {
   if (mapping.length === 0) return originalOffset;
   for (let i = 0; i < mapping.length; i++) {
+    // eslint-disable-next-line security/detect-object-injection
     const entry = mapping[i];
     const len = entry.length ?? 1;
     if (entry.originalIndex === originalOffset || (len > 1 && originalOffset > entry.originalIndex && originalOffset < entry.originalIndex + len)) {

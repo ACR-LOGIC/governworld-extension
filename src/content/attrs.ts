@@ -161,6 +161,7 @@ export function buildAttrScan(records: AttrRecord[]): AttrScan {
 export function attributeAt(scan: AttrScan, offset: number): string {
   const idx = segmentIndexAt(scan.segmentStarts, scan.combined.length, offset);
   if (idx < 0) return "";
+  // eslint-disable-next-line security/detect-object-injection
   return scan.segments[idx].attributeName;
 }
 

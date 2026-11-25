@@ -53,6 +53,7 @@ export class BloomFilter {
 
   toBase64(): string {
     let bin = "";
+    // eslint-disable-next-line security/detect-object-injection
     for (let i = 0; i < this.bits.length; i++) bin += String.fromCharCode(this.bits[i]);
     return btoa(bin);
   }
@@ -60,6 +61,7 @@ export class BloomFilter {
   static fromBase64(b64: string, sizeBits: number, hashCount: number): BloomFilter {
     const bin = atob(b64);
     const bytes = new Uint8Array(bin.length);
+    // eslint-disable-next-line security/detect-object-injection
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     return new BloomFilter(sizeBits, hashCount, bytes);
   }

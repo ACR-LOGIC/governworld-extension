@@ -323,6 +323,7 @@ export interface Settings {
 
 function defaultThresholds(): Record<FindingCategory, number> {
   const out = {} as Record<FindingCategory, number>;
+  // eslint-disable-next-line security/detect-object-injection
   for (const c of ALL_CATEGORIES) out[c] = 0;
   return out;
 }
@@ -409,8 +410,10 @@ export function normalizeSettings(raw: unknown): Settings {
   const confidenceThresholds = defaultThresholds();
   if (isRecord(raw.confidenceThresholds)) {
     for (const c of ALL_CATEGORIES) {
+      // eslint-disable-next-line security/detect-object-injection
       const v = (raw.confidenceThresholds as Record<string, unknown>)[c];
       if (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1) {
+        // eslint-disable-next-line security/detect-object-injection
         confidenceThresholds[c] = v;
       }
     }
@@ -537,6 +540,7 @@ export async function loadSettings(): Promise<Settings> {
     return { ...DEFAULT_SETTINGS };
   }
   const raw = await chrome.storage.local.get(SETTINGS_KEY);
+  // eslint-disable-next-line security/detect-object-injection
   return normalizeSettings(raw[SETTINGS_KEY]);
 }
 
@@ -734,6 +738,7 @@ export async function loadPairingState(): Promise<PairingState> {
   }
   try {
     const raw = await chrome.storage.local.get(PAIRING_STATE_KEY);
+    // eslint-disable-next-line security/detect-object-injection
     return normalizePairingState(raw[PAIRING_STATE_KEY]);
   } catch {
     return { ...DEFAULT_PAIRING_STATE };
@@ -760,5 +765,6 @@ export function isCategoryEnabled(settings: Settings, category: FindingCategory)
 
 /** A finding surfaces only when its confidence meets the per-category threshold. */
 export function meetsThreshold(settings: Settings, category: FindingCategory, confidence: number): boolean {
+  // eslint-disable-next-line security/detect-object-injection
   return confidence >= (settings.confidenceThresholds[category] ?? 0);
 }

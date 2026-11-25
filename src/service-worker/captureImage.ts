@@ -88,6 +88,7 @@ function decodeDataUrl(src: string): { bytes: ArrayBuffer; mimeType: string } | 
   if (!match) return null;
   const binary = atob(match[2]);
   const bytes = new Uint8Array(binary.length);
+  // eslint-disable-next-line security/detect-object-injection
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return { bytes: bytes.buffer, mimeType: match[1].toLowerCase() };
 }
@@ -180,6 +181,7 @@ export async function captureActiveTab(windowId: number): Promise<CapturedImage>
   if (binary.length === 0) throw new ImageCaptureError("capture was empty", "This page could not be captured.");
   if (binary.length > MAX_CAPTURE_BYTES) throw new ImageCaptureError("capture too large", "That image is too large to process on this device.");
   const bytes = new Uint8Array(binary.length);
+  // eslint-disable-next-line security/detect-object-injection
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return {
     bytes: bytes.buffer,

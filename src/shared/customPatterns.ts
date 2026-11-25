@@ -163,6 +163,7 @@ function randomAlphanumeric(length: number): string {
   while (out.length < length) {
     crypto.getRandomValues(buf);
     for (let i = 0; i < buf.length && out.length < length; i++) {
+      // eslint-disable-next-line security/detect-object-injection
       if (buf[i] < limit) out.push(TOKEN_ALPHABET.charAt(buf[i] % alphabet));
     }
   }
@@ -586,6 +587,7 @@ export function buildContributionPayload(
 
 export async function loadCustomPatterns(): Promise<CustomPattern[]> {
   const raw = await chrome.storage.local.get(CUSTOM_PATTERNS_KEY);
+  // eslint-disable-next-line security/detect-object-injection
   const arr = raw[CUSTOM_PATTERNS_KEY];
   if (!Array.isArray(arr)) return [];
   const valid: CustomPattern[] = [];
@@ -606,6 +608,7 @@ export async function saveCustomPatterns(
 
 export async function loadCommunityAccount(): Promise<CommunityAccount | null> {
   const raw = await chrome.storage.local.get(COMMUNITY_ACCOUNT_KEY);
+  // eslint-disable-next-line security/detect-object-injection
   const value = raw[COMMUNITY_ACCOUNT_KEY];
   if (!isRecord(value)) return null;
   if (
@@ -647,6 +650,7 @@ export async function clearCommunityAccount(): Promise<void> {
 
 export async function readCommunityToken(): Promise<string | null> {
   const raw = await chrome.storage.session.get(COMMUNITY_TOKEN_SESSION_KEY);
+  // eslint-disable-next-line security/detect-object-injection
   const token = raw[COMMUNITY_TOKEN_SESSION_KEY];
   if (typeof token !== "string" || !COMMUNITY_TOKEN_RE.test(token)) return null;
   return token;
@@ -660,6 +664,7 @@ export async function saveCustomPattern(pattern: CustomPattern): Promise<CustomP
   const existing = await loadCustomPatterns();
   const idx = existing.findIndex((p) => p.id === pattern.id);
   if (idx >= 0) {
+    // eslint-disable-next-line security/detect-object-injection
     existing[idx] = pattern;
   } else {
     existing.push(pattern);
@@ -761,6 +766,7 @@ export function isValidCommunityRule(raw: unknown): raw is CommunityRule {
     return false;
   }
   for (const key of ["totalVotes", "upvotes", "downvotes"] as const) {
+    // eslint-disable-next-line security/detect-object-injection
     const v = r[key];
     if (typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 1_000_000) return false;
   }

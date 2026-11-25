@@ -51,6 +51,7 @@ export function bytesToBase64(bytes: ArrayBuffer | Uint8Array): string {
 export function base64ToBytes(base64: string): Uint8Array {
   const binary = atob(base64);
   const out = new Uint8Array(binary.length);
+  // eslint-disable-next-line security/detect-object-injection
   for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
   return out;
 }

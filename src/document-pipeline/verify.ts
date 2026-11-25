@@ -160,6 +160,7 @@ export function verifyCanvasRegions(
     if (pixels === 0) return 0;
     let covered = 0;
     for (let i = 0; i < data.length; i += 4) {
+      // eslint-disable-next-line security/detect-object-injection
       const luminance = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
       // Coverage is established against the configured fill color: blackouts
       // count pixels at or below it, whiteouts count pixels at or above it.
