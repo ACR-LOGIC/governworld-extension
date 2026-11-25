@@ -193,6 +193,7 @@ export async function ensureMedicalDictionaryLoaded(clinicMode: ClinicMode = "ge
         legacyTerms = cleaned;
         if (cleaned.length > 0) {
           const esc = cleaned.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+"));
+          // eslint-disable-next-line security/detect-non-literal-regexp
           legacyRegex = new RegExp(`(?<![\\p{L}\\p{N}_])(?:${esc.join("|")})(?![\\p{L}\\p{N}_])`, "giu");
         }
         return true;
@@ -210,6 +211,7 @@ export async function ensureMedicalDictionaryLoaded(clinicMode: ClinicMode = "ge
 
 function demographicDelta(normPhrase: string, packs: MedicalPacks, clinicMode: ClinicMode): number {
   if (clinicMode === "general") return 0;
+  // eslint-disable-next-line security/detect-object-injection
   const entry = packs.catalog[normPhrase];
   const inSpecialty =
     packs.specialty &&

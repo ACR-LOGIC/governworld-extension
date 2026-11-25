@@ -145,6 +145,56 @@ describe("GovernWorld Roadmap Improvements Suite (All 17 Items)", () => {
       expect(result.matches[0].category).toBe("custom");
       expect(result.matches[0].value).toBe("ALPHA_123");
     });
+
+    it("finds matches that span chunk boundaries", () => {
+      // Regression: without per-chunk scan extension, a match starting near a
+      // chunk end was invisible because exec() cannot match beyond the slice.
+      const patterns: CustomPattern[] = [
+        {
+          id: "custom-boundary",
+          name: "Boundary Token",
+          pattern: "TOKEN_[A-Z]{30}",
+          flags: "g",
+          category: "custom",
+          confidence: 0.9,
+          createdAt: new Date().toISOString(),
+          source: "local",
+          contributionStatus: "local_only",
+        },
+      ];
+      const text = "x".repeat(90) + "TOKEN_" + "B".repeat(30);
+      const result = runCustomPatternsWithStatus(text, patterns, { chunkSize: 100, overlap: 16 });
+      const spans = result.matches.map((m) => `${m.start}:${m.end}`);
+      expect(new Set(spans).size).toBe(spans.length); // deterministic ownership
+      expect(result.matches.length).toBe(1);
+      expect(result.matches[0].start).toBe(90);
+      expect(result.matches[0].value).toBe("TOKEN_" + "B".repeat(30));
+    });
+
+    it("reports actual scanned coverage, not an assumed total", () => {
+      const patterns: CustomPattern[] = [
+        {
+          id: "custom-coverage",
+          name: "Coverage Token",
+          pattern: "TOK_[0-9]+",
+          flags: "g",
+          category: "custom",
+          confidence: 0.9,
+          createdAt: new Date().toISOString(),
+          source: "local",
+          contributionStatus: "local_only",
+        },
+      ];
+      const text = "TOK_" + "1".repeat(500);
+      const full = runCustomPatternsWithStatus(text, patterns);
+      expect(full.partiallyScanned).toBe(false);
+      expect(full.scannedChars).toBe(text.length);
+
+      const capped = runCustomPatternsWithStatus(text, patterns, { maxScanChars: 50 });
+      expect(capped.partiallyScanned).toBe(true);
+      expect(capped.scannedChars).toBeLessThanOrEqual(50);
+      expect(capped.scannedChars).toBeGreaterThan(0);
+    });
   });
 
   // ── Item 3: Centralized Single-Writer Audit Architecture ──

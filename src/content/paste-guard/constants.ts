@@ -49,5 +49,6 @@ export function getFindingDisplayName(category: FindingCategory, value?: string)
     if (/BEGIN.*PRIVATE KEY/.test(value)) return "Private Key";
     if (/^(?:postgres|mysql|mongodb|redis|amqp|mssql):/i.test(value)) return "Database Connection String";
   }
+  // eslint-disable-next-line security/detect-object-injection
   return CATEGORY_LABELS[category] ?? category;
 }

@@ -9,7 +9,12 @@ interface FakeReq {
   onerror: ((ev?: unknown) => void) | null;
 }
 
-function createInMemoryIndexedDb(backing: Map<string, ArrayBuffer>) {
+function createInMemoryIndexedDb(backing: Map<string, unknown>) {
+  // This fake used to ignore store names and kept one flat map; the document
+  // store now also has a `docfilemeta` store for write timestamps, so keys are
+  // namespaced per store to keep the two namespaces apart.
+  const storeKey = (storeName: string, key: string): string => `${storeName}::${key}`;
+
   const mkReq = (compute: () => unknown): FakeReq => {
     const req: FakeReq = { result: undefined, error: null, onsuccess: null, onerror: null };
     queueMicrotask(() => {
@@ -24,16 +29,16 @@ function createInMemoryIndexedDb(backing: Map<string, ArrayBuffer>) {
     return req;
   };
 
-  const makeStore = () => ({
-    put(val: ArrayBuffer, key: string) {
-      backing.set(String(key), val);
+  const makeStore = (storeName: string) => ({
+    put(val: unknown, key: string) {
+      backing.set(storeKey(storeName, String(key)), val);
       return mkReq(() => key);
     },
     get(key: string) {
-      return mkReq(() => backing.get(String(key)));
+      return mkReq(() => backing.get(storeKey(storeName, String(key))));
     },
     delete(key: string) {
-      backing.delete(String(key));
+      backing.delete(storeKey(storeName, String(key)));
       return mkReq(() => undefined);
     },
     clear() {
@@ -41,10 +46,18 @@ function createInMemoryIndexedDb(backing: Map<string, ArrayBuffer>) {
       return mkReq(() => undefined);
     },
     getAllKeys() {
-      return mkReq(() => Array.from(backing.keys()));
+      const prefix = `${storeName}::`;
+      return mkReq(() =>
+        Array.from(backing.keys())
+          .filter((k) => k.startsWith(prefix))
+          .map((k) => k.slice(prefix.length)),
+      );
     },
     openCursor() {
-      const entries = Array.from(backing.entries());
+      const prefix = `${storeName}::`;
+      const entries = Array.from(backing.entries())
+        .filter(([k]) => k.startsWith(prefix))
+        .map(([k, v]) => [k.slice(prefix.length), v] as [string, unknown]);
       let idx = 0;
       const req: FakeReq = { result: null, error: null, onsuccess: null, onerror: null };
       const emit = () => {
@@ -81,7 +94,7 @@ function createInMemoryIndexedDb(backing: Map<string, ArrayBuffer>) {
               onabort: null,
               onerror: null,
               error: null,
-              objectStore: () => makeStore(),
+              objectStore: (name: string) => makeStore(String(name)),
             };
             // Resolve transaction after microtask ops finish
             setTimeout(() => (tx.oncomplete as (() => void) | null)?.(), 5);
@@ -100,7 +113,7 @@ function createInMemoryIndexedDb(backing: Map<string, ArrayBuffer>) {
 }
 
 describe("P4: Staged Document Prefix Deletion, Cooperative Abort & Startup Orphan Purge", () => {
-  const backing = new Map<string, ArrayBuffer>();
+  const backing = new Map<string, unknown>();
   const sessionStore = new Map<string, unknown>();
   let origIndexedDB: unknown;
   let origChrome: unknown;
@@ -332,5 +345,21 @@ describe("P4: Staged Document Prefix Deletion, Cooperative Abort & Startup Orpha
         purged: fullPurge,
       }).ok
     ).toBe(true);
+  });
+
+  it("purgeExpiredDocuments deletes documents older than the TTL while sparing fresh ones", async () => {
+    const { docStoreFile, docListKeys } = await import("../src/shared/docDb.js");
+    const { purgeExpiredDocuments } = await import("../src/service-worker/documents.js");
+
+    await docStoreFile("expiredJob", new Uint8Array(5).buffer);
+    await docStoreFile("freshJob", new Uint8Array(5).buffer);
+
+    // Age the first document's write timestamp beyond the TTL.
+    backing.set("docfilemeta::expiredJob", 1);
+
+    const result = await purgeExpiredDocuments();
+    expect(result.roots).toEqual(["expiredJob"]);
+    expect(result.failures).toEqual([]);
+    expect(await docListKeys()).toEqual(["freshJob"]);
   });
 });

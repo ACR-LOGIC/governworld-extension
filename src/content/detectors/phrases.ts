@@ -28,6 +28,7 @@ export function normalizePhrase(s: string): string {
 
 export function tokenizeMedicalText(text: string): Token[] {
   const tokens: Token[] = [];
+  // eslint-disable-next-line security/detect-unsafe-regex
   for (const m of text.matchAll(/[A-Za-z0-9]+(?:-[A-Za-z0-9]+)?/g)) {
     if (m.index === undefined) continue;
     tokens.push({
@@ -56,6 +57,7 @@ export function detectPhrases(text: string, bloom: BloomFilter, maxN = 4): Phras
       // Only join contiguous/nearby tokens (within 3 chars of each other, e.g. spaces/hyphens)
       let contiguous = true;
       for (let k = 1; k < slice.length; k++) {
+        // eslint-disable-next-line security/detect-object-injection
         if (slice[k].start - slice[k - 1].end > 3) {
           contiguous = false;
           break;

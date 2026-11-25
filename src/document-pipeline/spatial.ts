@@ -77,17 +77,22 @@ export function mergeOverlappingRects(rects: readonly Rect[]): Rect[] {
   const index = new BoxIndex().build(work);
   const parent = work.map((_, i) => i);
   const find = (x: number): number => {
+    // eslint-disable-next-line security/detect-object-injection
     while (parent[x] !== x) {
+      // eslint-disable-next-line security/detect-object-injection
       parent[x] = parent[parent[x]];
+      // eslint-disable-next-line security/detect-object-injection
       x = parent[x];
     }
     return x;
   };
   for (let i = 0; i < work.length; i++) {
+    // eslint-disable-next-line security/detect-object-injection
     for (const j of index.intersectIndices(work[i])) {
       if (j > i) {
         const a = find(i);
         const b = find(j);
+        // eslint-disable-next-line security/detect-object-injection
         if (a !== b) parent[a] = b;
       }
     }
@@ -95,7 +100,9 @@ export function mergeOverlappingRects(rects: readonly Rect[]): Rect[] {
   const groups = new Map<number, Rect[]>();
   for (let i = 0; i < work.length; i++) {
     const group = groups.get(find(i));
+    // eslint-disable-next-line security/detect-object-injection
     if (group) group.push(work[i]);
+    // eslint-disable-next-line security/detect-object-injection
     else groups.set(find(i), [work[i]]);
   }
   return [...groups.values()].map(unionRect);

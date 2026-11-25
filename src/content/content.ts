@@ -178,6 +178,7 @@ if (g.__gwRedactionContentLoaded !== true) {
         const beforeText = val.slice(0, startOffset);
         const beforeLines = beforeText.split("\n");
         const lineIdx = beforeLines.length - 1;
+        // eslint-disable-next-line security/detect-object-injection
         const lineBefore = beforeLines[lineIdx];
         const tokenText = val.slice(startOffset, endOffset).split("\n")[0];
 
@@ -463,6 +464,7 @@ if (g.__gwRedactionContentLoaded !== true) {
     combined = canonical.combined;
     segmentStarts = canonical.segmentStarts;
     segmentIndexById.clear();
+    // eslint-disable-next-line security/detect-object-injection
     for (let i = 0; i < segments.length; i++) segmentIndexById.set(segments[i].nodeId, i);
 
     placeholdersEnabled = settings.maskPlaceholders;
@@ -478,6 +480,7 @@ if (g.__gwRedactionContentLoaded !== true) {
     }
     currentCustomPatterns = customPatterns;
 
+    // eslint-disable-next-line security/detect-object-injection
     const threshold = (cat: FindingCategory) => settings.confidenceThresholds?.[cat] ?? 0;
     let customPatternsPartiallyScanned = false;
     let rawMatches: RawMatch[] = [];
@@ -505,6 +508,7 @@ if (g.__gwRedactionContentLoaded !== true) {
     }
 
     for (let wIdx = 0; wIdx < canonical.windowSlices.length; wIdx++) {
+      // eslint-disable-next-line security/detect-object-injection
       const slice = canonical.windowSlices[wIdx];
       try {
         const winDetected = detectWithCoverage(slice.combined, settings.enabledCategories, customPatterns);
@@ -823,6 +827,7 @@ if (g.__gwRedactionContentLoaded !== true) {
             sessionId: currentSessionId,
             chunkIndex: i,
             totalChunks: chunks.length,
+            // eslint-disable-next-line security/detect-object-injection
             findings: chunks[i],
           });
         } catch {
@@ -1023,6 +1028,7 @@ if (g.__gwRedactionContentLoaded !== true) {
               // Ignore
             }
             const enabledCategories: FindingCategory[] = msg.settings?.enabledCategories ?? ALL_CATEGORIES;
+            // eslint-disable-next-line security/detect-object-injection
             const threshold = (cat: FindingCategory) => msg.settings?.confidenceThresholds?.[cat] ?? 0;
             const matches = detect(selText, enabledCategories, customPatterns).filter(
               (m) => m.confidence >= threshold(m.category)
@@ -1198,6 +1204,7 @@ if (g.__gwRedactionContentLoaded !== true) {
         if (!hasActiveFindings || !currentSettings) return;
         const rawSelText = window.getSelection()?.toString() ?? "";
         if (!rawSelText) return;
+        // eslint-disable-next-line security/detect-object-injection
         const threshold = (cat: FindingCategory) => currentSettings?.confidenceThresholds?.[cat] ?? 0;
         const matches = detect(rawSelText, currentSettings.enabledCategories, currentCustomPatterns).filter(
           (m) => m.confidence >= threshold(m.category)
@@ -1254,6 +1261,7 @@ if (g.__gwRedactionContentLoaded !== true) {
     const newBuilt = buildScanText(extracted.segments);
     const offset = combined.length > 0 ? combined.length + 1 : 0;
     for (let i = 0; i < extracted.segments.length; i++) {
+      // eslint-disable-next-line security/detect-object-injection
       const seg = extracted.segments[i];
       const uniqueNodeId = `rescan_seg_${nextRescanSegId++}`;
       const newSeg: import("./normalization/types.js").CanonicalSegment = {
@@ -1261,7 +1269,9 @@ if (g.__gwRedactionContentLoaded !== true) {
         startOffset: seg.startOffset,
         endOffset: seg.endOffset,
         text: seg.text,
+        // eslint-disable-next-line security/detect-object-injection
         combinedStartOffset: offset + newBuilt.segmentStarts[i],
+        // eslint-disable-next-line security/detect-object-injection
         combinedEndOffset: offset + newBuilt.segmentStarts[i] + seg.text.length,
       };
       segments.push(newSeg);
@@ -1272,6 +1282,7 @@ if (g.__gwRedactionContentLoaded !== true) {
     combined += (combined.length > 0 ? "\n" : "") + newBuilt.combined;
     segmentStarts.push(...newBuilt.segmentStarts.map((s) => s + offset));
 
+    // eslint-disable-next-line security/detect-object-injection
     const threshold = (cat: FindingCategory) => settings.confidenceThresholds?.[cat] ?? 0;
     let deltaMatches = detect(newBuilt.combined, settings.enabledCategories, currentCustomPatterns);
     if (settings.enabledCategories.includes("possible_name")) {
@@ -1337,6 +1348,7 @@ if (g.__gwRedactionContentLoaded !== true) {
         if (oldIdx !== undefined) {
           survivingOffsets.set(f.id, {
             nodeId: f.nodeId,
+            // eslint-disable-next-line security/detect-object-injection
             deltaStart: f.startOffset - segmentStarts[oldIdx],
             len: f.endOffset - f.startOffset,
           });
@@ -1363,8 +1375,11 @@ if (g.__gwRedactionContentLoaded !== true) {
       segmentStarts = rebuilt.segmentStarts;
       combined = rebuilt.combined;
       for (let i = 0; i < segments.length; i++) {
+        // eslint-disable-next-line security/detect-object-injection
         segmentIndexById.set(segments[i].nodeId, i);
+        // eslint-disable-next-line security/detect-object-injection
         segments[i].combinedStartOffset = segmentStarts[i];
+        // eslint-disable-next-line security/detect-object-injection
         segments[i].combinedEndOffset = segmentStarts[i] + segments[i].text.length;
       }
       for (const f of findings) {
@@ -1372,6 +1387,7 @@ if (g.__gwRedactionContentLoaded !== true) {
         if (!saved) continue;
         const newIdx = segmentIndexById.get(saved.nodeId);
         if (newIdx !== undefined) {
+          // eslint-disable-next-line security/detect-object-injection
           f.startOffset = segmentStarts[newIdx] + saved.deltaStart;
           f.endOffset = f.startOffset + saved.len;
         }

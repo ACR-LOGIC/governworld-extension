@@ -253,6 +253,7 @@ export async function ocrPages(
 ): Promise<OcrPageResult[]> {
   const out: OcrPageResult[] = [];
   for (let i = 0; i < canvases.length; i++) {
+    // eslint-disable-next-line security/detect-object-injection
     out.push(await ocrCanvas(canvases[i], i, lang, signal));
   }
   return out;

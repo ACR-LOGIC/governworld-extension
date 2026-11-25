@@ -87,11 +87,13 @@ export async function performBootstrap(client: GovernWorldApiClient, token: stri
 export async function getCachedTenant(): Promise<TenantContext | null> {
   if (typeof chrome !== "undefined" && chrome.storage?.local) {
     const res = await chrome.storage.local.get([STORAGE_KEY_TENANT, STORAGE_KEY_CACHED_AT]);
+    // eslint-disable-next-line security/detect-object-injection
     const cachedAt = res[STORAGE_KEY_CACHED_AT];
     if (typeof cachedAt === "number" && Date.now() - cachedAt > CACHE_TTL_MS) {
       await chrome.storage.local.remove([STORAGE_KEY_TENANT, STORAGE_KEY_CAPABILITIES, STORAGE_KEY_ENTITLEMENTS, STORAGE_KEY_CACHED_AT]);
       return null;
     }
+    // eslint-disable-next-line security/detect-object-injection
     return (res[STORAGE_KEY_TENANT] as TenantContext) ?? null;
   }
   return null;
@@ -100,11 +102,13 @@ export async function getCachedTenant(): Promise<TenantContext | null> {
 export async function getCachedCapabilities(): Promise<ExtensionCapability[]> {
   if (typeof chrome !== "undefined" && chrome.storage?.local) {
     const res = await chrome.storage.local.get([STORAGE_KEY_CAPABILITIES, STORAGE_KEY_CACHED_AT]);
+    // eslint-disable-next-line security/detect-object-injection
     const cachedAt = res[STORAGE_KEY_CACHED_AT];
     if (typeof cachedAt === "number" && Date.now() - cachedAt > CACHE_TTL_MS) {
       await chrome.storage.local.remove([STORAGE_KEY_TENANT, STORAGE_KEY_CAPABILITIES, STORAGE_KEY_ENTITLEMENTS, STORAGE_KEY_CACHED_AT]);
       return [];
     }
+    // eslint-disable-next-line security/detect-object-injection
     return (res[STORAGE_KEY_CAPABILITIES] as ExtensionCapability[]) ?? [];
   }
   return [];
@@ -113,11 +117,13 @@ export async function getCachedCapabilities(): Promise<ExtensionCapability[]> {
 export async function getCachedEntitlements(): Promise<EntitlementsResponse | null> {
   if (typeof chrome !== "undefined" && chrome.storage?.local) {
     const res = await chrome.storage.local.get([STORAGE_KEY_ENTITLEMENTS, STORAGE_KEY_CACHED_AT]);
+    // eslint-disable-next-line security/detect-object-injection
     const cachedAt = res[STORAGE_KEY_CACHED_AT];
     if (typeof cachedAt === "number" && Date.now() - cachedAt > CACHE_TTL_MS) {
       await chrome.storage.local.remove([STORAGE_KEY_TENANT, STORAGE_KEY_CAPABILITIES, STORAGE_KEY_ENTITLEMENTS, STORAGE_KEY_CACHED_AT]);
       return null;
     }
+    // eslint-disable-next-line security/detect-object-injection
     return (res[STORAGE_KEY_ENTITLEMENTS] as EntitlementsResponse) ?? null;
   }
   return null;

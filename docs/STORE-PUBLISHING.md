@@ -13,7 +13,7 @@ GovernWorld publishes multi-target browser extension artifacts from a single sou
 The workflow at `.github/workflows/release.yml` triggers automatically whenever a version tag matching `v*.*.*` is pushed, or manually via **Workflow Dispatch** in the GitHub Actions UI.
 
 ### Verification & Release Pipeline:
-1. **Typecheck & Security Linter**: `npm run typecheck` and `npm run lint:security`
+1. **Typecheck & Security Linter**: `npm run typecheck` (`tsc` from the TS6 compatibility alias) and `npm run lint:security` (covers `scripts/` and `src/**/*.ts`, with the security rules promoted to error for `src/**`)
 2. **Sidepanel Sync Contract**: `npm run sync:sidepanel:check`
 3. **Unit Tests**: Full test suite run (`npm test`)
 4. **Multi-Target Builds**:

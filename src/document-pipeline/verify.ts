@@ -39,6 +39,36 @@ export const REDACTION_MIN_STAMP_FRACTION = 0.70;
 export const REDACTION_MIN_INTERIOR_DARK_FRACTION = 0.99;
 const INTERIOR_INSET_PX = 2;
 
+/**
+ * Luminance tolerance around the expected fill color. Encoder ringing on box
+ * edges is why a small band is allowed; anything further is a sign the fill
+ * was not actually applied.
+ */
+const COVERAGE_TOLERANCE = 8;
+
+/**
+ * Luminance of the fill color the painter will actually use, from the
+ * configured `RedactionOptions.fillColor` (validated as `#rrggbb`). Falls back
+ * to the historical thresholds when no color is configured.
+ *
+ * Without this, a custom fill color was rejected by the default dark-luminance
+ * rule even when the painter applied it correctly, and whiteout boxes counted
+ * as covered merely because the page area was already white.
+ */
+function configuredFillLuminance(options: RedactionOptions | undefined, isWhiteout: boolean): number {
+  const color = options?.fillColor;
+  if (typeof color === "string" && /^#[0-9a-fA-F]{6}$/.test(color)) {
+    const hex = color.slice(1);
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    if (Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b)) {
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    }
+  }
+  return isWhiteout ? REDACTION_WHITE_LUMINANCE : REDACTION_DARK_LUMINANCE;
+}
+
 export type RedactionVerifyMethod = "pixel" | "page-pixels";
 
 export interface RedactionVerification {
@@ -57,10 +87,31 @@ export interface RedactionVerification {
   failures: string[];
 }
 
+/**
+ * Identity of a redaction region within its page, from the absolute page index
+ * plus the rect. Callers can match expectations against verification by this
+ * key instead of trusting counts: a match that reported "1 checked, 1 dark"
+ * while one of two expected regions was never verified fails the check.
+ */
+export function regionKey(pageIndex: number, rect: Rect): string {
+  return `${pageIndex}:${Math.round(rect.x)},${Math.round(rect.y)},${Math.round(rect.width)},${Math.round(rect.height)}`;
+}
+
+export interface VerifiedRegion {
+  key: string;
+  pageIndex: number;
+  rect: Rect;
+  /** False when the region fell outside the page or its pixels could not be read. */
+  checked: boolean;
+  /** True only when the coverage checks passed for this region. */
+  passed: boolean;
+}
+
 export interface RegionCoverage {
   checked: number;
   dark: number;
   failures: string[];
+  regions: VerifiedRegion[];
 }
 
 /** Expands a rect by the padding the painter used, clipped to the canvas. */
@@ -89,36 +140,48 @@ export function verifyCanvasRegions(
   rects: Rect[],
   padding: number,
   label: string,
-  options?: RedactionOptions
+  options?: RedactionOptions,
+  pageIndex = 0
 ): RegionCoverage {
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return { checked: 0, dark: 0, failures: [`${label}: canvas is unreadable`] };
+  if (!ctx) return { checked: 0, dark: 0, failures: [`${label}: canvas is unreadable`], regions: [] };
 
   let checked = 0;
   let dark = 0;
   const failures: string[] = [];
+  const regions: VerifiedRegion[] = [];
   const isWhiteout = options?.style === "whiteout";
   const isStamp = options?.style === "stamp" || Boolean(options?.stampText);
   const minFraction = isStamp ? REDACTION_MIN_STAMP_FRACTION : REDACTION_MIN_DARK_FRACTION;
+  const fillLum = configuredFillLuminance(options, isWhiteout);
 
   const coveredFraction = (data: Uint8ClampedArray): number => {
     const pixels = data.length / 4;
     if (pixels === 0) return 0;
     let covered = 0;
     for (let i = 0; i < data.length; i += 4) {
+      // eslint-disable-next-line security/detect-object-injection
       const luminance = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+      // Coverage is established against the configured fill color: blackouts
+      // count pixels at or below it, whiteouts count pixels at or above it.
       if (isWhiteout) {
-        if (luminance > REDACTION_WHITE_LUMINANCE || (data[i] >= 240 && data[i + 1] >= 240 && data[i + 2] >= 240)) {
-          covered += 1;
-        }
-      } else {
-        if (luminance < REDACTION_DARK_LUMINANCE) covered += 1;
+        if (luminance >= fillLum - COVERAGE_TOLERANCE) covered += 1;
+      } else if (luminance <= fillLum + COVERAGE_TOLERANCE) {
+        covered += 1;
       }
     }
     return covered / pixels;
   };
 
   for (const rect of rects) {
+    const region: VerifiedRegion = {
+      key: regionKey(pageIndex, rect),
+      pageIndex,
+      rect,
+      checked: false,
+      passed: false,
+    };
+    regions.push(region);
     const box = paddedBounds(rect, padding, canvas.width, canvas.height);
     if (box.width === 0 || box.height === 0) {
       failures.push(`${label}: region at ${rect.x},${rect.y} falls outside the page`);
@@ -131,6 +194,7 @@ export function verifyCanvasRegions(
       failures.push(`${label}: could not read region at ${rect.x},${rect.y}`);
       continue;
     }
+    region.checked = true;
     const fraction = coveredFraction(data);
     checked += 1;
     if (fraction < minFraction) {
@@ -165,8 +229,9 @@ export function verifyCanvasRegions(
       }
     }
     dark += 1;
+    region.passed = true;
   }
-  return { checked, dark, failures };
+  return { checked, dark, failures, regions };
 }
 
 /**

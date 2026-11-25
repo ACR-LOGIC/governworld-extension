@@ -54,7 +54,7 @@
     "test:invocation": "node scripts/verify-invocation-feedback.mjs",
     "test:review": "node scripts/verify-review-surface.mjs",
     "test:doc-window": "node scripts/verify-doc-window.mjs",
-    "lint:security": "eslint scripts/ build.mjs",
+    "lint:security": "eslint scripts/ build.mjs src/**/*.ts",
     "test:network-inspection": "node scripts/verify-network-inspection.mjs",
     "test:wizard-flow": "node scripts/record-wizard-demo.mjs",
     "gates:ci": "node scripts/run-ci-gates.mjs"
@@ -71,12 +71,14 @@
     "@types/chrome": "^0.3.7",
     "@types/node": "^26.6.6",
     "@types/rbush": "^4.0.0",
+    "@typescript/native": "npm:typescript@^7.0.2",
     "esbuild": "^0.28.2",
     "eslint": "^10.15.0",
     "eslint-plugin-security": "^4.2.1",
     "happy-dom": "^21.0.4",
     "jsdom": "^31.0.1",
-    "typescript": "^7.0.2",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "typescript-eslint": "^8.74.0",
     "vitest": "^5.1.0"
   },
   "overrides": {

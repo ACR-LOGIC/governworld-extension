@@ -72,6 +72,7 @@ export async function computeSha256Hex(content: string): Promise<string> {
 function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
   for (let i = 0; i < bytes.byteLength; i++) {
+    // eslint-disable-next-line security/detect-object-injection
     binary += String.fromCharCode(bytes[i]);
   }
   return btoa(binary);
@@ -83,6 +84,7 @@ function base64ToBytes(base64: string): Uint8Array | null {
     const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
     const binary = atob(padded);
     const out = new Uint8Array(binary.length);
+    // eslint-disable-next-line security/detect-object-injection
     for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
     return out;
   } catch {
@@ -290,6 +292,7 @@ export async function syncPolicy(
 export async function getCachedPolicy(options?: VerifyPolicyIntegrityOptions): Promise<PolicyPackage | null> {
   if (typeof chrome !== "undefined" && chrome.storage?.local) {
     const res = await chrome.storage.local.get(STORAGE_KEY_CACHED_POLICY);
+    // eslint-disable-next-line security/detect-object-injection
     const cached = res[STORAGE_KEY_CACHED_POLICY] as PolicyPackage | undefined;
     if (cached) {
       const check = await verifyPolicyIntegrity(cached, Date.now(), options);

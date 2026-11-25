@@ -55,6 +55,7 @@ function decodeBase64UrlBytes(value: string): Uint8Array | null {
     const binary = atob(padded);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i++) {
+      // eslint-disable-next-line security/detect-object-injection
       bytes[i] = binary.charCodeAt(i);
     }
     return bytes;
@@ -158,6 +159,7 @@ export async function getApiUrl(): Promise<string> {
   try {
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
       const stored = await chrome.storage.local.get(STORAGE_KEY_API_URL);
+      // eslint-disable-next-line security/detect-object-injection
       const url = stored[STORAGE_KEY_API_URL];
       if (typeof url === "string" && url.trim()) {
         const check = validateApiUrl(url);
@@ -203,6 +205,7 @@ export async function getInstallationId(): Promise<string> {
     );
   }
 
+  // eslint-disable-next-line security/detect-object-injection
   const existing = stored[STORAGE_KEY_INSTALLATION_ID];
   if (
     typeof existing === "string" &&

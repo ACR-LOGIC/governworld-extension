@@ -145,6 +145,7 @@ export function parseEnterprisePolicy(raw: unknown): EnterprisePolicy {
       if (!isCategory(k) || typeof v !== "number" || !Number.isFinite(v) || v < 0 || v > 1) {
         return { ...FAIL_CLOSED_ENTERPRISE_POLICY };
       }
+      // eslint-disable-next-line security/detect-object-injection
       parsedThresholds[k] = v;
     }
     confidenceThresholds = parsedThresholds;
@@ -260,14 +261,18 @@ export async function loadEnterprisePolicy(options?: LoadEnterprisePolicyOptions
     return { ...FAIL_CLOSED_ENTERPRISE_POLICY };
   }
 
+  // eslint-disable-next-line security/detect-object-injection
   const applied = stored[STORAGE_KEY_MANAGED_POLICY];
+  // eslint-disable-next-line security/detect-object-injection
   const coordPolicy = stored[STORAGE_KEY_COORDINATOR_POLICY];
+  // eslint-disable-next-line security/detect-object-injection
   const pairingState = normalizePairingState(stored[PAIRING_STATE_KEY]);
 
   // 2. Cryptographically re-verify signed administrator policy before enforcing
   if (applied !== undefined && applied !== null) {
     try {
       let enrollment: ManagementEnrollment | null = null;
+      // eslint-disable-next-line security/detect-object-injection
       const rawEnrollment = stored[STORAGE_KEY_ENROLLMENT];
       if (
         isRecord(rawEnrollment) &&
@@ -402,6 +407,7 @@ export function resolveEffectiveProtection(
     const rank: Record<ProtectionMode, number> = { off: 0, "this-tab": 1, "always-on": 2 };
     const userMode = settings.protectionMode;
     return {
+      // eslint-disable-next-line security/detect-object-injection
       mode: rank[userMode] >= rank[adminMode] ? userMode : adminMode,
       locked: true,
       managed: true,

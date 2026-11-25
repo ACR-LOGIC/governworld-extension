@@ -177,7 +177,9 @@ export function parseName(text: string): ParsedName {
   let n = toks.length;
 
   // Prefix at start.
+  // eslint-disable-next-line security/detect-object-injection
   if (i < n && isPrefix(toks[i].cleaned)) {
+    // eslint-disable-next-line security/detect-object-injection
     result.prefix = toks[i].cleaned;
     i++;
   }
@@ -189,6 +191,7 @@ export function parseName(text: string): ParsedName {
   let capturedDOBDate: string | null = null;
 
   while (j >= i) {
+    // eslint-disable-next-line security/detect-object-injection
     const t = toks[j];
     const u = t.norm;
     const cleaned = t.cleaned;

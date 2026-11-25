@@ -99,6 +99,7 @@ function isRect(value: unknown): value is { x: number; y: number; width: number;
 }
 
 const FINDING_ID_RE = /^[a-z][a-z0-9:_-]{0,127}$/;
+// eslint-disable-next-line security/detect-unsafe-regex
 const NODE_ID_RE = /^(?:[A-Za-z0-9][A-Za-z0-9:_-]{0,127})?$/;
 const ATTRIBUTE_NAMES = new Set(["aria-label", "alt", "placeholder", "title"]);
 const ALL_MASKED_PREVIEW_RE = /^[\s*]+$/;

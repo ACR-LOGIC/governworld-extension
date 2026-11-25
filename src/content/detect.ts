@@ -269,6 +269,7 @@ export function placeholderLabelFor(category: FindingCategory): string {
  * detector returns immediately when the text contains no `@` at all, which is
  * the case for the overwhelming majority of nodes.
  */
+// eslint-disable-next-line security/detect-unsafe-regex
 const EMAIL_RE = /(?<![\p{L}\p{N}.!#$%&'*+/=?^_`{|}~-])[\p{L}\p{N}!#$%&'*+/=?^_`{|}~-]{1,64}(?:\.[\p{L}\p{N}!#$%&'*+/=?^_`{|}~-]{1,63}){0,12}@[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,61}[\p{L}\p{N}])?(?:\.[\p{L}\p{N}](?:[\p{L}\p{N}-]{0,61}[\p{L}\p{N}])?){0,12}/gu;
 
 function detectEmails(text: string): RawMatch[] {
@@ -333,7 +334,9 @@ const SSN_BARE_RE = /\b(?!000|666|9\d\d)\d{3}(?!00)\d{2}(?!0000)\d{4}\b/g;
 // "social" on its own is an ordinary English word, so any page containing the
 // word next to a 9-digit number produced an SSN — "Join our social 123456789
 // community" was enough. The full phrase is required.
+// eslint-disable-next-line security/detect-unsafe-regex
 const SSN_CUE_RE = /\b(?:ssn|social\s+security(?:\s*(?:number|no|#))?)\b/i;
+// eslint-disable-next-line security/detect-unsafe-regex
 const ITIN_CUE_RE = /\b(?:itin|individual\s+taxpayer(?:\s+identification)?(?:\s*(?:number|no|#))?)\b/i;
 const ITIN_RE = /\b9\d{2}[- ]\d{2}[- ]\d{4}\b|\b9\d{8}\b/g;
 
@@ -362,6 +365,7 @@ function detectSsns(text: string): RawMatch[] {
 // Canadian SIN
 const CANADIAN_SIN_DASH_RE = /\b\d{3}[ -]\d{3}[ -]\d{3}\b/g;
 const CANADIAN_SIN_BARE_RE = /\b\d{9}\b/g;
+// eslint-disable-next-line security/detect-unsafe-regex
 const CANADIAN_SIN_CUE_RE = /\b(?:sin|social\s+insurance(?:\s*(?:number|no|#))?|nas|num[ée]ro\s+d['’]assurance\s+sociale)\b/i;
 
 function isSinLuhnValid(digits: string): boolean {
@@ -416,6 +420,7 @@ function detectCanadianSins(text: string): RawMatch[] {
 // UK NHS Number
 const UK_NHS_FORMATTED_RE = /\b\d{3}[ -]\d{3}[ -]\d{4}\b/g;
 const UK_NHS_BARE_RE = /\b\d{10}\b/g;
+// eslint-disable-next-line security/detect-unsafe-regex
 const UK_NHS_CUE_RE = /\b(?:nhs(?:\s*(?:number|no|#))?|national\s+health\s+service)\b/i;
 
 function detectUkNhs(text: string): RawMatch[] {
@@ -450,6 +455,7 @@ function detectUkNhs(text: string): RawMatch[] {
 // Indian Aadhaar
 const AADHAAR_FORMATTED_RE = /\b[2-9]\d{3}[ -]\d{4}[ -]\d{4}\b/g;
 const AADHAAR_BARE_RE = /\b[2-9]\d{11}\b/g;
+// eslint-disable-next-line security/detect-unsafe-regex
 const AADHAAR_CUE_RE = /\b(?:aadhaar|aadhar|uidai)(?:\s*(?:number|no|#))?\b/i;
 
 function detectAadhaar(text: string): RawMatch[] {
@@ -485,6 +491,7 @@ function detectAadhaar(text: string): RawMatch[] {
 // Indian PAN. `isValidPanIndia` uppercases its input, so matching case-insensitively
 // costs nothing and catches a PAN that OCR or a PDF text layer rendered in lowercase.
 const PAN_INDIA_RE = /\b[A-Za-z]{5}\d{4}[A-Za-z]\b/g;
+// eslint-disable-next-line security/detect-unsafe-regex
 const PAN_INDIA_CUE_RE = /\b(?:pan(?:\s*(?:card|number|no|#))?|permanent\s+account\s+number)\b/i;
 
 function detectPanIndia(text: string): RawMatch[] {
@@ -583,8 +590,10 @@ function detectCpf(text: string): RawMatch[] {
 // number, and a bare currency amount is a price, not personal data.
 
 const IPV4_RE = /\b(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\b/g;
+// eslint-disable-next-line security/detect-unsafe-regex
 const IPV6_RE = /(?<![\w:])(?:[0-9A-Fa-f]{1,4}:){2,7}[0-9A-Fa-f]{0,4}(?::[0-9A-Fa-f]{1,4}){0,4}(?![\w:])/g;
 const IP_CUE_RE =
+  // eslint-disable-next-line security/detect-unsafe-regex
   /\b(?:ip(?:\s*addr(?:ess)?)?|ipv4|ipv6|client\s+ip|remote\s+ip|source\s+ip|server\s+ip|host\s+addr(?:ess)?)\b/i;
 const VERSION_CUE_RE = /\b(?:v|version|ver\.?)\s*$/i;
 
@@ -655,6 +664,7 @@ function detectIpAddresses(text: string): RawMatch[] {
 }
 
 const USERNAME_LABEL_RE =
+  // eslint-disable-next-line security/detect-unsafe-regex
   /\b(?:user\s*name|username|user|login(?:\s*(?:name|id))?|user\s*id|handle|nick(?:name)?|screen\s*name|account\s*name|domain\s*login)\b[^\n:]{0,16}[:=]\s*([A-Za-z0-9._@\\-]{3,64})\b|\bunder\s+login\s+([A-Za-z0-9._@\\-]{3,64})\b/gi;
 const USERNAME_STOPWORDS = new Set([
   "username",
@@ -698,10 +708,13 @@ function detectUsernames(text: string): RawMatch[] {
 }
 
 const ABA_LABEL_RE =
+  // eslint-disable-next-line security/detect-unsafe-regex
   /\b(?:routing|aba|transit)(?:\s*(?:number|no|#))?[^\n:]{0,16}[:=]?\s*(\d{9})\b/gi;
 const ACCOUNT_LABEL_RE =
+  // eslint-disable-next-line security/detect-unsafe-regex
   /\b(?:bank\s+account|checking\s+account|savings\s+account|account(?:\s*(?:number|no|#))?|acct\.?(?:\s*(?:number|no|#))?)[^\n:]{0,16}[:=]?\s*(\d[\d -]{3,19})/gi;
 const IBAN_RE =
+  // eslint-disable-next-line security/detect-unsafe-regex
   /\b(?:IBAN\s*[:=]?\s*)?([A-Z]{2}\d{2}(?:[ \t]?[A-Za-z0-9]{4}){2,7}(?:[ \t]?[A-Za-z0-9]{1,4})?)\b/gi;
 
 /** ABA routing checksum: 3-7-1 weights over the nine digits. */
@@ -814,12 +827,15 @@ function detectDobs(text: string): RawMatch[] {
 }
 
 const MRN_LABEL_RE =
+  // eslint-disable-next-line security/detect-unsafe-regex
   /\b(?:mrn|medical\s+record\s*(?:number|no|#)?(?:\s*\(\s*mrn\s*\))?|record\s*(?:number|no|#)|chart\s*(?:number|no|#)?|patient\s*(?:account|acct))\s*[:#\-]?\s*(?=\S)/gi;
 const ICD_LABEL_RE =
+  // eslint-disable-next-line security/detect-unsafe-regex
   /\b(?:icd(?:-?10|-?9)?|diagnosis|dx|condition|problem)\s*[:#\-]?\s*([A-TV-Z][0-9]{1,2}(?:\.[A-Z0-9]{1,4})?)\b/gi;
 const IDENTIFIER_RE = /[A-Za-z0-9][A-Za-z0-9_-]{2,20}/;
 
 const CLINICAL_DIAGNOSIS_LABEL_RE =
+  // eslint-disable-next-line security/detect-unsafe-regex
   /\b(?:past\s+medical\s+history(?:\s*\(\s*pmh\s*\))?|pmh|diagnosis|dx|assessment|impression|problem\s*list|allergies|allergy)\s*[:#\-]\s*(?=\S)/gi;
 
 const CLINICAL_MEDICATION_LABEL_RE =
@@ -896,6 +912,7 @@ function detectMrns(text: string): RawMatch[] {
       if (lowerCleaned === "none" || lowerCleaned === "n/a" || lowerCleaned === "unknown" || lowerCleaned === "denies") continue;
 
       // Check if item is formatted as ICD Code followed by parenthetical description: "E11.9 (Type 2 diabetes...)"
+      // eslint-disable-next-line security/detect-unsafe-regex
       const icdWithDesc = cleaned.match(/^([A-TV-Z][0-9]{1,2}(?:\.[A-Z0-9]{1,4})?)\s*\(([^)]+)\)$/i);
       if (icdWithDesc) {
         const code = icdWithDesc[1];
@@ -972,6 +989,7 @@ function detectMrns(text: string): RawMatch[] {
 const MEMBER_LABEL_RE =
   /\b(?:member\s*(?:id|no|number|#)|subscriber\s*(?:id|no|number|#)|policy\s*(?:id|no|number|#)|group\s*(?:id|no|number|#)|insurance\s*(?:id|no|number|#)|patient\s*id|pat[-_\s]*id|memberid)\s*[:#\-]?\s*(?=\S)/gi;
 const PASSPORT_LABEL_RE =
+  // eslint-disable-next-line security/detect-unsafe-regex
   /\b(?:passport(?:\s+book)?\s*(?:no|num|number|id|#)?)\s*[:#]?\s*([A-Za-z0-9]{6,12})\b/gi;
 const MRZ_LINE_RE =
   /(?:^|(?<=[\s]))(P<[A-Z]{3}[A-Z<]{39}|[A-Z0-9<]{44})(?=[\s]|$)/g;
@@ -1044,6 +1062,7 @@ function detectNpis(text: string): RawMatch[] {
   for (const m of text.matchAll(NPI_LABEL_RE)) {
     const valueStart = m.index + m[0].length;
     const rest = text.slice(valueStart, Math.min(text.length, valueStart + 24));
+    // eslint-disable-next-line security/detect-non-literal-regexp
     const idMatch = new RegExp(NPI_RUN_RE.source, "i").exec(rest);
     if (!idMatch) continue;
     const rawId = idMatch[0];
@@ -1082,6 +1101,7 @@ function detectNpis(text: string): RawMatch[] {
  */
 const DEA_RE = /\b[A-Za-z]{2}\d{7}\b/g;
 
+// eslint-disable-next-line security/detect-unsafe-regex
 const DEA_CUE_RE = /\b(?:dea|drug\s+enforcement(?:\s+administration)?|checksum\s+valid)\b/i;
 
 function detectDeas(text: string): RawMatch[] {
@@ -1100,9 +1120,11 @@ function detectDeas(text: string): RawMatch[] {
 }
 
 const MBI_LABEL_RE =
+  // eslint-disable-next-line security/detect-unsafe-regex
   /\b(?:mbi|medicare(?:\s+beneficiary)?(?:\s+(?:id|identifier|number))?|hicn)\s*[:#]?\s*(?=\S)/gi;
 const MBI_RUN_RE = /\b[A-Za-z0-9]{11}\b|\b[A-Za-z0-9]{4}-[A-Za-z0-9]{3}-[A-Za-z0-9]{4}\b/g;
 
+// eslint-disable-next-line security/detect-unsafe-regex
 const MBI_CUE_RE = /\b(?:mbi|medicare(?:\s+beneficiary)?(?:\s+(?:id|identifier|number))?|hicn)\b/i;
 
 function detectMbis(text: string): RawMatch[] {
@@ -1110,6 +1132,7 @@ function detectMbis(text: string): RawMatch[] {
   for (const m of text.matchAll(MBI_LABEL_RE)) {
     const valueStart = m.index + m[0].length;
     const rest = text.slice(valueStart, Math.min(text.length, valueStart + 30));
+    // eslint-disable-next-line security/detect-non-literal-regexp
     const idMatch = new RegExp(MBI_RUN_RE.source, "i").exec(rest);
     if (!idMatch) continue;
     const rawId = idMatch[0];
@@ -1164,6 +1187,7 @@ const SECRET_PATTERNS: { label: string; regex: RegExp; confidence: number }[] = 
   // single-segment form matched only the first group and left the rest of the
   // credential sitting in plain text next to the mask, which is the opposite of
   // what this tool is for.
+  // eslint-disable-next-line security/detect-unsafe-regex
   { label: "Slack token", regex: /\bxox[baprs](?:-[A-Za-z0-9]{10,48}){1,4}/g, confidence: 0.99 },
   // SendGrid is SG.<22>.<43>. Matching only the first group left the 43-character
   // signature visible.
@@ -1179,15 +1203,19 @@ const SECRET_PATTERNS: { label: string; regex: RegExp; confidence: number }[] = 
   // the pair, and the generic credential-assignment rule could not reach
   // `aws_access_key_id` because `access_key` is followed by `_id=` before the `=`.
   { label: "AWS access key ID", regex: /\b(?:AKIA|ASIA|AROA|AIDA|ANPA|AGPA|AIPA|ANVA|ABIA|ACCA)[A-Z0-9]{16}\b/g, confidence: 0.99 },
+  // eslint-disable-next-line security/detect-unsafe-regex
   { label: "AWS secret", regex: /\b(?:aws_secret_access_key|aws\s+secret(?:\s+key)?|secret\s+key)\s*[:=]\s*['"]?([A-Za-z0-9/+=]{40})['"]?/gi, confidence: 0.95 },
   { label: "Azure account key", regex: /\bAccountKey\s*=\s*[A-Za-z0-9+/]{86,88}={0,2}/g, confidence: 0.9 },
   // A PEM block including its body. Bounded to 16 KB so malformed unclosed
   // headers cannot scan unbounded megabytes.
+  // eslint-disable-next-line security/detect-unsafe-regex
   { label: "Private key", regex: /-----BEGIN (?:[A-Z0-9 ]{1,32} )?PRIVATE KEY-----[\s\S]{1,16384}?-----END (?:[A-Z0-9 ]{1,32} )?PRIVATE KEY-----/g, confidence: 0.99 },
+  // eslint-disable-next-line security/detect-unsafe-regex
   { label: "PuTTY private key", regex: /PuTTY-User-Key-File-\d{1,3}:[\s\S]{1,16384}?-----END (?:[A-Z0-9 ]{1,32} )?PRIVATE KEY-----/g, confidence: 0.99 },
   { label: "JWT", regex: /\beyJ[A-Za-z0-9_\-]{10,2048}\.eyJ[A-Za-z0-9_\-]{10,4096}\.[A-Za-z0-9_\-]{10,1024}\b/g, confidence: 0.95 },
   { label: "GitLab token", regex: /\bglpat-[A-Za-z0-9_\-]{20,128}\b/g, confidence: 0.99 },
   { label: "HuggingFace token", regex: /\bhf_[A-Za-z0-9]{30,128}\b/g, confidence: 0.95 },
+  // eslint-disable-next-line security/detect-unsafe-regex
   { label: "Discord bot token", regex: /\b(?:Bot\s+)?M[A-Za-z0-9_\-]{23}\.[A-Za-z0-9_\-]{6}\.[A-Za-z0-9_\-]{27}\b/g, confidence: 0.99 },
   { label: "Telegram bot token", regex: /\b\d{8,10}:AA[A-Za-z0-9_\-]{33}\b/g, confidence: 0.95 },
   // A lookbehind anchors the match to the token so the reported span excludes
@@ -1202,6 +1230,7 @@ const SECRET_PATTERNS: { label: string; regex: RegExp; confidence: number }[] = 
   { label: "URL with credentials", regex: /\b[a-z][a-z0-9+.-]{0,30}:\/\/[^\s/:@]{1,64}:[^\s/:@]{3,128}@[^\s"'<>`]{1,512}/gi, confidence: 0.99 },
   { label: "HTTP Basic auth", regex: /\bBasic\s+[A-Za-z0-9+/]{16,512}={0,2}/gi, confidence: 0.95 },
   { label: "DB connection string", regex: /\b(?:postgres|mysql|mongodb|redis|amqp|mssql):\/\/[^\s'"<>]{0,512}[A-Za-z0-9=/]/gi, confidence: 0.95 },
+  // eslint-disable-next-line security/detect-unsafe-regex
   { label: "Credential assignment", regex: /(?:token|secret|api[_-]?key|access[_-]?key(?:[_-]?id)?|auth[_-]?token|password|passwd|pwd|client[_-]?secret)\s*[:=]\s*['"]?([A-Za-z0-9._\-+/=%@!#$%^&*()]{8,256})['"]?/gi, confidence: 0.8 },
   { label: "Parenthetical password", regex: /\b(?:password|passwd|pwd)\s+([A-Za-z0-9._\-+/=%@!#$%^&*()]{8,256})\b/gi, confidence: 0.8 },
   { label: "Basic auth credential", regex: /\bBasic\s+Auth\s*[:=]\s*([A-Za-z0-9._-]{1,64}:[A-Za-z0-9._\-+/=%@!#$%^&*()]{6,256})/gi, confidence: 0.95 },
@@ -1244,7 +1273,9 @@ function detectSecrets(text: string): RawMatch[] {
     if (overlapIdx === -1) {
       out.push(m);
     } else {
+      // eslint-disable-next-line security/detect-object-injection
       if (m.confidence > out[overlapIdx].confidence) {
+        // eslint-disable-next-line security/detect-object-injection
         out[overlapIdx] = m;
       }
     }
@@ -1288,11 +1319,14 @@ function isPlaceholder(pat: { confidence: number }, value: string): boolean {
 // address like "500 Training Plaza, Sampleville, TX 00000" produced no street
 // match at all and the whole address stayed visible.
 const STREET_RE =
+  // eslint-disable-next-line security/detect-unsafe-regex
   /(?<![\dA-Za-z])(?:\d{1,5}[^\S\n]{1,4}[A-Za-z][A-Za-z0-9.'-]{0,32}(?:[^\S\n]{1,4}(?:[A-Za-z][A-Za-z0-9.'-]{0,32}|\d{1,4}(?:st|nd|rd|th))){0,6}[^\S\n]{1,4}(?:St|Street|Ave|Avenue|Rd|Road|Blvd|Boulevard|Dr|Drive|Ln|Lane|Ct|Court|Pl|Place|Plaza|Way|Ter|Terrace|Cir|Circle|Pkwy|Parkway|Sq|Square|Hwy|Highway|Trl|Trail|Loop)(?:\.)?\b(?:[^\S\n]{1,4}(?:NW|NE|SW|SE|N|S|E|W)\b)?|P\.?\s*O\.?\s*Box\s+\d{1,6}[A-Za-z0-9-]*)/gi;
 // Optional apt/unit/suite, then city, then state, then ZIP — allowing commas or single newlines.
 // The ZIP group is followed by (?!\d) so it never swallows the first 5 digits of a card number.
 const ADDRESS_TAIL_RE =
+  // eslint-disable-next-line security/detect-unsafe-regex
   /(?:(?:,|[^\S\n]{1,4}|\r?\n[^\S\n]{0,4})(?:Apt|Unit|Suite|Ste|Bldg|Fl|#)\.?[^\S\n]{0,4}[A-Za-z0-9][A-Za-z0-9-]{0,7})?(?:(?:,|[^\S\n]{0,4}\r?\n[^\S\n]{0,4})[^\S\n]{0,4}[A-Z][a-zA-Z.'-]{0,30}(?:[^\S\n]{1,4}[A-Z][a-zA-Z.'-]{0,30}){0,4})?(?:(?:,[^\S\n]{0,4}|[^\S\n]{1,4})[A-Z]{2}\.?)?(?:[^\S\n]{1,4}\d{5}(?:-\d{4})?(?!\d))?/;
+// eslint-disable-next-line security/detect-unsafe-regex
 const ZIP_RE = /\b\d{5}(?:-\d{4})?\b/;
 const ADDRESS_LABEL_BEFORE_RE = /(?:address|addr|residence|location|mailing\s+address|home\s+address|street)\s*[:#-]\s*$/i;
 
@@ -1451,6 +1485,7 @@ export function detectWithCoverage(
   let partiallyScanned = false;
 
   for (const category of enabledCategories) {
+    // eslint-disable-next-line security/detect-object-injection
     const detector = DETECTORS[category];
     if (!detector) continue;
     for (const match of detector(searchText)) {

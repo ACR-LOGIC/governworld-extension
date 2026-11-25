@@ -225,7 +225,9 @@ class ToastManager {
     try {
       const container = this.ensureMounted();
       const level = options.level ?? "info";
+      // eslint-disable-next-line security/detect-object-injection
       const colors = LEVEL_COLORS[level];
+      // eslint-disable-next-line security/detect-object-injection
       const icon = LEVEL_ICONS[level];
       const duration = options.durationMs ?? 4500;
 

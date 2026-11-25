@@ -12,12 +12,14 @@ import {
   clearSession as clearDocSession,
   cancelDocument as cancelDocSession,
   purgeOrphanedStagedKeys,
+  purgeExpiredDocuments,
   getStagedStorageAudit,
   purgeStagedData,
   clearAllFiles,
   storeFile,
   deleteFile,
   hasStagedDocument,
+  sha256Hex,
 } from "./documents.js";
 import { DocumentCancelledError } from "../document-pipeline/contract.js";
 import { analyzeExamples, testPattern } from "../shared/wizardAnalyzer.js";
@@ -242,6 +244,7 @@ async function readSession(tabId: number): Promise<SessionState | null> {
   const key = sessionKey(tabId);
   const raw: unknown = await chrome.storage.session.get(key);
   if (typeof raw !== "object" || raw === null) return null;
+  // eslint-disable-next-line security/detect-object-injection
   const value = (raw as Record<string, unknown>)[key];
   return isSessionState(value) ? value : null;
 }
@@ -553,6 +556,7 @@ function actionCounts(response: unknown): Record<string, number> | undefined {
   for (const [key, value] of Object.entries(counts as Record<string, unknown>)) {
     if (typeof key !== "string" || key.length === 0 || key.length > 64) continue;
     if (typeof value !== "number" || !Number.isFinite(value) || value < 0) continue;
+    // eslint-disable-next-line security/detect-object-injection
     clean[key] = value;
   }
   return Object.keys(clean).length > 0 ? clean : undefined;
@@ -660,6 +664,7 @@ async function readPinnedTarget(): Promise<StoredPinnedTarget | null> {
   try {
     const raw: unknown = await chrome.storage.session.get(PINNED_TARGET_KEY);
     if (typeof raw !== "object" || raw === null) return null;
+    // eslint-disable-next-line security/detect-object-injection
     const value = (raw as Record<string, unknown>)[PINNED_TARGET_KEY];
     return isStoredPinnedTarget(value) ? value : null;
   } catch {
@@ -820,6 +825,7 @@ function notifyPopup(message: PopupFromWorker): void {
               sessionId,
               chunkIndex: i,
               totalChunks: chunks.length,
+              // eslint-disable-next-line security/detect-object-injection
               findings: chunks[i],
             }).catch(() => undefined);
           }
@@ -1466,6 +1472,26 @@ async function handlePopupDocRedact(
       ...(verification.verified ? {} : { problem: verification.failures[0] ?? "Output could not be verified." })
     });
 
+    // FAIL CLOSED (Fix 1): when verification fails the document is never
+    // delivered — no download is started, the user is told the failure plainly,
+    // the audit chain records an error outcome, and the staged output pages
+    // are cleaned up. The popup path that would hand the bytes to the user is
+    // skipped too.
+    if (!verification.verified) {
+      const problem = verification.failures[0] ?? "The redacted document could not be verified.";
+      await clearDocSession(docId);
+      await recordAudit({
+        ts: new Date().toISOString(),
+        action: "doc_redacted",
+        docHash,
+        outcome: "error",
+        counts: { unverified: verification.checkedRegions - verification.darkRegions },
+      }, { failClosed: true });
+      notifyPopup({ type: "POPUP_DOC_STATUS", requestId, stage: "verified", problem });
+      notifyPopup({ type: "POPUP_DOC_ERROR", requestId, code: "DOC_ERROR", userMessage: problem });
+      return;
+    }
+
     let downloadOk = false;
     try {
       const dataUrl = `data:${outputMimeType};base64,${bytesToBase64(outputBytes)}`;
@@ -1514,12 +1540,6 @@ async function handlePopupDocRedact(
     notifyPopup({ type: "POPUP_DOC_ERROR", requestId, code: "DOC_ERROR", userMessage });
     void recordAudit({ ts: new Date().toISOString(), action: "doc_redacted", outcome: "error" });
   }
-}
-
-async function sha256Hex(bytes: ArrayBuffer | Uint8Array): Promise<string> {
-  const view = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
-  const digest = await crypto.subtle.digest("SHA-256", view.slice().buffer as ArrayBuffer);
-  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 function countByCategory(findings: { category: string }[]): Record<string, number> {
@@ -1734,6 +1754,7 @@ async function handleContentScanResult(message: Extract<WorkerMessage, { type: "
               if (m) mimeType = m[1].toLowerCase();
               const binary = atob(item.dataUrl.slice(comma + 1));
               const buf = new Uint8Array(binary.length);
+              // eslint-disable-next-line security/detect-object-injection
               for (let i = 0; i < binary.length; i++) buf[i] = binary.charCodeAt(i);
               bytes = buf.buffer;
             }
@@ -1931,6 +1952,7 @@ interface AccountState {
 
 async function readAccountMetadata(): Promise<StoredAccount | null> {
   const raw = await chrome.storage.local.get(ACCOUNT_KEY);
+  // eslint-disable-next-line security/detect-object-injection
   const account = raw[ACCOUNT_KEY] as StoredAccount | undefined;
   return account?.linked ? account : null;
 }
@@ -1938,6 +1960,7 @@ async function readAccountMetadata(): Promise<StoredAccount | null> {
 /** The live API key, read lazily from chrome.storage.session on every use. */
 async function readAccountCredential(): Promise<string | null> {
   const raw = await chrome.storage.session.get(ACCOUNT_KEY_CREDENTIAL);
+  // eslint-disable-next-line security/detect-object-injection
   const key = raw[ACCOUNT_KEY_CREDENTIAL];
   return typeof key === "string" && key.length > 0 ? key : null;
 }
@@ -2142,15 +2165,38 @@ function purgeStagedFilesOnLifecycle(reason: string): void {
         await purgeOrphanedStagedKeys();
         console.warn(`[governworld] active staged document preserved on ${reason}; orphaned keys purged.`);
         startupCleanupError = undefined;
-        return;
+      } else {
+        await clearAllFiles();
+        startupCleanupError = undefined;
       }
-      await clearAllFiles();
-      startupCleanupError = undefined;
     } catch (error) {
       startupCleanupError = error;
       console.warn(`[governworld] staged-file purge failed on ${reason}:`, sanitizeErrorForLog(error));
     }
   })();
+  // TTL sweep: expires staged documents past their retention age. Runs on
+  // every startup path and reports failures visibly instead of swallowing them.
+  void runStartupTtlPurge();
+}
+
+async function runStartupTtlPurge(): Promise<void> {
+  const result = await purgeExpiredDocuments().catch((error) => ({
+    roots: [] as string[],
+    deletedKeys: 0,
+    failures: [sanitizeErrorForLog(error)],
+  }));
+  const failures = result.failures.slice(0, 10);
+  if (failures.length > 0) {
+    console.warn("[governworld] expired document cleanup reported failures:");
+    for (const failure of failures) {
+      console.warn("[governworld]  -", failure);
+      void recordAudit({
+        ts: new Date().toISOString(),
+        action: "doc_cleanup_failed",
+        outcome: "error",
+      });
+    }
+  }
 }
 
 chrome.runtime.onStartup?.addListener(() => {
@@ -2796,6 +2842,7 @@ async function fetchAssetBase64(relPath: string): Promise<string> {
   if (!resp.ok) throw new Error(`Failed to load ${relPath} (${resp.status})`);
   const bytes = new Uint8Array(await resp.arrayBuffer());
   let bin = "";
+  // eslint-disable-next-line security/detect-object-injection
   for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
   return btoa(bin);
 }

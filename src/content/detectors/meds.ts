@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 // Drug dosage/frequency booster & medical context scoring.
 
+// eslint-disable-next-line security/detect-unsafe-regex
 const DOSAGE_RE = /\b\d+(?:\.\d+)?\s*(?:mg|mcg|g|ml|units|iu|meq)\b/gi;
 const FREQUENCY_RE = /\b(?:bid|tid|qid|qd|hs|prn|daily|twice\s+daily|once\s+daily|every\s+\d+\s+hours)\b/gi;
 

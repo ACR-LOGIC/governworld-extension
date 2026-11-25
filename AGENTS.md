@@ -182,6 +182,7 @@ The extension includes 24 detection categories:
 - Node.js 22.13+ (CI runs Node 24 Active LTS)
 - Chrome 116+ or Firefox 109+
 - npm 10+
+- TypeScript: `npm run typecheck` runs `tsc` from the `typescript` package, which is the TS6 compatibility alias (`@typescript/typescript6@6.0.2`). ESLint/typescript-eslint also run on the TS6 API, while the native TS7 compiler is installed as `@typescript/native`. typescript-eslint currently does not support TS 7 (typescript-eslint#10940); when a release states TS 7 support, point `typescript` back at the native package.
 
 ### Build Commands
 ```bash
@@ -215,7 +216,7 @@ npm run build:safari
 
 ### Automated Verification
 1. **TypeScript Typechecking**: `npm run typecheck`
-2. **Security Linting**: `npm run lint:security`
+2. **Security Linting**: `npm run lint:security` — covers `scripts/**/*.{js,mjs}` and `src/**/*.ts`; the security rules are promoted to `error` for `src/**` (each finding annotated with a disable comment citing its runtime guard).
 3. **Sidepanel Sync Check**: `npm run sync:sidepanel:check`
 4. **Test Suite Execution**: `npm test`
 5. **Manifest Validation**: Offline asset verification

@@ -15,9 +15,11 @@ export interface UnicodeNormalizationResult {
   changed: boolean;
 }
 
-const ZERO_WIDTH_RE = /[\u200B-\u200D\uFEFF]/g;
-const NBSP_RE = /\u00A0/g;
-const MULTI_SPACE_RE = / {2,}/g;
+// No `g` flags: these run as per-character `.test()` calls, and a global
+// regex would carry state in `lastIndex`, making consecutive calls alternate
+// between matching and not matching and silently missing characters.
+const ZERO_WIDTH_RE = /[\u200B-\u200D\uFEFF]/;
+const NBSP_RE = /\u00A0/;
 /** Any Unicode decimal digit (full-width, Arabic-Indic, Devanagari, …). */
 const FOREIGN_DIGIT_RE = /\p{Nd}/u;
 /**
@@ -141,6 +143,7 @@ export function mapNormalizedToOriginalOffset(
     }
     return last?.originalIndex ?? 0;
   }
+  // eslint-disable-next-line security/detect-object-injection
   const entry = mapping[normalizedOffset];
   if (!entry) return normalizedOffset;
   if (isEnd) {
@@ -152,6 +155,7 @@ export function mapNormalizedToOriginalOffset(
 export function mapOriginalToNormalizedOffset(mapping: UnicodeMapping[], originalOffset: number): number {
   if (mapping.length === 0) return originalOffset;
   for (let i = 0; i < mapping.length; i++) {
+    // eslint-disable-next-line security/detect-object-injection
     const entry = mapping[i];
     const len = entry.length ?? 1;
     if (entry.originalIndex === originalOffset || (len > 1 && originalOffset > entry.originalIndex && originalOffset < entry.originalIndex + len)) {

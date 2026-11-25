@@ -88,6 +88,7 @@ export function validateSubmissionPayload(req: LogicSubmissionRequest): { valid:
 
   // Verify pattern is valid regex
   try {
+    // eslint-disable-next-line security/detect-non-literal-regexp
     new RegExp(req.pattern);
   } catch {
     return { valid: false, error: "Invalid regular expression pattern." };

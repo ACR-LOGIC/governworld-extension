@@ -804,6 +804,7 @@ export function showPasteGuardDialog(
   } as const;
 
   const press = (buttonId: keyof typeof ACTIONS): boolean => {
+    // eslint-disable-next-line security/detect-object-injection
     const button = ACTIONS[buttonId];
     if (!button || !button.parentNode) return false;
     button.click();
@@ -1128,7 +1129,9 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
             STORAGE_KEY_COORDINATOR_POLICY,
           ]);
           if (
+            // eslint-disable-next-line security/detect-object-injection
             rawLocal[STORAGE_KEY_MANAGED_POLICY] !== undefined ||
+            // eslint-disable-next-line security/detect-object-injection
             rawLocal[STORAGE_KEY_COORDINATOR_POLICY] !== undefined
           ) {
             cachedPolicy = { ...FAIL_CLOSED_ENTERPRISE_POLICY };
@@ -1156,8 +1159,10 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
         if (Array.isArray(stored.customPatterns)) {
           cachedCustomPatterns = stored.customPatterns;
         }
+        // eslint-disable-next-line security/detect-object-injection
         if (Array.isArray(stored[SITE_POLICIES_KEY])) {
           const valid: SitePolicy[] = [];
+          // eslint-disable-next-line security/detect-object-injection
           for (const item of stored[SITE_POLICIES_KEY]) {
             const res = parseSitePolicy(item);
             if (res.ok) valid.push(res.policy);
@@ -1185,8 +1190,10 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
       if (changes.customPatterns && Array.isArray(changes.customPatterns.newValue)) {
         cachedCustomPatterns = changes.customPatterns.newValue;
       }
+      // eslint-disable-next-line security/detect-object-injection
       if (changes[SITE_POLICIES_KEY] && Array.isArray(changes[SITE_POLICIES_KEY].newValue)) {
         const valid: SitePolicy[] = [];
+        // eslint-disable-next-line security/detect-object-injection
         for (const item of changes[SITE_POLICIES_KEY].newValue) {
           const res = parseSitePolicy(item);
           if (res.ok) valid.push(res.policy);
@@ -1195,9 +1202,13 @@ export function initPasteGuard(doc: Document = document, opts?: InitPasteGuardOp
         checkFullSiteBlock();
       }
       if (
+        // eslint-disable-next-line security/detect-object-injection
         changes[STORAGE_KEY_MANAGED_POLICY] ||
+        // eslint-disable-next-line security/detect-object-injection
         changes[STORAGE_KEY_ENROLLMENT] ||
+        // eslint-disable-next-line security/detect-object-injection
         changes[STORAGE_KEY_COORDINATOR_POLICY] ||
+        // eslint-disable-next-line security/detect-object-injection
         changes[PAIRING_STATE_KEY]
       ) {
         void refreshPolicy();

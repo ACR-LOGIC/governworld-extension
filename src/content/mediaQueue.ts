@@ -392,10 +392,12 @@ export function extractVideoCaptions(
     if (!textTracks) continue;
 
     for (let i = 0; i < textTracks.length; i++) {
+      // eslint-disable-next-line security/detect-object-injection
       const track = textTracks[i];
       const cues = track.cues ?? track.activeCues;
       if (!cues) continue;
       for (let j = 0; j < cues.length; j++) {
+        // eslint-disable-next-line security/detect-object-injection
         const cue = cues[j] as VTTCue;
         if (!cue || typeof cue.text !== "string") continue;
         let stripped = "";

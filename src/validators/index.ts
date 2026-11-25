@@ -128,7 +128,9 @@ export function isValidMbi(value: string): boolean {
     'num', 'alpha', 'alpha', 'num', 'num'
   ] as const;
   for (let i = 0; i < 11; i++) {
+    // eslint-disable-next-line security/detect-object-injection
     const c = compact[i];
+    // eslint-disable-next-line security/detect-object-injection
     const kind = plan[i];
     if (kind === 'num' && !isNum(c)) return false;
     if (kind === 'alpha' && !allowedLetter(c)) return false;
@@ -182,6 +184,7 @@ export function isValidNpi(value: string): boolean {
  * bound or nearby NPI label (or an NPI-typed schema field) still wins because
  * the label evidence above already outranks the demotion.
  */
+// eslint-disable-next-line security/detect-unsafe-regex
 export const NON_PROVIDER_LABEL_RE = /\b(?:asset\s*tag|serial(?:\s+number)?|tracking(?:\s+number)?|batch(?:\s+(?:id|number))?|reference(?:\s+number)?|order\s+number|invoice(?:\s+number)?|part\s+number|sku|upc|barcode|internal\s+id)\b/i;
 
 /** True when the text immediately preceding a numeric run marks it as a non-provider identifier. */
@@ -201,6 +204,7 @@ export function isValidCusip(value: string): boolean {
   if (!/^[0-9A-Z*@#]{9}$/.test(clean)) return false;
   let sum = 0;
   for (let i = 0; i < 8; i++) {
+    // eslint-disable-next-line security/detect-object-injection
     const ch = clean[i];
     let val: number;
     if (ch >= '0' && ch <= '9') val = Number(ch);
@@ -228,6 +232,7 @@ export function isValidIsin(value: string): boolean {
   if (!/^[A-Z]{2}[0-9A-Z]{9}\d$/.test(clean)) return false;
   let expanded = '';
   for (let i = 0; i < 11; i++) {
+    // eslint-disable-next-line security/detect-object-injection
     const ch = clean[i];
     if (ch >= 'A' && ch <= 'Z') {
       expanded += String(ch.charCodeAt(0) - 55);
@@ -239,6 +244,7 @@ export function isValidIsin(value: string): boolean {
   let sum = 0;
   let double = true;
   for (let i = expanded.length - 1; i >= 0; i--) {
+    // eslint-disable-next-line security/detect-object-injection
     let digit = Number(expanded[i]);
     if (double) {
       digit *= 2;
@@ -262,8 +268,10 @@ export function isValidSedol(value: string): boolean {
   const weights = [1, 3, 1, 7, 3, 9];
   let sum = 0;
   for (let i = 0; i < 6; i++) {
+    // eslint-disable-next-line security/detect-object-injection
     const ch = clean[i];
     const val = (ch >= '0' && ch <= '9') ? Number(ch) : ch.charCodeAt(0) - 55;
+    // eslint-disable-next-line security/detect-object-injection
     sum += val * weights[i];
   }
   const check = (10 - (sum % 10)) % 10;
@@ -283,6 +291,7 @@ export function isValidLoinc(value: string): boolean {
   let sum = 0;
   let double = true; // start with weight 2 for last digit before hyphen
   for (let i = numPart.length - 1; i >= 0; i--) {
+    // eslint-disable-next-line security/detect-object-injection
     let d = Number(numPart[i]);
     if (double) {
       d *= 2;
@@ -356,6 +365,7 @@ export function isValidAadhaar(value: string): boolean {
   let c = 0;
   const reversed = digits.split('').reverse().map(Number);
   for (let i = 0; i < reversed.length; i++) {
+    // eslint-disable-next-line security/detect-object-injection
     c = d[c][p[i % 8][reversed[i]]];
   }
   return c === 0;
@@ -383,6 +393,7 @@ export function isValidNhsNumber(value: string): boolean {
   const weights = [10, 9, 8, 7, 6, 5, 4, 3, 2];
   let sum = 0;
   for (let i = 0; i < 9; i++) {
+    // eslint-disable-next-line security/detect-object-injection
     sum += Number(digits[i]) * weights[i];
   }
   const remainder = sum % 11;
@@ -401,6 +412,7 @@ export function isValidAustralianTfn(value: string): boolean {
     const weights = [1, 4, 3, 7, 5, 8, 6, 9, 10];
     let sum = 0;
     for (let i = 0; i < 9; i++) {
+      // eslint-disable-next-line security/detect-object-injection
       sum += Number(digits[i]) * weights[i];
     }
     return sum % 11 === 0;
@@ -409,6 +421,7 @@ export function isValidAustralianTfn(value: string): boolean {
     const weights = [4, 3, 7, 5, 8, 6, 9, 10];
     let sum = 0;
     for (let i = 0; i < 8; i++) {
+      // eslint-disable-next-line security/detect-object-injection
       sum += Number(digits[i]) * weights[i];
     }
     return sum % 11 === 0;
@@ -429,6 +442,7 @@ export function isValidCpf(value: string): boolean {
   // First check digit
   let sum1 = 0;
   for (let i = 0; i < 9; i++) {
+    // eslint-disable-next-line security/detect-object-injection
     sum1 += Number(digits[i]) * (10 - i);
   }
   let rem1 = (sum1 * 10) % 11;
@@ -438,6 +452,7 @@ export function isValidCpf(value: string): boolean {
   // Second check digit
   let sum2 = 0;
   for (let i = 0; i < 10; i++) {
+    // eslint-disable-next-line security/detect-object-injection
     sum2 += Number(digits[i]) * (11 - i);
   }
   let rem2 = (sum2 * 10) % 11;
@@ -467,6 +482,7 @@ export function isValidIban(value: string): boolean {
   if (!/^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$/.test(compact)) return false;
 
   const country = compact.slice(0, 2);
+  // eslint-disable-next-line security/detect-object-injection
   const expectedLength = IBAN_LENGTHS[country];
   if (expectedLength !== undefined && compact.length !== expectedLength) {
     return false;
@@ -507,6 +523,7 @@ export function isValidMrz(line: string): boolean {
     const calcCheck = (str: string): number => {
       let sum = 0;
       for (let i = 0; i < str.length; i++) {
+        // eslint-disable-next-line security/detect-object-injection
         const c = str[i];
         let val = 0;
         if (c >= "0" && c <= "9") val = c.charCodeAt(0) - 48;

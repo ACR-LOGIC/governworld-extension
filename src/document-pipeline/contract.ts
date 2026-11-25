@@ -51,6 +51,7 @@ export function bytesToBase64(bytes: ArrayBuffer | Uint8Array): string {
 export function base64ToBytes(base64: string): Uint8Array {
   const binary = atob(base64);
   const out = new Uint8Array(binary.length);
+  // eslint-disable-next-line security/detect-object-injection
   for (let i = 0; i < binary.length; i += 1) out[i] = binary.charCodeAt(i);
   return out;
 }
@@ -60,8 +61,13 @@ export interface OffscreenPreviewRequest {
   op: "preview";
   jobId: string;
   kind: DocKind;
-  /** Base64-encoded document bytes (extension messaging is JSON-serialized). */
-  bytes: string;
+  /**
+   * Key of the document's bytes in the shared document store (see
+   * shared/docStore.ts). The bytes are staged in IndexedDB by the service
+   * worker, so the message never carries a large base64 copy. A legacy
+   * `bytes` base64 string is still accepted by the offscreen document.
+   */
+  documentKey: string;
   name: string;
   mimeType: string;
   enabledCategories: FindingCategory[];
@@ -88,8 +94,8 @@ export interface OffscreenRedactRequest {
   op: "redact";
   jobId: string;
   kind: DocKind;
-  /** Base64-encoded document bytes (extension messaging is JSON-serialized). */
-  bytes: string;
+  /** Key of the staged document bytes in the shared document store. */
+  documentKey: string;
   name: string;
   mimeType: string;
   boxes: { pageIndex: number; rects: Rect[] }[];
@@ -118,8 +124,8 @@ export interface OffscreenCountRequest {
   op: "count";
   jobId: string;
   kind: DocKind;
-  /** Base64-encoded document bytes (extension messaging is JSON-serialized). */
-  bytes: string;
+  /** Key of the staged document bytes in the shared document store. */
+  documentKey: string;
   name: string;
   mimeType: string;
 }

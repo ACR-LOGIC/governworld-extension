@@ -15,8 +15,18 @@ import { SecurityTelemetry } from "../shared/telemetry.js";
 
 const SESSION_KEY_AUTH_TOKENS = "gw_auth_tokens";
 const LOCAL_KEY_AUTH_METADATA = "gw_auth_metadata";
-const OAUTH_STATE_KEY = "gw_oauth_state";
+/**
+ * Per-attempt state records are keyed by the OAuth `state` value. Concurrent
+ * authentication flows (e.g. two account connections racing) must not
+ * overwrite each other's state, so a single shared key was never enough.
+ */
+const OAUTH_STATE_KEY_PREFIX = "gw_oauth_state:";
 export const OAUTH_PKCE_VERIFIER_KEY = "gw_oauth_pkce_verifier";
+
+/** PKCE verifier record for one authentication attempt, keyed by `state`. */
+function pkceVerifierKey(state?: string): string {
+  return state ? `gw_oauth_pkce_verifier:${state}` : OAUTH_PKCE_VERIFIER_KEY;
+}
 
 export interface StoredAuthMetadata {
   connected: boolean;
@@ -36,6 +46,7 @@ export interface PkcePair {
 function base64UrlEncode(bytes: Uint8Array): string {
   let binary = "";
   for (let i = 0; i < bytes.byteLength; i++) {
+    // eslint-disable-next-line security/detect-object-injection
     binary += String.fromCharCode(bytes[i]);
   }
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -53,15 +64,18 @@ export async function computeCodeChallengeS256(codeVerifier: string): Promise<st
 /**
  * Generates a high-entropy PKCE `code_verifier` and `code_challenge` (SHA-256)
  * and stores `code_verifier` in `chrome.storage.session` for token exchange.
+ *
+ * When `state` is given the verifier is stored as a separate record per
+ * authentication attempt, so concurrent flows cannot overwrite each other.
  */
-export async function generatePkcePair(): Promise<PkcePair> {
+export async function generatePkcePair(state?: string): Promise<PkcePair> {
   const randomBytes = new Uint8Array(32);
   crypto.getRandomValues(randomBytes);
   const codeVerifier = base64UrlEncode(randomBytes);
   const codeChallenge = await computeCodeChallengeS256(codeVerifier);
   try {
     if (typeof chrome !== "undefined" && chrome.storage?.session) {
-      await chrome.storage.session.set({ [OAUTH_PKCE_VERIFIER_KEY]: codeVerifier });
+      await chrome.storage.session.set({ [pkceVerifierKey(state)]: codeVerifier });
     }
   } catch {
     // Session storage unavailable in some test environments
@@ -73,11 +87,13 @@ export async function generatePkcePair(): Promise<PkcePair> {
   };
 }
 
-export async function getStoredPkceVerifier(): Promise<string | null> {
+export async function getStoredPkceVerifier(state?: string): Promise<string | null> {
   try {
     if (typeof chrome !== "undefined" && chrome.storage?.session) {
-      const stored = await chrome.storage.session.get(OAUTH_PKCE_VERIFIER_KEY);
-      const verifier = stored[OAUTH_PKCE_VERIFIER_KEY];
+      const key = pkceVerifierKey(state);
+      const stored = await chrome.storage.session.get(key);
+      // eslint-disable-next-line security/detect-object-injection
+      const verifier = stored[key];
       if (typeof verifier === "string" && verifier.length >= 43) {
         return verifier;
       }
@@ -88,10 +104,10 @@ export async function getStoredPkceVerifier(): Promise<string | null> {
   return null;
 }
 
-export async function clearStoredPkceVerifier(): Promise<void> {
+export async function clearStoredPkceVerifier(state?: string): Promise<void> {
   try {
     if (typeof chrome !== "undefined" && chrome.storage?.session) {
-      await chrome.storage.session.remove(OAUTH_PKCE_VERIFIER_KEY);
+      await chrome.storage.session.remove(pkceVerifierKey(state));
     }
   } catch {
     // Session storage not available
@@ -102,6 +118,7 @@ export async function getStoredTokens(): Promise<AuthTokens | null> {
   try {
     if (typeof chrome !== "undefined" && chrome.storage?.session) {
       const stored = await chrome.storage.session.get(SESSION_KEY_AUTH_TOKENS);
+      // eslint-disable-next-line security/detect-object-injection
       const tokens = stored[SESSION_KEY_AUTH_TOKENS] as AuthTokens | undefined;
       if (tokens && typeof tokens.access_token === "string") {
         return tokens;
@@ -139,6 +156,7 @@ export async function getAuthMetadata(): Promise<StoredAuthMetadata | null> {
   try {
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
       const stored = await chrome.storage.local.get(LOCAL_KEY_AUTH_METADATA);
+      // eslint-disable-next-line security/detect-object-injection
       return (stored[LOCAL_KEY_AUTH_METADATA] as StoredAuthMetadata) ?? null;
     }
   } catch {
@@ -255,7 +273,9 @@ export async function logout(client: GovernWorldApiClient): Promise<void> {
 export async function generateOAuthState(): Promise<string> {
   const state = crypto.randomUUID();
   if (typeof chrome !== "undefined" && chrome.storage?.session) {
-    await chrome.storage.session.set({ [OAUTH_STATE_KEY]: state });
+    // A per-attempt record: a second flow started while this one is in flight
+    // gets its own state and does not clobber this one.
+    await chrome.storage.session.set({ [OAUTH_STATE_KEY_PREFIX + state]: { createdAt: Date.now() } });
   }
   return state;
 }
@@ -263,10 +283,11 @@ export async function generateOAuthState(): Promise<string> {
 export async function verifyOAuthState(state: string): Promise<boolean> {
   try {
     if (typeof chrome !== "undefined" && chrome.storage?.session) {
-      const stored = await chrome.storage.session.get(OAUTH_STATE_KEY);
-      const expected = stored[OAUTH_STATE_KEY];
-      if (expected === state) {
-        await chrome.storage.session.remove(OAUTH_STATE_KEY);
+      const key = OAUTH_STATE_KEY_PREFIX + state;
+      const stored = await chrome.storage.session.get(key);
+      // eslint-disable-next-line security/detect-object-injection
+      if (stored[key]) {
+        await chrome.storage.session.remove(key);
         return true;
       }
     }
@@ -303,7 +324,9 @@ export async function buildAuthorizeUrl(state: string, codeChallenge?: string): 
  */
 export async function launchOAuthWebFlow(
   authorizeUrl: string,
-): Promise<{ ok: true; redirectUrl: string; code: string; state: string } | { ok: false; error: string }> {
+): Promise<
+  { ok: true; redirectUrl: string; code: string; state: string } | { ok: false; error: string; unavailable?: boolean }
+> {
   const identityApi =
     typeof chrome !== "undefined"
       ? (chrome as unknown as {
@@ -317,7 +340,7 @@ export async function launchOAuthWebFlow(
       : undefined;
 
   if (!identityApi || typeof identityApi.launchWebAuthFlow !== "function") {
-    return { ok: false, error: "chrome.identity.launchWebAuthFlow is unavailable" };
+    return { ok: false, error: "chrome.identity.launchWebAuthFlow is unavailable", unavailable: true };
   }
 
   try {
@@ -388,12 +411,14 @@ export async function launchOAuthWebFlow(
 export async function exchangeCodeForTokens(
   client: GovernWorldApiClient,
   code: string,
+  state?: string,
   codeVerifier?: string
 ): Promise<{ ok: true; tokens: AuthTokens } | { ok: false; error: string }> {
   const runtimeId =
     typeof chrome !== "undefined" && chrome?.runtime?.id ? chrome.runtime.id : "governworld-extension";
   const redirectUri = `https://${runtimeId}.chromiumapp.org/`;
-  const verifier = codeVerifier ?? (await getStoredPkceVerifier()) ?? undefined;
+  // The verifier for THIS attempt: keyed by the state that initiated it.
+  const verifier = codeVerifier ?? (state ? await getStoredPkceVerifier(state) : null) ?? undefined;
   const payload: Record<string, string> = {
     grant_type: "authorization_code",
     code,
@@ -403,7 +428,7 @@ export async function exchangeCodeForTokens(
   };
 
   const result = await client.post<AuthTokens>("/api/v1/extension/auth/token", payload);
-  await clearStoredPkceVerifier();
+  await clearStoredPkceVerifier(state);
 
   if (!result.ok) {
     return { ok: false, error: result.error.user_message };

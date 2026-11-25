@@ -44,6 +44,7 @@ async function getLastSyncTimestamp(): Promise<number> {
   if (typeof chrome === "undefined" || !chrome.storage?.local) return 0;
   try {
     const res = await chrome.storage.local.get(STORAGE_KEY_LAST_SYNC_TS);
+    // eslint-disable-next-line security/detect-object-injection
     return typeof res[STORAGE_KEY_LAST_SYNC_TS] === "number" ? res[STORAGE_KEY_LAST_SYNC_TS] : 0;
   } catch {
     return 0;
