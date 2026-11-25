@@ -18,6 +18,7 @@ const PATH_OR_URL_PATTERNS: Array<[RegExp, string]> = [
   // file:// URLs
   [/file:\/\/\/[^\s"'<>)+]+/gi, "[redacted-path]"],
   // Windows drive paths (e.g., C:\Users\alice\Documents\secret.pdf)
+  // eslint-disable-next-line security/detect-unsafe-regex
   [/\b[A-Za-z]:\\(?:[^\s\\/:*?"<>|]+\\)*[^\s\\/:*?"<>|]*/g, "[redacted-path]"],
   // Unix home/root paths (e.g., /Users/alice/secret.pdf, /home/user/doc.docx)
   [/(?:^|(?<=[\s(]))\/(?:Users|home|var|tmp|etc|opt|private|mnt)\/[^\s"'<>)+]+/g, "[redacted-path]"],

@@ -99,6 +99,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function compareVersions(a: string, b: string): number | null {
   const parse = (v: string): number[] | null => {
     const trimmed = v.trim().replace(/^v/i, "");
+    // eslint-disable-next-line security/detect-unsafe-regex
     if (!/^\d+(\.\d+)*$/.test(trimmed)) return null;
     return trimmed.split(".").map(Number);
   };

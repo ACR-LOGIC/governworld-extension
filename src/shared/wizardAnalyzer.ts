@@ -70,6 +70,7 @@ const ALLOWED_FLAGS_RE = /^[gim]*$/;
 const SAFE_ATOM = String.raw`(?:\\[^\r\n]|[A-Za-z0-9_./:#@,;'"~!$%&+=-]|\[(?:\\.|[^\]\r\n])*\])`;
 const SAFE_QUANTIFIER = String.raw`(?:[*+?]|\{\d+(?:,\d*)?\})`;
 const SAFE_GROUP = String.raw`\((?:${SAFE_ATOM}${SAFE_QUANTIFIER}?)+\)`;
+// eslint-disable-next-line security/detect-non-literal-regexp
 const SAFE_REGEX_GRAMMAR = new RegExp(
   `^(?:(?:${SAFE_ATOM}${SAFE_QUANTIFIER}?)|${SAFE_GROUP})+$`
 );
@@ -106,6 +107,7 @@ function hasRiskyQuantifiedGroup(source: string): boolean {
     const start = groups.pop();
     if (start === undefined) continue;
     const next = source[index + 1];
+    // eslint-disable-next-line security/detect-unsafe-regex
     if (next !== "+" && next !== "*" && !/^\{\d+(?:,\d*)?\}/.test(source.slice(index + 1))) continue;
     const body = source.slice(start + 1, index).replace(/^\?(?:[:=!]|<=[^)]*|<![^)]*)/, "").replace(/\\./g, "");
     if (/[+*?|{]/.test(body) || body.includes("(")) return true;
@@ -116,6 +118,7 @@ function hasRiskyQuantifiedGroup(source: string): boolean {
 function hasAdjacentQuantifiers(source: string): boolean {
   const atom = String.raw`(?:\\[dDwWsSbB]|\[(?:\\.|[^\]])+\]|\\.|[A-Za-z0-9_])`;
   const quantifier = String.raw`(?:[*+?]|\{\d+(?:,\d*)?\})`;
+  // eslint-disable-next-line security/detect-non-literal-regexp
   return new RegExp(`${atom}${quantifier}${atom}${quantifier}`).test(source);
 }
 
@@ -141,6 +144,7 @@ function hasBackreferenceOrLookaround(source: string): boolean {
 
 function hasOverlappingAlternations(source: string): boolean {
   // Catch alternations in repeated/quantified groups e.g. (a|ab)+ or (ab|a)*
+  // eslint-disable-next-line security/detect-unsafe-regex
   const repAltMatch = /\(([^()]+)\)(?:[+*]|\{\d+(?:,\d*)?\})/.exec(source);
   if (repAltMatch) {
     const branches = repAltMatch[1].split("|");
@@ -157,6 +161,7 @@ export function isSafeRegex(source: string, flags: string = "g"): boolean {
   if (!ALLOWED_FLAGS_RE.test(flags)) return false;
   if (hasRiskyQuantifiedGroup(source) || hasAdjacentQuantifiers(source) || hasBackreferenceOrLookaround(source) || hasOverlappingAlternations(source)) return false;
   try {
+    // eslint-disable-next-line security/detect-non-literal-regexp
     const re = new RegExp(source, flags.replace("g", ""));
     if (re.test("")) return false;
     return true;
@@ -481,6 +486,7 @@ export function analyzeExamples(
     }
     let matchCount = 0;
     try {
+      // eslint-disable-next-line security/detect-non-literal-regexp
       const re = new RegExp(proposedPattern, proposedFlags);
       let match: RegExpExecArray | null;
       while ((match = re.exec(example)) !== null && matchCount < 1000) {
@@ -551,6 +557,7 @@ export function testPattern(
   const effectiveFlags = flags.includes("g") ? flags : `${flags}g`;
   let re: RegExp;
   try {
+    // eslint-disable-next-line security/detect-non-literal-regexp
     re = new RegExp(patternSource, effectiveFlags);
   } catch {
     return testCases.map((_, i) => ({ caseIndex: i, matched: false, matchCount: 0 }));

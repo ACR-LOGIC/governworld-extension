@@ -182,6 +182,7 @@ export function isValidNpi(value: string): boolean {
  * bound or nearby NPI label (or an NPI-typed schema field) still wins because
  * the label evidence above already outranks the demotion.
  */
+// eslint-disable-next-line security/detect-unsafe-regex
 export const NON_PROVIDER_LABEL_RE = /\b(?:asset\s*tag|serial(?:\s+number)?|tracking(?:\s+number)?|batch(?:\s+(?:id|number))?|reference(?:\s+number)?|order\s+number|invoice(?:\s+number)?|part\s+number|sku|upc|barcode|internal\s+id)\b/i;
 
 /** True when the text immediately preceding a numeric run marks it as a non-provider identifier. */

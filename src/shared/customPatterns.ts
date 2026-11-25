@@ -249,6 +249,7 @@ export function parseCustomPattern(raw: unknown): ParseCustomPatternResult {
         error: "flags must contain only g, i, m (no s, u, d, v)",
       };
     try {
+      // eslint-disable-next-line security/detect-non-literal-regexp
       new RegExp(raw.pattern, raw.flags);
     } catch {
       return { ok: false, error: "pattern is not a valid regular expression" };

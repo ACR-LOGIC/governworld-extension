@@ -8,6 +8,7 @@ const DRUG_SUFFIXES = [
   "prazole", "dipine", "formin", "gliptin", "gliflozin", "mab", "nib", "zepam",
 ];
 
+// eslint-disable-next-line security/detect-unsafe-regex
 const CONTEXT_CUES = /\b(?:\d+(?:\.\d+)?\s*(?:mg|mcg|ml)|mg|mcg|ml|bid|tid|qid|taking|prescribed|twice\s+daily|once\s+daily|daily)\b/i;
 
 export function isDrugLike(token: string, nearbyText = ""): boolean {

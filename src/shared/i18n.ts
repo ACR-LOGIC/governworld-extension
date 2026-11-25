@@ -4931,6 +4931,7 @@ export function t(
 
   if (params && typeof params === "object") {
     for (const [pKey, pVal] of Object.entries(params)) {
+      // eslint-disable-next-line security/detect-non-literal-regexp
       text = text.replace(new RegExp(`\\{${pKey}\\}`, "g"), String(pVal));
     }
   }

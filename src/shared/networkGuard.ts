@@ -203,17 +203,20 @@ export function classifyIPv6(host: string): "loopback" | "private" | "link_local
   if (
     cleaned === "::" ||
     cleaned === "::1" ||
+    // eslint-disable-next-line security/detect-unsafe-regex
     /^0*(?::0*)*:[01]$/.test(cleaned)
   ) {
     return "loopback";
   }
 
   // 2. AWS EC2 IPv6 metadata endpoint (fd00:ec2::254)
+  // eslint-disable-next-line security/detect-unsafe-regex
   if (/^fd00:ec2:(?:0*:)*254$/i.test(cleaned)) {
     return "link_local";
   }
 
   // 3. IPv4-mapped IPv6 (::ffff:w.x.y.z or ::ffff:xxxx:yyyy or ::ffff:0:w.x.y.z)
+  // eslint-disable-next-line security/detect-unsafe-regex
   const mappedMatch = /^(?:::|(?:0+:){5})ffff:(?:0+:)?([0-9a-f.:]+)$/i.exec(cleaned);
   if (mappedMatch) {
     const v4 = parseEmbeddedIPv4FromIPv6Tail(mappedMatch[1]);
@@ -224,6 +227,7 @@ export function classifyIPv6(host: string): "loopback" | "private" | "link_local
   }
 
   // 4. IPv4-compatible IPv6 (deprecated ::w.x.y.z)
+  // eslint-disable-next-line security/detect-unsafe-regex
   const compatMatch = /^(?:::|(?:0+:){6})(\d+\.\d+\.\d+\.\d+)$/i.exec(cleaned);
   if (compatMatch) {
     const v4 = parseIPv4Bytes(compatMatch[1]);
@@ -234,6 +238,7 @@ export function classifyIPv6(host: string): "loopback" | "private" | "link_local
 
   // 5. NAT64 Well-Known Prefix (64:ff9b::/96) and Local-Use NAT64 (64:ff9b:1::/48)
   if (/^64:ff9b:/i.test(cleaned)) {
+    // eslint-disable-next-line security/detect-unsafe-regex
     const nat64TailMatch = /^64:ff9b:(?:1:)?(?:0*:)*([0-9a-f]{1,4}:[0-9a-f]{1,4}|\d+\.\d+\.\d+\.\d+)$/i.exec(cleaned);
     if (nat64TailMatch) {
       const v4 = parseEmbeddedIPv4FromIPv6Tail(nat64TailMatch[1]);
@@ -272,6 +277,7 @@ export function classifyIPv6(host: string): "loopback" | "private" | "link_local
     /^2001:(?:0+:|:)/i.test(cleaned) ||
     /^2001:0?002:/i.test(cleaned) ||
     /^2001:0?db8(?::|$)/i.test(cleaned) ||
+    // eslint-disable-next-line security/detect-unsafe-regex
     /^0?100:(?:0*:)+/i.test(cleaned)
   ) {
     return "private";

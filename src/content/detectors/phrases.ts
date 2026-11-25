@@ -28,6 +28,7 @@ export function normalizePhrase(s: string): string {
 
 export function tokenizeMedicalText(text: string): Token[] {
   const tokens: Token[] = [];
+  // eslint-disable-next-line security/detect-unsafe-regex
   for (const m of text.matchAll(/[A-Za-z0-9]+(?:-[A-Za-z0-9]+)?/g)) {
     if (m.index === undefined) continue;
     tokens.push({

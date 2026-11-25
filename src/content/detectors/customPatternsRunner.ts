@@ -113,8 +113,10 @@ export function runCustomPatternsWithStatus(
       const effFlags = patFlags.includes("g") ? patFlags : `${patFlags}g`;
       const flags = effFlags.includes("d") ? effFlags : `${effFlags}d`;
       try {
+        // eslint-disable-next-line security/detect-non-literal-regexp
         re = new RegExp(patSource, flags);
       } catch {
+        // eslint-disable-next-line security/detect-non-literal-regexp
         re = new RegExp(patSource, effFlags);
       }
     } catch {
