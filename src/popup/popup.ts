@@ -74,7 +74,7 @@ import type {
 } from "../shared/types.js";
 import type { ParsedName } from "../content/detectors/nameParser.js";
 import { CURRENT_EXTENSION_VERSION } from "../api/config.js";
-import { loadCustomPatterns, saveCustomPatterns, parseCustomPattern, type CustomPattern, type CommunityAccount, type CommunityRule } from "../shared/customPatterns.js";
+import { loadCustomPatterns, saveCustomPatterns, parseCustomPattern, type CustomPattern } from "../shared/customPatterns.js";
 import { inferLocationRule, type SelectionSample } from "../shared/locationAwareWizard.js";
 import { parseSampleLines, type WizardAnalysis } from "../shared/wizardAnalyzer.js";
 import type { ImageCandidate } from "../shared/messages.js";
@@ -883,6 +883,8 @@ async function startImageCapture(candidate: ImageCandidate): Promise<void> {
   showDocProgress();
   lastState = null;
   renderState(clearScanStateForCapture());
+  // The capture lands in the Document tab now — the only home for documents.
+  document.querySelector<HTMLButtonElement>('.tab-btn[data-tab="document"]')?.click();
   try {
     await sendDocMessage({
       type: "POPUP_DOC_CAPTURE_IMAGE",
@@ -1086,6 +1088,175 @@ function renderPinnedTarget(state: PopupState): void {
   }
 }
 
+/**
+ * Best-effort read of one tab's stored worker scan session.
+ *
+ * Sessions live in `chrome.storage.session` under the worker's key
+ * (`scan:<tabId>`, SESSION_KEY_PREFIX in src/service-worker/index.ts) with
+ * `scannedAt`, `scanning`, `findings`, and `stats.totalFindings`. A malformed
+ * or absent value is "no session", never an error to surface.
+ */
+async function readTabScanSession(tabId: number): Promise<{
+  scanning?: boolean;
+  scannedAt?: number;
+  findings?: unknown[];
+  stats?: { totalFindings?: number };
+} | null> {
+  try {
+    if (typeof chrome === "undefined" || !chrome.storage?.session) return null;
+    const key = `scan:${tabId}`;
+    const raw = (await chrome.storage.session.get(key)) as Record<string, unknown>;
+    // eslint-disable-next-line security/detect-object-injection
+    const value = raw?.[key];
+    if (!value || typeof value !== "object") return null;
+    const v = value as Record<string, unknown>;
+    if (typeof v.scannedAt !== "number") return null;
+    const stats = v.stats && typeof v.stats === "object" ? (v.stats as { totalFindings?: number }) : undefined;
+    return {
+      scanning: v.scanning === true,
+      scannedAt: v.scannedAt,
+      findings: Array.isArray(v.findings) ? v.findings : undefined,
+      stats,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Tab Scan Status (Protection): one honest row per open scannable tab.
+ *
+ * The tab list comes from the worker's pinned-target snapshot
+ * (`state.pinnedTarget.availableTabs`). Scan state for the pinned tab comes
+ * from the live popup state; for every other tab it comes from that tab's
+ * stored worker session. A tab with no stored session has not been scanned —
+ * nothing here implies tabs are scanned automatically. There is no stored
+ * failure signal for non-current tabs, so "Scan Failed" is only shown for the
+ * pinned tab, when its live state carries an error.
+ */
+async function renderTabScanStatus(state: PopupState): Promise<void> {
+  const listEl = document.getElementById("tab-scan-list") as HTMLUListElement | null;
+  const emptyEl = document.getElementById("tab-scan-empty") as HTMLParagraphElement | null;
+  if (!listEl) return;
+  const pt = state.pinnedTarget;
+  const tabs = pt?.availableTabs ?? [];
+  if (emptyEl) emptyEl.hidden = tabs.length > 0;
+  listEl.replaceChildren();
+  const mode: ScanMode = state.mode;
+  for (const tab of tabs) {
+    const isPinnedTab = pt?.pinnedTabId === tab.tabId;
+    let statusKey = "tab_scan_not_scanned";
+    let tone = "muted";
+    let tabScanning = false;
+    let lastScanText = "";
+    let findingCount: number | null = null;
+    if (isPinnedTab) {
+      tabScanning = state.scanning;
+      if (state.scanning) {
+        statusKey = "tab_scan_scanning";
+        tone = "warn";
+      } else if (state.error) {
+        statusKey = "tab_scan_failed";
+        tone = "error";
+      } else if (state.scanned) {
+        statusKey = "tab_scan_scanned";
+        tone = "ok";
+        findingCount = Math.max(state.findings.length, state.totalFindings ?? 0);
+      }
+    } else {
+      const session = await readTabScanSession(tab.tabId);
+      if (session?.scanning) {
+        tabScanning = true;
+        statusKey = "tab_scan_scanning";
+        tone = "warn";
+      } else if (session) {
+        statusKey = "tab_scan_scanned";
+        tone = "ok";
+        findingCount = session.stats?.totalFindings ?? session.findings?.length ?? 0;
+        if (session.scannedAt) {
+          lastScanText = new Date(session.scannedAt).toLocaleString([], {
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+        }
+      }
+    }
+
+    const item = document.createElement("li");
+    item.className = "tab-scan-item";
+    if (isPinnedTab) item.classList.add("tab-scan-item--pinned");
+    if (tab.active) item.classList.add("tab-scan-item--active");
+
+    const icon = document.createElement("span");
+    icon.className = "tab-scan-item__icon";
+    icon.setAttribute("aria-hidden", "true");
+    if (tab.favIconUrl && /^(https?:|chrome:\/\/favicon\/)/.test(tab.favIconUrl)) {
+      const img = document.createElement("img");
+      img.className = "tab-scan-item__favicon";
+      img.alt = "";
+      img.src = tab.favIconUrl;
+      icon.appendChild(img);
+    } else {
+      icon.textContent = (tab.domain || tab.title || "?").slice(0, 1).toUpperCase();
+    }
+
+    const main = document.createElement("div");
+    main.className = "tab-scan-item__main";
+    const title = document.createElement("span");
+    title.className = "tab-scan-item__title";
+    title.textContent = tab.title;
+    const domain = document.createElement("span");
+    domain.className = "tab-scan-item__domain";
+    domain.textContent = tab.domain;
+    main.append(title, domain);
+
+    const meta = document.createElement("div");
+    meta.className = "tab-scan-item__meta";
+    const badge = document.createElement("span");
+    badge.className = "tab-scan-item__status";
+    badge.dataset.tone = tone;
+    badge.textContent = t(currentLang, statusKey);
+    meta.appendChild(badge);
+    if (isPinnedTab) {
+      const pin = document.createElement("span");
+      pin.className = "tab-scan-item__pin";
+      pin.textContent = t(currentLang, "tab_scan_pinned");
+      meta.appendChild(pin);
+    }
+    if (findingCount !== null) {
+      const count = document.createElement("span");
+      count.className = "count-badge";
+      count.textContent = String(findingCount);
+      count.title = t(currentLang, "findings_title");
+      meta.appendChild(count);
+    }
+    if (lastScanText) {
+      const last = document.createElement("span");
+      last.className = "tab-scan-item__last";
+      last.textContent = `${t(currentLang, "tab_scan_last_scan")}: ${lastScanText}`;
+      meta.appendChild(last);
+    }
+    if (!tabScanning) {
+      const scanBtn = document.createElement("button");
+      scanBtn.type = "button";
+      scanBtn.className = "btn btn--ghost btn--sm";
+      scanBtn.textContent = t(currentLang, "tab_scan_scan_btn");
+      scanBtn.addEventListener("click", () => {
+        // Pin first so the scan, the findings, and the masks all bind to
+        // this tab; the scan itself carries the tab id explicitly.
+        void sendMessage({ type: "POPUP_PIN_TAB", requestId: requestId(), tabId: tab.tabId });
+        void sendMessage({ type: "POPUP_SCAN", requestId: requestId(), mode, tabId: tab.tabId });
+      });
+      meta.appendChild(scanBtn);
+    }
+
+    item.append(icon, main, meta);
+    listEl.appendChild(item);
+  }
+}
+
 function renderState(state: PopupState): void {
   const status = document.getElementById("status") as HTMLParagraphElement | null;
   const scanBtn = document.getElementById("scan-btn") as HTMLButtonElement | null;
@@ -1200,12 +1371,41 @@ function renderState(state: PopupState): void {
     }
   }
 
+  // Scan Complete banner: the honest 0-findings variant of a real scan only.
+  // A scan that read no text at all (visibleChars === 0) must never render as
+  // clean, and an unscanned/error state shows no banner at all.
+  const banner = document.getElementById("scan-result-banner") as HTMLElement | null;
+  const bannerText = document.getElementById("scan-result-banner-text") as HTMLElement | null;
+  if (banner && bannerText) {
+    const authoritativeCount = Math.max(state.findings.length, state.totalFindings ?? 0);
+    const showBanner = state.scanned && !state.error && state.visibleChars > 0;
+    banner.hidden = !showBanner;
+    if (showBanner) {
+      banner.dataset.tone = authoritativeCount > 0 ? "findings" : "clean";
+      bannerText.textContent =
+        authoritativeCount > 0
+          ? t(currentLang, "scan_banner_findings", { count: authoritativeCount })
+          : t(currentLang, "scan_banner_clean");
+    }
+  }
+
+  // Page Masking jump-tile subtitle: live finding state, never a stale claim.
+  const maskingTileSub = document.getElementById("tool-tile-page-masking-sub") as HTMLElement | null;
+  if (maskingTileSub) {
+    const authoritativeCount = Math.max(state.findings.length, state.totalFindings ?? 0);
+    maskingTileSub.textContent =
+      state.scanned && authoritativeCount > 0
+        ? t(currentLang, "tool_tile_page_masking_ready", { count: authoritativeCount })
+        : t(currentLang, "tool_tile_page_masking_none");
+  }
+
   const localRadio = document.getElementById("mode-local") as HTMLInputElement | null;
   const cloudRadio = document.getElementById("mode-cloud") as HTMLInputElement | null;
   if (localRadio && localRadio.checked !== (state.mode === "local")) localRadio.checked = state.mode === "local";
   if (cloudRadio && cloudRadio.checked !== (state.mode === "cloud")) cloudRadio.checked = state.mode === "cloud";
 
   renderCoverage(state);
+  void renderTabScanStatus(state);
   void refreshReviewTelemetry(state);
 }
 
@@ -2419,6 +2619,10 @@ function clearDocUi(options?: { keepRedacted?: boolean }): void {
 function initTabs(): { switchTab: (tabId: string) => void; switchSettingsPage: (pageId: string) => void } {
   const tabButtons = document.querySelectorAll<HTMLButtonElement>(".tab-btn");
   const tabPanels = document.querySelectorAll<HTMLElement>(".tab-panel");
+  // Settings is a dedicated view behind the profile menu, not a fourth tab:
+  // remember the primary tab to return to, and hide the tab bar while it is open.
+  let lastPrimaryTab = "protection";
+  const appEl = document.getElementById("app");
 
   function switchTab(tabId: string): void {
     tabButtons.forEach((btn) => {
@@ -2431,6 +2635,8 @@ function initTabs(): { switchTab: (tabId: string) => void; switchSettingsPage: (
       panel.hidden = !isActive;
       panel.classList.toggle("tab-panel--active", isActive);
     });
+    if (tabId !== "settings") lastPrimaryTab = tabId;
+    appEl?.classList.toggle("settings-view-open", tabId === "settings");
   }
 
   tabButtons.forEach((btn) => {
@@ -2531,10 +2737,8 @@ function initTabs(): { switchTab: (tabId: string) => void; switchSettingsPage: (
     });
   });
 
-  const openWizardBtn2 = document.getElementById("open-wizard-btn-2");
-  openWizardBtn2?.addEventListener("click", () => {
-    const wizardBtn = document.getElementById("open-wizard-btn") as HTMLButtonElement | null;
-    wizardBtn?.click();
+  document.getElementById("settings-back-btn")?.addEventListener("click", () => {
+    switchTab(lastPrimaryTab);
   });
 
   const coverageDetailsBtn = document.getElementById("coverage-details-btn");
@@ -2578,6 +2782,30 @@ function setModeToggle(el: HTMLInputElement | null, checked: boolean, disabled: 
   el.checked = checked;
   el.setAttribute("aria-checked", checked ? "true" : "false");
   el.disabled = disabled;
+}
+
+/**
+ * Keep the Protection Quick Tools Paste Shield mode selector in sync with the
+ * effective protection mode — the same source as the Settings toggles, so a
+ * managed-policy lock applies identically here.
+ */
+function syncPasteModeSelector(mode: ProtectionMode, locked: boolean): void {
+  document.querySelectorAll<HTMLButtonElement>("[data-paste-mode]").forEach((btn) => {
+    const isActive = btn.dataset.pasteMode === mode;
+    btn.setAttribute("aria-pressed", isActive ? "true" : "false");
+    btn.classList.toggle("paste-mode-btn--active", isActive);
+    btn.disabled = locked;
+    if (locked) btn.title = t(currentLang, "managed_lock_notice");
+    else btn.removeAttribute("title");
+  });
+  // Keep the Paste Shield tool-tile subtitle on the same live mode.
+  const tileSub = document.getElementById("tool-tile-paste-shield-sub") as HTMLElement | null;
+  if (tileSub) {
+    tileSub.textContent = t(
+      currentLang,
+      mode === "always-on" ? "paste_mode_always" : mode === "off" ? "paste_mode_off" : "status_val_this_tab"
+    );
+  }
 }
 
 /**
@@ -2698,7 +2926,7 @@ export async function refreshProtectionStatus(): Promise<ProtectionStatusSnapsho
     }
   }
 
-  const openWiz = document.getElementById("open-wizard-btn") as HTMLButtonElement | null;
+  const openWiz = document.getElementById("open-wizard-btn-2") as HTMLButtonElement | null;
   if (openWiz) {
     openWiz.disabled = isLocked;
     if (isLocked) openWiz.title = t(lang, "managed_lock_notice");
@@ -2712,6 +2940,7 @@ export async function refreshProtectionStatus(): Promise<ProtectionStatusSnapsho
   });
   lastOperatingMode = policy.managed ? "MANAGE" : (lastState?.operatingMode === "MANAGE" ? "MANAGE" : "LOCAL");
   syncProfilePopoverSummary();
+  syncPasteModeSelector(effective.mode, isLocked);
   return snapshot;
 }
 
@@ -2805,20 +3034,53 @@ export async function initPopup(): Promise<void> {
       profileAvatarBtn?.focus();
     }
   });
+  // Pair Extension is a deliberate step: the code/enrollment form stays
+  // hidden until the user asks for it. Three triggers share this one path —
+  // the profile menu, the Account & Pairing card, and the bottom Pair
+  // Extension card — and all three land on the same form.
+  const openPairingForm = (): void => {
+    setPopoverOpen(false);
+    switchTab("settings");
+    switchSettingsPage("profile");
+    document.getElementById("office-pair-start-btn")?.click();
+    window.setTimeout(() => {
+      document.getElementById("office-pairing-input")?.focus();
+    }, 0);
+  };
   document.getElementById("profile-goto-account-btn")?.addEventListener("click", () => {
     setPopoverOpen(false);
     switchTab("settings");
     switchSettingsPage("profile");
   });
-  document.getElementById("profile-goto-protection-btn")?.addEventListener("click", () => {
+  document.getElementById("profile-goto-settings-btn")?.addEventListener("click", () => {
     setPopoverOpen(false);
     switchTab("settings");
-    switchSettingsPage("protection");
+    switchSettingsPage("profile");
   });
-  document.getElementById("profile-goto-appearance-btn")?.addEventListener("click", () => {
+  document.getElementById("profile-pair-btn")?.addEventListener("click", () => {
+    openPairingForm();
+  });
+  document.getElementById("settings-nav-pair-btn")?.addEventListener("click", () => {
+    openPairingForm();
+  });
+  document.getElementById("settings-pair-now-btn")?.addEventListener("click", () => {
+    openPairingForm();
+  });
+  document.getElementById("profile-help-btn")?.addEventListener("click", () => {
     setPopoverOpen(false);
     switchTab("settings");
-    switchSettingsPage("appearance");
+    switchSettingsPage("about");
+    const guidesDetails = document.getElementById("about-guides-details") as HTMLDetailsElement | null;
+    if (guidesDetails) guidesDetails.open = true;
+  });
+  document.getElementById("profile-goto-about-btn")?.addEventListener("click", () => {
+    setPopoverOpen(false);
+    switchTab("settings");
+    switchSettingsPage("about");
+  });
+  document.getElementById("profile-signout-btn")?.addEventListener("click", () => {
+    setPopoverOpen(false);
+    void chrome.runtime.sendMessage({ type: "POPUP_ACCOUNT_CLEAR", requestId: requestId() });
   });
 
   // Live Paste Shield pill shortcut
@@ -2831,6 +3093,64 @@ export async function initPopup(): Promise<void> {
     }
     switchTab("settings");
     switchSettingsPage("protection");
+  });
+
+  // Protection footer "Learn more →" opens the in-extension privacy page,
+  // the same target as the Privacy settings links (privacy-link,
+  // aboutPrivacyLink below). It never points at the external marketing URL.
+  const protectionFooterLearnMore = document.getElementById(
+    "protection-footer-learn-more"
+  ) as HTMLAnchorElement | null;
+  if (protectionFooterLearnMore) {
+    protectionFooterLearnMore.href = chrome.runtime.getURL("privacy.html");
+    protectionFooterLearnMore.target = "_blank";
+    protectionFooterLearnMore.rel = "noopener noreferrer";
+  }
+
+  // Scan Complete banner "View Details →": findings exist — scroll to the
+  // findings list and focus Apply Masks; clean scan — scroll to Coverage,
+  // where the scan's scope is stated (there are no findings to show).
+  document.getElementById("scan-banner-details-btn")?.addEventListener("click", () => {
+    const banner = document.getElementById("scan-result-banner") as HTMLElement | null;
+    const hasFindings = banner?.dataset.tone === "findings";
+    const target = hasFindings
+      ? document.getElementById("results-section")
+      : document.querySelector("#tab-scan-status .coverage-section");
+    target?.scrollIntoView({ behavior: "smooth", block: "start" });
+    if (hasFindings) {
+      document.getElementById("apply-masks-btn")?.focus({ preventScroll: true });
+    }
+  });
+
+  // Protection tool tiles are jump tiles, not duplicate controls.
+  // Paste Shield anchors the mode selector below; Page Masking jumps to the
+  // masking controls in Scan Findings; More Tools opens the overflow menu.
+  document.getElementById("tool-tile-paste-shield")?.addEventListener("click", () => {
+    const selector = document.querySelector(".paste-mode-selector") as HTMLElement | null;
+    selector?.scrollIntoView({ behavior: "smooth", block: "center" });
+    const activeMode = document.querySelector<HTMLButtonElement>(".paste-mode-btn--active");
+    (activeMode ?? document.querySelector<HTMLButtonElement>("[data-paste-mode]"))?.focus({
+      preventScroll: true,
+    });
+  });
+  document.getElementById("tool-tile-page-masking")?.addEventListener("click", () => {
+    const resultsSection = document.getElementById("results-section") as HTMLElement | null;
+    if (resultsSection && !resultsSection.hidden) {
+      resultsSection.scrollIntoView({ behavior: "smooth", block: "start" });
+      document.getElementById("apply-masks-btn")?.focus({ preventScroll: true });
+    } else {
+      // No findings to mask yet: point at the scan itself instead of an
+      // empty, hidden findings section.
+      const scanBtn = document.getElementById("scan-btn") as HTMLButtonElement | null;
+      scanBtn?.scrollIntoView({ behavior: "smooth", block: "center" });
+      scanBtn?.focus({ preventScroll: true });
+    }
+  });
+  document.getElementById("tool-tile-more-tools")?.addEventListener("click", () => {
+    const more = document.getElementById("quick-tools-more") as HTMLDetailsElement | null;
+    if (!more) return;
+    more.open = !more.open;
+    more.scrollIntoView({ behavior: "smooth", block: "nearest" });
   });
   try {
     const tab = await getActiveWebTab();
@@ -3401,7 +3721,6 @@ export async function initPopup(): Promise<void> {
     }
   };
 
-  const openDocBtn = document.getElementById("open-doc-btn") as HTMLButtonElement | null;
   const triggerDocumentSelection = async (): Promise<void> => {
     if (!isDocumentPipelineSupported()) {
       setDocStatus(DOCUMENT_PIPELINE_UNAVAILABLE_MESSAGE, true);
@@ -3433,10 +3752,6 @@ export async function initPopup(): Promise<void> {
     }
     docFile?.click();
   };
-  openDocBtn?.addEventListener("click", () => {
-    void triggerDocumentSelection();
-  });
-
   const dropzone = document.getElementById("doc-dropzone") as HTMLDivElement | null;
   if (dropzone && docFile) {
     if (!isDocumentPipelineSupported()) {
@@ -3491,6 +3806,12 @@ export async function initPopup(): Promise<void> {
       }
     });
   }
+
+  // Explicit Choose File button: the same file-picker entry point as
+  // clicking the dropzone, for keyboard and screen-reader users.
+  document.getElementById("doc-choose-file-btn")?.addEventListener("click", () => {
+    docFile?.click();
+  });
 
   localRadio?.addEventListener("change", () => {
     void sendMessage({ type: "POPUP_SET_MODE", requestId: requestId(), mode: "local" });
@@ -3617,6 +3938,23 @@ export async function initPopup(): Promise<void> {
     // The worker arms a pending always-on request on the permission-added
     // event; refresh here so the banner reflects the grant immediately.
     await refreshProtectionStatus();
+  });
+
+  // Protection Quick Tools: Paste Shield mode selector. The same three modes
+  // as the Settings toggles (this-tab / always-on / off), writing through the
+  // same saveUserMode path so a managed-policy lock applies identically.
+  document.querySelectorAll<HTMLButtonElement>("[data-paste-mode]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const mode = btn.dataset.pasteMode;
+      if (mode !== "this-tab" && mode !== "always-on" && mode !== "off") return;
+      if (btn.disabled) return;
+      if (mode === "always-on") {
+        const granted = await requestSiteAccess();
+        await saveUserMode(granted ? "always-on" : "this-tab");
+      } else {
+        await saveUserMode(mode);
+      }
+    });
   });
 
   // --- General & Appearance Controls ---
@@ -3973,9 +4311,6 @@ export async function initPopup(): Promise<void> {
     speakAnnouncement(t(current.language, "audit_cleared"), current);
   });
 
-  document.getElementById("export-audit-btn")?.addEventListener("click", () => {
-    void sendMessage({ type: "POPUP_EXPORT_AUDIT", requestId: requestId() });
-  });
   document.getElementById("review-export-audit-btn")?.addEventListener("click", () => {
     void sendMessage({ type: "POPUP_EXPORT_AUDIT", requestId: requestId() });
   });
@@ -4319,6 +4654,9 @@ export async function initPopup(): Promise<void> {
           officeManagerStatus.textContent = t(currentLang, "office_status_managed", { org: orgName, ver });
           officeManagerStatus.style.color = "var(--gw-emerald, #10b981)";
         }
+        // Paired: the form must be visible so Unpair is reachable.
+        if (officeManagerForm) officeManagerForm.hidden = false;
+        if (officePairStartBtn) officePairStartBtn.hidden = true;
         if (officePairingInput) officePairingInput.style.display = "none";
         if (officePairBtn) officePairBtn.style.display = "none";
         if (officeUnpairBtn) officeUnpairBtn.style.display = "inline-block";
@@ -4339,6 +4677,16 @@ export async function initPopup(): Promise<void> {
     }
     if (officeUnpairBtn) officeUnpairBtn.style.display = "none";
   }
+
+  // Pair Extension is a deliberate step: the code/enrollment form stays
+  // hidden until the user clicks Pair Extension (profile menu or here).
+  const officePairStartBtn = document.getElementById("office-pair-start-btn") as HTMLButtonElement | null;
+  const officeManagerForm = document.getElementById("office-manager-form") as HTMLDivElement | null;
+  officePairStartBtn?.addEventListener("click", () => {
+    if (officeManagerForm) officeManagerForm.hidden = false;
+    if (officePairStartBtn) officePairStartBtn.hidden = true;
+    officePairingInput?.focus();
+  });
 
   void checkOfficeManagerPairingStatus();
 
@@ -4459,25 +4807,12 @@ export async function initPopup(): Promise<void> {
   });
 
   // ---------- Redaction Wizard & Custom Rules Controller ----------
-  const openWizardBtn = document.getElementById("open-wizard-btn") as HTMLButtonElement | null;
-  const linkCommunityBtn = document.getElementById("link-community-btn") as HTMLButtonElement | null;
-  const fetchCommunityRulesBtn = document.getElementById("fetch-community-rules-btn") as HTMLButtonElement | null;
+  const openWizardBtn = document.getElementById("open-wizard-btn-2") as HTMLButtonElement | null;
   const customPatternsList = document.getElementById("custom-patterns-list") as HTMLUListElement | null;
   const noCustomPatterns = document.getElementById("no-custom-patterns") as HTMLParagraphElement | null;
-  const communityRulesList = document.getElementById("community-rules-list") as HTMLUListElement | null;
-  const communityAccountStatus = document.getElementById("community-account-status") as HTMLParagraphElement | null;
   const exportCustomRulesBtn = document.getElementById("export-custom-rules-btn") as HTMLButtonElement | null;
   const importCustomRulesBtn = document.getElementById("import-custom-rules-btn") as HTMLButtonElement | null;
   const importCustomRulesFile = document.getElementById("import-custom-rules-file") as HTMLInputElement | null;
-
-  if (linkCommunityBtn) {
-    linkCommunityBtn.disabled = true;
-    linkCommunityBtn.title = "Community account linking is unavailable until server authorization is configured.";
-  }
-  if (fetchCommunityRulesBtn) {
-    fetchCommunityRulesBtn.disabled = true;
-    fetchCommunityRulesBtn.title = "Community rule retrieval is unavailable until the server integration is configured.";
-  }
 
   const wizardDialog = document.getElementById("wizard-dialog") as HTMLDialogElement | null;
   const wizardStep1 = document.getElementById("wizard-step-1") as HTMLDivElement | null;
@@ -4521,7 +4856,6 @@ export async function initPopup(): Promise<void> {
   let currentProposals: WizardAnalysis[] = [];
   let selectedProposalIndex = 0;
   let contributeTargetPatternId: string | null = null;
-  let isCommunityLinked = false;
 
   function showWizardStep(step: 1 | 2 | 3 | 4) {
     if (!wizardStep1 || !wizardStep2 || !wizardStep3 || !wizardStep4) return;
@@ -4792,27 +5126,20 @@ export async function initPopup(): Promise<void> {
   });
 
   contribCancelBtn?.addEventListener("click", () => contribConsentDialog?.close());
+  // Consent given: submit through the live gateway path (POPUP_API_SUBMIT_LOGIC
+  // -> handleApiSubmitLogic: token + logic_submission capability gate, then
+  // pre-send screening in submitLogic). The community message type this used
+  // to send is stubbed in the worker and always errors, so the normal Share
+  // Rule click could never reach the gateway through it.
   contribConfirmBtn?.addEventListener("click", () => {
     if (contributeTargetPatternId) {
       void chrome.runtime.sendMessage({
-        type: "POPUP_COMMUNITY_CONTRIBUTE",
+        type: "POPUP_API_SUBMIT_LOGIC",
         requestId: requestId(),
         patternId: contributeTargetPatternId,
       });
     }
     contribConsentDialog?.close();
-  });
-
-  linkCommunityBtn?.addEventListener("click", () => {
-    if (isCommunityLinked) {
-      void chrome.runtime.sendMessage({ type: "POPUP_COMMUNITY_ACCOUNT_UNLINK", requestId: requestId() });
-    } else {
-      void chrome.runtime.sendMessage({ type: "POPUP_COMMUNITY_ACCOUNT_LINK_FREE", requestId: requestId() });
-    }
-  });
-
-  fetchCommunityRulesBtn?.addEventListener("click", () => {
-    void chrome.runtime.sendMessage({ type: "POPUP_COMMUNITY_FETCH_COMMUNITY_RULES", requestId: requestId() });
   });
 
   exportCustomRulesBtn?.addEventListener("click", async () => {
@@ -4938,7 +5265,7 @@ export async function initPopup(): Promise<void> {
         const submitLogicBtn = document.createElement("button");
         submitLogicBtn.className = "btn btn--ghost btn--sm";
         submitLogicBtn.textContent = "Share Rule";
-        submitLogicBtn.title = "Submit anonymized rule pattern (requires consent or connected gateway)";
+        submitLogicBtn.title = "Share the rule pattern and cues with GovernWorld — screened locally first, then sent to the gateway (requires consent or a connected gateway).";
         submitLogicBtn.addEventListener("click", () => {
           contributeTargetPatternId = pat.id;
           if (contribConsentDialog && typeof contribConsentDialog.showModal === "function") {
@@ -5327,41 +5654,6 @@ export async function initPopup(): Promise<void> {
   const initialPolicies = await loadSitePolicies();
   renderSitePolicies(initialPolicies);
 
-  function renderCommunityAccount(_account: CommunityAccount | null) {
-    isCommunityLinked = false;
-    if (linkCommunityBtn) linkCommunityBtn.textContent = "Community Account Unavailable";
-    if (communityAccountStatus) communityAccountStatus.textContent = "Community features are unavailable until server authorization is configured.";
-  }
-
-  function renderCommunityRules(rules: CommunityRule[]) {
-    if (!communityRulesList) return;
-    communityRulesList.replaceChildren();
-    if (!rules || rules.length === 0) {
-      const empty = document.createElement("p");
-      empty.className = "footnote";
-      empty.textContent = "No community rules fetched yet.";
-      communityRulesList.appendChild(empty);
-      return;
-    }
-    for (const rule of rules) {
-      const item = document.createElement("li");
-      item.className = "finding";
-      item.style.flexDirection = "column";
-
-      const title = document.createElement("strong");
-      title.textContent = `${rule.name} (by ${rule.createdByHandle})`;
-      title.style.fontSize = "12px";
-
-      const code = document.createElement("code");
-      code.textContent = `/${rule.pattern}/${rule.flags} [${rule.category}]`;
-      code.style.fontSize = "11px";
-      code.style.color = "var(--text-muted)";
-
-      item.append(title, code);
-      communityRulesList.appendChild(item);
-    }
-  }
-
   /** Show the one-time "verify your work" accuracy notice after a scan completes. */
   async function maybeShowVerifyNotice(): Promise<void> {
     const currentSettings = await loadSettings();
@@ -5579,6 +5871,12 @@ export async function initPopup(): Promise<void> {
         return;
       }
       hideDocProgress();
+      // F1: remember whether this state is a fresh restore (popup just
+      // opened, no session adopted yet) so the branch can land the user on
+      // the Document tab below. A later POPUP_DOC_STATE for an already
+      // adopted session must not yank the user out of whatever tab they
+      // are on (e.g. the preview path, where they are already on Document).
+      const isFreshRestore = lastDoc === null;
       // Match on fileKey so the first reply can land on the placeholder session
       // created by beginDocSession(), which has no docId yet. Fall back to docId
       // for a session the worker has already identified.
@@ -5612,6 +5910,11 @@ export async function initPopup(): Promise<void> {
       doc.pageOffset = message.pageOffset ?? 0;
       doc.truncated = message.truncated === true;
       renderDoc(doc);
+      // F1: a fresh restore means the popup was reloaded with an active
+      // document session. The markup default is the Protection tab, which
+      // would leave the restored studio hidden inside the hidden Document
+      // panel; land on Document so the redaction controls are reachable.
+      if (isFreshRestore) switchTab("document");
       void refreshStagedStorageAudit();
       const found = message.pages.reduce((n, p) => n + p.findings.length, 0);
       // The preview is finished, so the progress row must stay down. Calling
@@ -5871,8 +6174,10 @@ export async function initPopup(): Promise<void> {
       return;
     }
     if (message.type === "POPUP_API_SUBMIT_RESULT" || message.type === "POPUP_COMMUNITY_CONTRIBUTE_RESULT") {
-      if (communityAccountStatus) {
-        communityAccountStatus.textContent = message.success
+      const submitStatus = document.getElementById("logic-submit-status") as HTMLParagraphElement | null;
+      if (submitStatus) {
+        submitStatus.hidden = false;
+        submitStatus.textContent = message.success
           ? "Rule submitted for review."
           : message.error || "Rule submission unavailable.";
       }
@@ -5898,14 +6203,6 @@ export async function initPopup(): Promise<void> {
     }
     if (message.type === "POPUP_CUSTOM_PATTERNS_STATE") {
       renderCustomPatterns(message.patterns);
-      return;
-    }
-    if (message.type === "POPUP_COMMUNITY_ACCOUNT_DETAILS_STATE") {
-      renderCommunityAccount(message.account);
-      return;
-    }
-    if (message.type === "POPUP_COMMUNITY_COMMUNITY_RULES_STATE") {
-      renderCommunityRules(message.rules);
       return;
     }
     if (message.type === "POPUP_WIZARD_ANALYSIS_RESULT") {
@@ -5975,7 +6272,6 @@ export async function initPopup(): Promise<void> {
   const initialPatterns = await loadCustomPatterns().catch(() => null);
   if (initialPatterns) renderCustomPatterns(initialPatterns);
   void chrome.runtime.sendMessage({ type: "POPUP_CUSTOM_PATTERNS_GET", requestId: requestId() }).catch(() => {});
-  void chrome.runtime.sendMessage({ type: "POPUP_COMMUNITY_ACCOUNT_GET", requestId: requestId() }).catch(() => {});
   void chrome.runtime.sendMessage({ type: "POPUP_MANAGEMENT_GET_STATUS", requestId: requestId() }).catch(() => {});
   void chrome.runtime.sendMessage({ type: "POPUP_API_GET_STATUS", requestId: requestId() }).catch(() => {});
 
@@ -6053,7 +6349,7 @@ export async function initPopup(): Promise<void> {
       const handoff = data?.docHandoffPending as { timestamp?: number } | undefined;
       if (!handoff || typeof handoff !== "object" || Date.now() - (handoff.timestamp ?? 0) > 30_000) return;
       await chrome.storage.local.remove("docHandoffPending");
-      switchTab("protection");
+      switchTab("document");
       setDocStatus(t(currentLang, "doc_handoff_hint"), false);
       const dz = document.getElementById("doc-dropzone");
       if (dz) {

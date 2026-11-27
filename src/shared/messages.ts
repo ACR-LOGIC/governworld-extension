@@ -562,6 +562,11 @@ function normalizePinnedTargetInfo(value: unknown): import("./types.js").PinnedT
         url: item.url.slice(0, 1024),
         domain: item.domain.slice(0, 256),
         active: item.active === true,
+        // Favicons are browser-supplied URLs; only http(s) and the browser's
+        // own chrome://favicon/ scheme are passed through.
+        ...(typeof item.favIconUrl === "string" && /^(https?:|chrome:\/\/favicon\/)/.test(item.favIconUrl)
+          ? { favIconUrl: item.favIconUrl.slice(0, 1024) }
+          : {}),
       });
     }
   }

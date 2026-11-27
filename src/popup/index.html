@@ -44,6 +44,11 @@
               </svg>
             </span>
             <span id="profile-avatar-pip" class="avatar-status-pip" aria-hidden="true"></span>
+            <span class="profile-avatar-chevron" aria-hidden="true">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </span>
           </button>
           <div id="profile-popover" class="profile-popover" role="dialog" aria-labelledby="profile-popover-name" hidden>
             <div class="profile-popover__header">
@@ -56,9 +61,12 @@
             <div id="profile-popover-mode" class="profile-popover__mode-pill">LOCAL</div>
             <p class="footnote profile-popover__guarantee" data-i18n="profile_guarantee">Page text and documents stay on this device.</p>
             <div class="profile-popover__actions">
-              <button id="profile-goto-account-btn" class="profile-popover__item" type="button" data-i18n="profile_open_account">Account &amp; Management</button>
-              <button id="profile-goto-protection-btn" class="profile-popover__item" type="button" data-i18n="profile_open_protection">Protection Settings</button>
-              <button id="profile-goto-appearance-btn" class="profile-popover__item" type="button" data-i18n="profile_open_appearance">Appearance &amp; Language</button>
+              <button id="profile-goto-account-btn" class="profile-popover__item" type="button" data-i18n="settings_profile">Profile &amp; Account</button>
+              <button id="profile-pair-btn" class="profile-popover__item" type="button" data-i18n="profile_pair_extension">Pair Extension</button>
+              <button id="profile-goto-settings-btn" class="profile-popover__item" type="button" data-i18n="tab_settings">Settings</button>
+              <button id="profile-help-btn" class="profile-popover__item" type="button" data-i18n="profile_help_guides">Help &amp; Guides</button>
+              <button id="profile-goto-about-btn" class="profile-popover__item" type="button" data-i18n="settings_about">About &amp; Diagnostics</button>
+              <button id="profile-signout-btn" class="profile-popover__item profile-popover__item--danger" type="button" data-i18n="profile_sign_out">Sign Out</button>
             </div>
           </div>
         </div>
@@ -84,20 +92,33 @@
 
     <nav class="tab-nav" role="tablist" aria-label="Main navigation">
       <button class="tab-btn tab-btn--active" type="button" role="tab" aria-selected="true" aria-controls="tab-protection" data-tab="protection" id="tab-btn-protection">
-        <span class="tab-btn__icon" aria-hidden="true">◉</span>
+        <span class="tab-btn__icon" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            <polyline points="9 12 11 14 15 10" />
+          </svg>
+        </span>
         <span data-i18n="tab_protection">Protection</span>
       </button>
       <button class="tab-btn" type="button" role="tab" aria-selected="false" aria-controls="tab-logic" data-tab="logic" id="tab-btn-logic">
-        <span class="tab-btn__icon" aria-hidden="true">⚡</span>
+        <span class="tab-btn__icon" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="16 18 22 12 16 6" />
+            <polyline points="8 6 2 12 8 18" />
+          </svg>
+        </span>
         <span data-i18n="tab_logic">Logic</span>
       </button>
-      <button class="tab-btn" type="button" role="tab" aria-selected="false" aria-controls="tab-review" data-tab="review" id="tab-btn-review">
-        <span class="tab-btn__icon" aria-hidden="true">◈</span>
-        <span data-i18n="tab_review">Review</span>
-      </button>
-      <button class="tab-btn" type="button" role="tab" aria-selected="false" aria-controls="tab-settings" data-tab="settings" id="tab-btn-settings">
-        <span class="tab-btn__icon" aria-hidden="true">⚙</span>
-        <span data-i18n="tab_settings">Settings</span>
+      <button class="tab-btn" type="button" role="tab" aria-selected="false" aria-controls="tab-document" data-tab="document" id="tab-btn-document">
+        <span class="tab-btn__icon" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="16" y1="13" x2="8" y2="13" />
+            <line x1="16" y1="17" x2="8" y2="17" />
+          </svg>
+        </span>
+        <span data-i18n="tab_document">Document</span>
       </button>
     </nav>
 
@@ -135,15 +156,23 @@
         </div>
       </div>
 
+      <div class="protection-hero">
+        <span class="protection-hero__shield" aria-hidden="true">
+          <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            <polyline points="9 12 11 14 15 10" />
+          </svg>
+        </span>
+        <div class="protection-hero__text">
+          <h2 data-i18n="scan_page_btn">Scan This Page</h2>
+          <p class="footnote" data-i18n="scan_hero_desc">Check for sensitive information on this page.</p>
+        </div>
+      </div>
+
       <div class="protection-actions">
         <button id="scan-btn" class="btn btn--primary btn--block" type="button" data-i18n="scan_page_btn">Scan This Page</button>
-        <div class="action-grid">
-          <button id="open-doc-btn" class="btn btn--ghost" type="button" data-i18n="doc_redaction">Document Redaction</button>
-          <button id="open-wizard-btn" class="btn btn--ghost" type="button" data-i18n="create_custom_rule">Create Personal Logic</button>
-        </div>
         <div class="action-row">
           <button type="button" class="help-link help-link--sm" data-guide="guide-page-scan" data-i18n="how_to_scan" data-i18n-aria-label="guide-page-scan">How to scan ↗</button>
-          <button id="clear-data-btn" class="btn btn--link" type="button" data-i18n="clear_session">Clear session</button>
         </div>
       </div>
 
@@ -195,6 +224,100 @@
         </div>
       </div>
 
+      <div id="scan-result-banner" class="scan-result-banner" data-tone="clean" role="status" hidden>
+        <span class="scan-result-banner__icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+            <polyline points="22 4 12 14.01 9 11.01" />
+          </svg>
+        </span>
+        <div class="scan-result-banner__text">
+          <strong id="scan-result-banner-title" data-i18n="scan_banner_title">Scan Complete</strong>
+          <span id="scan-result-banner-text"></span>
+        </div>
+        <button id="scan-banner-details-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="scan_banner_view_details">View Details</button>
+      </div>
+
+      <div id="tab-scan-status" class="tab-scan-status" aria-label="Tab scan status">
+        <div class="section-header">
+          <h3 data-i18n="tab_scan_status_title">Tab Scan Status</h3>
+        </div>
+        <p class="footnote" data-i18n="tab_scan_status_desc">Which open tabs have been scanned. Tabs are only scanned when you choose to scan them.</p>
+        <ul id="tab-scan-list" class="tab-scan-list" aria-label="Open tabs and their scan status"></ul>
+        <p id="tab-scan-empty" class="footnote" data-i18n="tab_scan_empty" hidden>No scannable tabs open.</p>
+        <div class="review-overview-grid">
+        <div class="review-stats">
+          <h3 data-i18n="recent_protection">Recent Protection</h3>
+          <div class="stats-grid">
+            <div class="stat-card">
+              <span class="stat-value" id="review-findings-count">0</span>
+              <span class="stat-label" data-i18n="findings_detected">Findings detected</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-value" id="review-protected-count">0</span>
+              <span class="stat-label" data-i18n="protected_count">Protected</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-value" id="review-pages-count">0</span>
+              <span class="stat-label" data-i18n="pages_scanned">Pages scanned</span>
+            </div>
+          </div>
+        </div>
+        <div class="coverage-section">
+          <h3 data-i18n="coverage_title">Coverage</h3>
+          <p id="coverage-status" class="coverage-status" role="status" aria-live="polite" hidden></p>
+          <p id="coverage-windows-detail" class="footnote" hidden></p>
+          <div class="coverage-grid">
+            <div class="coverage-item">
+              <span class="coverage-icon" aria-hidden="true">·</span>
+              <span data-i18n="coverage_page">Page content</span>
+            </div>
+            <div class="coverage-item">
+              <span class="coverage-icon" aria-hidden="true">·</span>
+              <span data-i18n="coverage_visible">Visible text</span>
+            </div>
+            <div class="coverage-item">
+              <span class="coverage-icon" aria-hidden="true">·</span>
+              <span data-i18n="coverage_images">Images</span>
+            </div>
+            <div class="coverage-item">
+              <span class="coverage-icon" aria-hidden="true">·</span>
+              <span data-i18n="coverage_docs">Documents</span>
+            </div>
+            <div class="coverage-item">
+              <span class="coverage-icon" aria-hidden="true">·</span>
+              <span data-i18n="coverage_ocr">OCR</span>
+            </div>
+          </div>
+          <p id="coverage-deferred" class="footnote" hidden></p>
+          <p class="footnote" data-i18n="coverage_note">Some content may be inaccessible to the extension. View coverage details.</p>
+          <button id="coverage-details-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="coverage_details">View Details</button>
+        </div>
+        </div>
+      <details id="tab-scan-howto-card" class="howto-card">
+        <summary class="howto-card__summary">
+          <span data-i18n="howto_review_title">How to Read Coverage &amp; Verify Audit Logs</span>
+          <span class="guide-badge" data-i18n="howto_audit_badge">Verification</span>
+        </summary>
+        <div class="howto-card__body">
+          <ol class="howto-steps">
+            <li>
+              <strong data-i18n="howto_rev_step1_title">1. Recent Protection Telemetry:</strong>
+              <span data-i18n="howto_rev_step1_desc">Shows cumulative findings detected, items masked or redacted, and pages/documents scanned across your local audit log.</span>
+            </li>
+            <li>
+              <strong data-i18n="howto_rev_step2_title">2. Honest Scan Coverage:</strong>
+              <span data-i18n="howto_rev_step2_desc">Green (✓) means every discovered region was inspected. Amber (!) or Red (✕) warns when cross-origin iframes, DRM media, or deferred images could not be inspected automatically.</span>
+            </li>
+            <li>
+              <strong data-i18n="howto_rev_step3_title">3. Signed Audit &amp; Compliance Certificate:</strong>
+              <span data-i18n="howto_rev_step3_desc">Click Export Signed Audit below to download your ECDSA P-256 signed .jsonl log, .sig.json cryptographic proof, and printable HTML Compliance Certificate.</span>
+            </li>
+          </ol>
+        </div>
+      </details>
+      </div>
+
       <p id="cloud-notice" class="cloud-notice" hidden></p>
 
       <div id="results-section" class="results-section" hidden>
@@ -243,6 +366,193 @@
         </div>
       </div>
 
+      <div id="quick-tools" class="quick-tools" aria-label="Protection quick tools">
+        <div class="section-header">
+          <h3 data-i18n="quick_tools_title">Protection Quick Tools</h3>
+        </div>
+        <!--
+          Tool tiles are navigation/status entry points, not a second set of
+          controls: Paste Shield anchors the mode selector below, Page Masking
+          jumps to the masking controls in Scan Findings (no duplicate
+          Apply/Undo/Remove/Copy buttons), and More Tools opens the overflow
+          menu below. The Document tab remains the only home for document
+          redaction, so there is deliberately no Document Redaction tile here.
+        -->
+        <div class="tool-tiles" role="group" aria-label="Protection tools">
+          <button id="tool-tile-paste-shield" class="tool-tile" type="button">
+            <span class="tool-tile__icon" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg>
+            </span>
+            <span class="tool-tile__text">
+              <span class="tool-tile__label" data-i18n="paste_guard_toggle">Paste Shield</span>
+              <span id="tool-tile-paste-shield-sub" class="tool-tile__sub" data-i18n="status_val_this_tab">This Tab</span>
+            </span>
+            <span class="tool-tile__chevron" aria-hidden="true">›</span>
+          </button>
+          <button id="tool-tile-page-masking" class="tool-tile" type="button">
+            <span class="tool-tile__icon" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+                <line x1="1" y1="1" x2="23" y2="23" />
+              </svg>
+            </span>
+            <span class="tool-tile__text">
+              <span class="tool-tile__label" data-i18n="tool_tile_page_masking">Page Masking</span>
+              <span id="tool-tile-page-masking-sub" class="tool-tile__sub" data-i18n="tool_tile_page_masking_none">No findings yet</span>
+            </span>
+            <span class="tool-tile__chevron" aria-hidden="true">›</span>
+          </button>
+          <button id="tool-tile-more-tools" class="tool-tile" type="button" aria-controls="quick-tools-more">
+            <span class="tool-tile__icon" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="7" height="7" rx="1" />
+                <rect x="14" y="3" width="7" height="7" rx="1" />
+                <rect x="14" y="14" width="7" height="7" rx="1" />
+                <rect x="3" y="14" width="7" height="7" rx="1" />
+              </svg>
+            </span>
+            <span class="tool-tile__text">
+              <span class="tool-tile__label" data-i18n="more_tools_title">More Tools</span>
+              <span class="tool-tile__sub" data-i18n="tool_tile_more_tools_sub">Clear session and shortcuts</span>
+            </span>
+            <span class="tool-tile__chevron" aria-hidden="true">›</span>
+          </button>
+        </div>
+        <div class="quick-tools__group">
+          <h4 data-i18n="paste_guard_toggle">Paste Shield</h4>
+          <p class="footnote" data-i18n="paste_mode_desc">Choose where pastes are guarded.</p>
+          <div class="paste-mode-selector" role="group" aria-label="Paste Shield mode">
+            <button id="paste-mode-this-tab-btn" class="btn btn--ghost btn--sm paste-mode-btn" type="button" data-paste-mode="this-tab" aria-pressed="true" data-i18n="status_val_this_tab">This Tab</button>
+            <button id="paste-mode-always-btn" class="btn btn--ghost btn--sm paste-mode-btn" type="button" data-paste-mode="always-on" aria-pressed="false" data-i18n="paste_mode_always">Always On</button>
+            <button id="paste-mode-off-btn" class="btn btn--ghost btn--sm paste-mode-btn" type="button" data-paste-mode="off" aria-pressed="false" data-i18n="paste_mode_off">Off</button>
+          </div>
+          <button type="button" class="help-link help-link--sm" data-guide="guide-paste-guard" data-i18n="info_btn" data-i18n-aria-label="guide-paste-guard">Info ↗</button>
+        </div>
+        <details id="quick-tools-more" class="overflow-menu quick-tools__more">
+          <summary class="btn btn--ghost btn--sm" data-i18n="more_tools_title">More Tools</summary>
+          <div class="overflow-menu__body">
+            <button id="clear-data-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="clear_session">Clear session</button>
+            <button type="button" class="help-link help-link--sm" data-guide="guide-shortcuts" data-i18n="shortcuts_guide_btn" data-i18n-aria-label="guide-shortcuts">Shortcuts ↗</button>
+          </div>
+        </details>
+      </div>
+
+      <footer class="protection-footer">
+        <span class="protection-footer__icon" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="12" y1="16" x2="12" y2="12" />
+            <line x1="12" y1="8" x2="12.01" y2="8" />
+          </svg>
+        </span>
+        <span data-i18n="protection_footer_note">Your data stays on your device. No data is uploaded.</span>
+        <a id="protection-footer-learn-more" href="#" data-i18n="protection_footer_learn_more">Learn more →</a>
+      </footer>
+    </section>
+
+    <!-- Logic Tab -->
+    <section id="tab-logic" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-logic" hidden>
+      <div class="section-header">
+        <h2 data-i18n="my_logic">My Logic</h2>
+        <button type="button" class="help-link help-link--sm" data-guide="guide-wizard" data-i18n="wizard_guide_btn" data-i18n-aria-label="guide-wizard">Wizard guide ↗</button>
+      </div>
+      <p class="footnote" data-i18n="logic_desc">Create and manage personal detection logic. All processing happens locally on your device.</p>
+      <details id="logic-howto-card" class="howto-card">
+        <summary class="howto-card__summary">
+          <span data-i18n="howto_logic_title">How to Build Personal Rules &amp; Website Policies</span>
+          <span class="guide-badge" data-i18n="howto_steps_badge">Step-by-Step</span>
+        </summary>
+        <div class="howto-card__body">
+          <ol class="howto-steps">
+            <li>
+              <strong data-i18n="howto_logic_step1_title">1. Personal Detection Wizard (4 Steps):</strong>
+              <span data-i18n="howto_logic_step1_desc">Click + Create Personal Logic → Step 1: Enter 2+ positive examples (or import a .txt/.csv file) and optional negative examples → Step 2: Pick a generated regex proposal → Step 3: Test live against sample text → Step 4: Set rule name, category, confidence, optional nearby Context Cues, and Min/Max length.</span>
+            </li>
+            <li>
+              <strong data-i18n="howto_logic_step2_title">2. Location-Aware Document Rules:</strong>
+              <span data-i18n="howto_logic_step2_desc">In Document Studio, draw boxes around a recurring field (such as a header ID) on at least 3 pages and click Learn Location Rule to save a normalized coordinate rule.</span>
+            </li>
+            <li>
+              <strong data-i18n="howto_logic_step3_title">3. Policy Studio (Website DLP Rules):</strong>
+              <span data-i18n="howto_logic_step3_desc">Click + Create Site Policy → pick a Quick Template (AI Chatbots, Health Portals, Dev &amp; Secrets, Block Full Site) or type a domain (e.g. chatgpt.com) → choose data scope and action (Strict Block, Auto-Redact, or Warn).</span>
+            </li>
+          </ol>
+        </div>
+      </details>
+      <div class="logic-actions">
+        <button id="open-wizard-btn-2" class="btn btn--primary" type="button" data-i18n="create_custom_rule">+ Create Personal Logic</button>
+        <details class="overflow-menu">
+          <summary class="btn btn--ghost btn--sm" data-i18n="more_tools_title">More Tools</summary>
+          <div class="overflow-menu__body">
+            <button id="export-custom-rules-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="export_rules_btn">Export Rules</button>
+            <button id="import-custom-rules-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="import_rules_btn">Import Rules</button>
+          </div>
+        </details>
+        <input id="import-custom-rules-file" type="file" accept=".json,application/json" class="visually-hidden" aria-label="Import rules file" />
+      </div>
+      <div class="custom-patterns-section">
+        <h3 data-i18n="my_custom_patterns">Personal Logic</h3>
+        <p id="no-custom-patterns" class="footnote" data-i18n="no_custom_patterns" hidden>No personal logic yet. Create your first rule.</p>
+        <ul id="custom-patterns-list" class="findings-list"></ul>
+        <p id="logic-submit-status" class="footnote" role="status" aria-live="polite" hidden></p>
+      </div>
+      <div class="policy-studio-section">
+        <div class="section-header">
+          <h3 data-i18n="policy_studio_title">Policy Studio</h3>
+          <span class="guide-badge" data-i18n="policy_studio_badge">DLP Rules</span>
+        </div>
+        <p class="footnote" data-i18n="policy_studio_desc">Enforce URL-specific privacy rules to block, redact, or warn on sensitive data.</p>
+        <div class="logic-actions">
+          <button id="open-policy-btn" class="btn btn--primary" type="button" data-i18n="create_policy_btn">+ Create Site Policy</button>
+          <div class="logic-actions-row">
+            <button id="export-policies-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="export_policies_btn">Export Policies</button>
+            <button id="import-policies-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="import_policies_btn">Import Policies</button>
+          </div>
+          <input id="import-policies-file" type="file" accept=".json,application/json" class="visually-hidden" aria-label="Import policies file" />
+        </div>
+        <p id="no-policies" class="footnote" data-i18n="no_policies" hidden>No site policies active. Create a policy to govern specific websites.</p>
+        <ul id="policies-list" class="findings-list"></ul>
+      </div>
+    </section>
+
+    <!-- Document Tab -->
+    <section id="tab-document" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-document" hidden>
+      <div class="section-header">
+        <h2 data-i18n="doc_redaction_title">Document Redaction</h2>
+      </div>
+      <p class="footnote" data-i18n="doc_redaction_desc">Upload a PDF, Word document, or image to scan, review, and redact it on this device.</p>
+      <div class="dropzone-section">
+        <div id="doc-dropzone" class="dropzone" role="region" aria-label="Document upload" tabindex="0">
+          <input id="doc-file-input" type="file" accept=".pdf,.docx,.png,.jpg,.jpeg,.webp" class="visually-hidden" aria-label="Select file" />
+          <span class="dropzone__icon" aria-hidden="true">
+            <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+          </span>
+          <strong data-i18n="dropzone_title">Upload a Document</strong>
+          <span class="footnote" data-i18n="dropzone_desc">Drag and drop or choose a file</span>
+        </div>
+        <button id="doc-choose-file-btn" class="btn btn--primary btn--sm" type="button" data-i18n="doc_choose_file_btn">Choose File</button>
+        <!--
+          The limits, stated before the user picks a file: what formats are
+          accepted, how large, and how many pages fit in one pass. The last one
+          used to be discovered only by watching pages 21+ vanish.
+        -->
+        <p id="doc-dropzone-hint" class="footnote" data-i18n="dropzone_formats">Supports PDF (.pdf), Word (.docx), and Images (.png, .jpg, .webp) up to 20 MB</p>
+        <div class="form-row" style="margin-top: 8px;">
+          <label for="doc-ocr-language-select" data-i18n="ocr_lang_label">Document OCR Language</label>
+          <select id="doc-ocr-language-select" class="preset-select" aria-label="Document OCR recognition language">
+            <!-- Options are populated from src/shared/ocrLanguages.ts so the list can only ever
+                 contain languages whose traineddata is actually bundled. -->
+            <option value="eng">English (eng)</option>
+          </select>
+          <button type="button" class="help-link help-link--sm" data-guide="guide-ocr-languages" data-i18n="info_btn" data-i18n-aria-label="guide-ocr-languages">Info ↗</button>
+        </div>
+      </div>
       <div id="doc-workspace" class="doc-workspace" hidden>
         <div class="doc-header">
           <strong id="doc-filename" class="doc-filename"></strong>
@@ -252,6 +562,8 @@
           <strong data-i18n="howto_doc_title">Document Studio Instructions:</strong>
           <span data-i18n="howto_doc_steps">1. Click a box on any page thumbnail to toggle it, or drag with Draw Box to add custom regions. 2. Draw boxes on 3+ pages and click Learn Location Rule to save a reusable page-region detector. 3. Pick Blackout, Whiteout, or Text Stamp, then click Open full-screen review or Redact &amp; Download.</span>
         </div>
+        <details class="doc-controls-group" open>
+          <summary data-i18n="doc_controls_title">Redaction tools</summary>
         <div class="doc-toolbar" role="toolbar" aria-label="Document Studio canvas tools">
           <button id="tool-draw-box" class="tool-btn tool-btn--active" type="button" data-i18n="tool_draw_box">✏️ Draw Box</button>
           <button id="tool-clear-custom" class="tool-btn" type="button" data-i18n="tool_clear_custom">🧹 Clear Drawn</button>
@@ -287,6 +599,7 @@
             </div>
           </div>
         </div>
+        </details>
         <div class="doc-findings-section">
           <div class="section-header">
             <h4 data-i18n="doc_findings_title">Document Findings</h4>
@@ -309,10 +622,47 @@
           <ul id="doc-findings" class="findings-list" role="list"></ul>
         </div>
   <div class="doc-actions">
-    <button id="doc-open-review-btn" class="btn btn--primary btn--sm" type="button" data-i18n="doc_review_btn">Open full-screen review</button>
-    <button id="doc-redact-btn" class="btn btn--sm" type="button" data-i18n="redact_download_btn">Redact &amp; Download</button>
     <button id="doc-clear-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="start_over_btn">Start Over</button>
   </div>
+      </div>
+
+      <!--
+        Document Tools groups the document actions. It sits outside
+        #doc-workspace on purpose: the workspace is hidden after a redaction
+        (clearDocUi), while Print / Save as PDF must stay reachable then.
+        Rows omitted deliberately, per the mockup-layout plan §1i/§3:
+        - "Apply Masks" has no document equivalent (page masking applies only
+          to web pages; a document's boxes are applied at redact time).
+        - "Block Sensitive Data" has no document mechanism (Policy Studio
+          blocks are URL-keyed; the document pipeline has no policy input).
+        - "Download Redacted" is not a standalone row: it is the outcome of
+          Redact Document, inside the existing confirm dialog.
+        Print / Save as PDF appears only after a redaction that produced
+        pixel-verified pages, and opens a read-only render of those pages. It
+        never re-redacts anything: the boxes were already painted and verified
+        on this device, so what prints is exactly what was checked.
+      -->
+      <div class="doc-tools-card" aria-label="Document tools">
+        <div class="section-header">
+          <h4 data-i18n="doc_tools_title">Document Tools</h4>
+        </div>
+        <p class="footnote" data-i18n="doc_tools_desc">Once uploaded, review the findings and redact sensitive information.</p>
+        <ul class="doc-tools-list">
+          <li>
+            <button id="doc-redact-btn" class="btn btn--primary btn--sm doc-tools-list__btn" type="button" data-i18n="doc_redact_btn">Redact Document</button>
+            <span class="doc-tools-list__chevron" aria-hidden="true">›</span>
+          </li>
+          <li>
+            <button id="doc-open-review-btn" class="btn btn--ghost btn--sm doc-tools-list__btn" type="button" data-i18n="doc_review_btn">Open full-screen review</button>
+            <span class="doc-tools-list__chevron" aria-hidden="true">›</span>
+          </li>
+          <li id="doc-print-bar" hidden>
+            <button type="button" class="btn btn--ghost btn--sm doc-tools-list__btn" id="doc-print-btn" data-i18n="doc_print_btn">
+              Print / Save as PDF…
+            </button>
+            <span class="doc-tools-list__chevron" aria-hidden="true">›</span>
+          </li>
+        </ul>
       </div>
 
         <div id="doc-progress" class="doc-progress" hidden role="status" aria-live="polite">
@@ -367,244 +717,134 @@
           <p id="doc-text-limit-warning-text" class="summary__note"></p>
         </div>
 
-        <!--
-          Print / PDF view for the redacted output. Appears only after a
-          redaction that produced pixel-verified pages, and opens a read-only
-          render of those pages. It never re-redacts anything: the boxes were
-          already painted and verified on this device, so what prints is exactly
-          what was checked.
-        -->
-        <div id="doc-print-bar" class="form-row" hidden>
-          <button type="button" class="btn btn--ghost btn--sm" id="doc-print-btn" data-i18n="doc_print_btn">
-            Print / Save as PDF…
-          </button>
-        </div>
+        <footer class="doc-footer">
+          <span class="protection-footer__icon" aria-hidden="true">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="16" x2="12" y2="12" />
+              <line x1="12" y1="8" x2="12.01" y2="8" />
+            </svg>
+          </span>
+          <span data-i18n="doc_footer_note">Keep your sensitive information safe with GovernWorld.</span>
+        </footer>
 
-
-      <div class="dropzone-section">
-        <div id="doc-dropzone" class="dropzone" role="region" aria-label="Document upload" tabindex="0">
-          <input id="doc-file-input" type="file" accept=".pdf,.docx,.png,.jpg,.jpeg,.webp" class="visually-hidden" aria-label="Select file" />
-          <strong data-i18n="dropzone_title">Drag &amp; drop a document or image here</strong>
-          <span class="footnote" data-i18n="dropzone_desc">or click to select file</span>
-        </div>
-        <!--
-          The limits, stated before the user picks a file: what formats are
-          accepted, how large, and how many pages fit in one pass. The last one
-          used to be discovered only by watching pages 21+ vanish.
-        -->
-        <p id="doc-dropzone-hint" class="footnote" data-i18n="dropzone_formats">Supports PDF (.pdf), Word (.docx), and Images (.png, .jpg, .webp) up to 20 MB</p>
-        <div class="form-row" style="margin-top: 8px;">
-          <label for="doc-ocr-language-select" data-i18n="ocr_lang_label">Document OCR Language</label>
-          <select id="doc-ocr-language-select" class="preset-select" aria-label="Document OCR recognition language">
-            <!-- Options are populated from src/shared/ocrLanguages.ts so the list can only ever
-                 contain languages whose traineddata is actually bundled. -->
-            <option value="eng">English (eng)</option>
-          </select>
-          <button type="button" class="help-link help-link--sm" data-guide="guide-ocr-languages" data-i18n="info_btn" data-i18n-aria-label="guide-ocr-languages">Info ↗</button>
-        </div>
-      </div>
-    </section>
-
-    <!-- Logic Tab -->
-    <section id="tab-logic" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-logic" hidden>
-      <div class="section-header">
-        <h2 data-i18n="my_logic">My Logic</h2>
-        <button type="button" class="help-link help-link--sm" data-guide="guide-wizard" data-i18n="wizard_guide_btn" data-i18n-aria-label="guide-wizard">Wizard guide ↗</button>
-      </div>
-      <p class="footnote" data-i18n="logic_desc">Create and manage personal detection logic. All processing happens locally on your device.</p>
-      <details id="logic-howto-card" class="howto-card">
-        <summary class="howto-card__summary">
-          <span data-i18n="howto_logic_title">How to Build Personal Rules &amp; Website Policies</span>
-          <span class="guide-badge" data-i18n="howto_steps_badge">Step-by-Step</span>
-        </summary>
-        <div class="howto-card__body">
-          <ol class="howto-steps">
-            <li>
-              <strong data-i18n="howto_logic_step1_title">1. Personal Detection Wizard (4 Steps):</strong>
-              <span data-i18n="howto_logic_step1_desc">Click + Create Personal Logic → Step 1: Enter 2+ positive examples (or import a .txt/.csv file) and optional negative examples → Step 2: Pick a generated regex proposal → Step 3: Test live against sample text → Step 4: Set rule name, category, confidence, optional nearby Context Cues, and Min/Max length.</span>
-            </li>
-            <li>
-              <strong data-i18n="howto_logic_step2_title">2. Location-Aware Document Rules:</strong>
-              <span data-i18n="howto_logic_step2_desc">In Document Studio, draw boxes around a recurring field (such as a header ID) on at least 3 pages and click Learn Location Rule to save a normalized coordinate rule.</span>
-            </li>
-            <li>
-              <strong data-i18n="howto_logic_step3_title">3. Policy Studio (Website DLP Rules):</strong>
-              <span data-i18n="howto_logic_step3_desc">Click + Create Site Policy → pick a Quick Template (AI Chatbots, Health Portals, Dev &amp; Secrets, Block Full Site) or type a domain (e.g. chatgpt.com) → choose data scope and action (Strict Block, Auto-Redact, or Warn).</span>
-            </li>
-          </ol>
-        </div>
-      </details>
-      <div class="logic-actions">
-        <button id="open-wizard-btn-2" class="btn btn--primary" type="button" data-i18n="create_custom_rule">+ Create Personal Logic</button>
-        <div class="logic-actions-row">
-          <button id="export-custom-rules-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="export_rules_btn">Export Rules</button>
-          <button id="import-custom-rules-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="import_rules_btn">Import Rules</button>
-        </div>
-        <input id="import-custom-rules-file" type="file" accept=".json,application/json" class="visually-hidden" aria-label="Import rules file" />
-      </div>
-      <div class="custom-patterns-section">
-        <h3 data-i18n="my_custom_patterns">Personal Logic</h3>
-        <p id="no-custom-patterns" class="footnote" data-i18n="no_custom_patterns" hidden>No personal logic yet. Create your first rule.</p>
-        <ul id="custom-patterns-list" class="findings-list"></ul>
-      </div>
-      <div class="policy-studio-section">
-        <div class="section-header">
-          <h3 data-i18n="policy_studio_title">Policy Studio</h3>
-          <span class="guide-badge" data-i18n="policy_studio_badge">DLP Rules</span>
-        </div>
-        <p class="footnote" data-i18n="policy_studio_desc">Enforce URL-specific privacy rules to block, redact, or warn on sensitive data.</p>
-        <div class="logic-actions">
-          <button id="open-policy-btn" class="btn btn--primary" type="button" data-i18n="create_policy_btn">+ Create Site Policy</button>
-          <div class="logic-actions-row">
-            <button id="export-policies-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="export_policies_btn">Export Policies</button>
-            <button id="import-policies-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="import_policies_btn">Import Policies</button>
-          </div>
-          <input id="import-policies-file" type="file" accept=".json,application/json" class="visually-hidden" aria-label="Import policies file" />
-        </div>
-        <p id="no-policies" class="footnote" data-i18n="no_policies" hidden>No site policies active. Create a policy to govern specific websites.</p>
-        <ul id="policies-list" class="findings-list"></ul>
-      </div>
-      <details class="community-disclosure">
-        <summary data-i18n="community_disclosure_summary">Community &amp; cloud status (unavailable in this release)</summary>
-        <div class="community-section">
-          <h3 data-i18n="community_pack_title">Community Logic</h3>
-          <p class="footnote">Community rule packs are <strong>not active in this release</strong>. Local logic remains on your device.</p>
-          <div class="logic-actions">
-            <button id="link-community-btn" class="btn btn--ghost btn--sm" type="button" disabled data-i18n="community_account_btn">Community Account Unavailable</button>
-            <button id="fetch-community-rules-btn" class="btn btn--ghost btn--sm" type="button" disabled data-i18n="community_rules_btn">Community Rules Unavailable</button>
-          </div>
-          <p id="community-account-status" class="footnote" role="status" aria-live="polite">Community logic is unavailable.</p>
-          <ul id="community-rules-list" class="findings-list"></ul>
-        </div>
-      </details>
-    </section>
-
-    <!-- Review Tab -->
-    <section id="tab-review" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-review" hidden>
-      <div class="section-header">
-        <h2 data-i18n="review_title">Review</h2>
-        <button type="button" class="help-link help-link--sm" data-guide="guide-verification" data-i18n="info_btn" data-i18n-aria-label="guide-verification">Info ↗</button>
-      </div>
-      <details id="review-howto-card" class="howto-card">
-        <summary class="howto-card__summary">
-          <span data-i18n="howto_review_title">How to Read Coverage &amp; Verify Audit Logs</span>
-          <span class="guide-badge" data-i18n="howto_audit_badge">Verification</span>
-        </summary>
-        <div class="howto-card__body">
-          <ol class="howto-steps">
-            <li>
-              <strong data-i18n="howto_rev_step1_title">1. Recent Protection Telemetry:</strong>
-              <span data-i18n="howto_rev_step1_desc">Shows cumulative findings detected, items masked or redacted, and pages/documents scanned across your local audit log.</span>
-            </li>
-            <li>
-              <strong data-i18n="howto_rev_step2_title">2. Honest Scan Coverage:</strong>
-              <span data-i18n="howto_rev_step2_desc">Green (✓) means every discovered region was inspected. Amber (!) or Red (✕) warns when cross-origin iframes, DRM media, or deferred images could not be inspected automatically.</span>
-            </li>
-            <li>
-              <strong data-i18n="howto_rev_step3_title">3. Signed Audit &amp; Compliance Certificate:</strong>
-              <span data-i18n="howto_rev_step3_desc">Click Export Signed Audit below to download your ECDSA P-256 signed .jsonl log, .sig.json cryptographic proof, and printable HTML Compliance Certificate.</span>
-            </li>
-          </ol>
-        </div>
-      </details>
-      <div class="review-overview-grid">
-        <div class="review-stats">
-          <h3 data-i18n="recent_protection">Recent Protection</h3>
-          <div class="stats-grid">
-            <div class="stat-card">
-              <span class="stat-value" id="review-findings-count">0</span>
-              <span class="stat-label" data-i18n="findings_detected">Findings detected</span>
-            </div>
-            <div class="stat-card">
-              <span class="stat-value" id="review-protected-count">0</span>
-              <span class="stat-label" data-i18n="protected_count">Protected</span>
-            </div>
-            <div class="stat-card">
-              <span class="stat-value" id="review-pages-count">0</span>
-              <span class="stat-label" data-i18n="pages_scanned">Pages scanned</span>
-            </div>
-          </div>
-        </div>
-        <div class="coverage-section">
-          <h3 data-i18n="coverage_title">Coverage</h3>
-          <p id="coverage-status" class="coverage-status" role="status" aria-live="polite" hidden></p>
-          <p id="coverage-windows-detail" class="footnote" hidden></p>
-          <div class="coverage-grid">
-            <div class="coverage-item">
-              <span class="coverage-icon" aria-hidden="true">·</span>
-              <span data-i18n="coverage_page">Page content</span>
-            </div>
-            <div class="coverage-item">
-              <span class="coverage-icon" aria-hidden="true">·</span>
-              <span data-i18n="coverage_visible">Visible text</span>
-            </div>
-            <div class="coverage-item">
-              <span class="coverage-icon" aria-hidden="true">·</span>
-              <span data-i18n="coverage_images">Images</span>
-            </div>
-            <div class="coverage-item">
-              <span class="coverage-icon" aria-hidden="true">·</span>
-              <span data-i18n="coverage_docs">Documents</span>
-            </div>
-            <div class="coverage-item">
-              <span class="coverage-icon" aria-hidden="true">·</span>
-              <span data-i18n="coverage_ocr">OCR</span>
-            </div>
-          </div>
-          <p id="coverage-deferred" class="footnote" hidden></p>
-          <p class="footnote" data-i18n="coverage_note">Some content may be inaccessible to the extension. View coverage details.</p>
-          <button id="coverage-details-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="coverage_details">View Details</button>
-        </div>
-      </div>
-      <div class="activity-section">
-        <div class="section-header">
-          <h3 data-i18n="activity_title">Activity</h3>
-          <button id="review-export-audit-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="export_audit_btn">Export signed audit log</button>
-        </div>
-        <p id="activity-empty" class="footnote" data-i18n="activity_empty">No recent activity. Scan a page to get started.</p>
-        <ul id="activity-list" class="findings-list"></ul>
-      </div>
     </section>
 
     <!-- Settings Tab -->
-    <section id="tab-settings" class="tab-panel" role="tabpanel" aria-labelledby="tab-btn-settings" hidden>
+    <section id="tab-settings" class="tab-panel settings-view" role="tabpanel" aria-label="Settings" hidden>
+      <div class="settings-back-bar">
+        <button id="settings-back-btn" class="btn btn--ghost btn--sm settings-back-btn" type="button" data-i18n="wizard_back_btn">Back</button>
+      </div>
       <div class="section-header">
         <h2 data-i18n="settings_title">Settings</h2>
         <button type="button" class="help-link help-link--sm" data-guide="guide-settings" data-i18n="info_btn" data-i18n-aria-label="guide-settings">Info ↗</button>
       </div>
+      <p class="footnote" data-i18n="settings_subtitle">Customize your extension experience.</p>
 
       <div class="settings-layout">
         <nav class="settings-nav" aria-label="Settings sections" role="navigation">
-          <button class="settings-nav-btn settings-nav-btn--active" type="button" data-settings-page="profile" id="settings-nav-profile" aria-label="Profile & Account">
-            <span data-i18n="settings_profile">Profile &amp; Account</span>
-            <span class="settings-nav-arrow" aria-hidden="true">›</span>
-          </button>
+          <div class="settings-nav-card">
+            <button class="settings-nav-btn settings-nav-btn--active" type="button" data-settings-page="profile" id="settings-nav-profile" aria-label="Profile & Account">
+              <span class="settings-nav-card__icon" aria-hidden="true">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+                </svg>
+              </span>
+              <span class="settings-nav-card__text">
+                <span class="settings-nav-card__title" data-i18n="settings_profile">Profile &amp; Account</span>
+                <span class="settings-nav-card__desc" data-i18n="settings_card_profile_desc">Pair your extension with your organization.</span>
+              </span>
+              <span class="settings-nav-arrow" aria-hidden="true">›</span>
+            </button>
+            <button id="settings-nav-pair-btn" class="btn btn--primary btn--sm" type="button" data-i18n="profile_pair_extension">Pair Extension</button>
+          </div>
           <button class="settings-nav-btn" type="button" data-settings-page="protection" id="settings-nav-protection" aria-label="Protection">
-            <span data-i18n="settings_protection">Protection</span>
-            <span class="settings-nav-arrow" aria-hidden="true">›</span>
-          </button>
-          <button class="settings-nav-btn" type="button" data-settings-page="detection" id="settings-nav-detection" aria-label="Detection">
-            <span data-i18n="settings_detection">Detection</span>
+            <span class="settings-nav-card__icon" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+              </svg>
+            </span>
+            <span class="settings-nav-card__text">
+              <span class="settings-nav-card__title" data-i18n="settings_protection">Protection</span>
+              <span class="settings-nav-card__desc" data-i18n="settings_card_protection_desc">Shield, detection categories, thresholds and masks.</span>
+            </span>
             <span class="settings-nav-arrow" aria-hidden="true">›</span>
           </button>
           <button class="settings-nav-btn" type="button" data-settings-page="appearance" id="settings-nav-appearance" aria-label="Appearance & Accessibility">
-            <span data-i18n="settings_appearance">Appearance &amp; Accessibility</span>
+            <span class="settings-nav-card__icon" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.9 0 1.65-.75 1.65-1.69 0-.44-.18-.84-.44-1.13-.29-.29-.43-.65-.43-1.12a1.64 1.64 0 0 1 1.67-1.67h2c3.05 0 5.55-2.5 5.55-5.55C22 6.01 17.46 2 12 2z" />
+                <circle cx="13.5" cy="6.5" r="1" fill="currentColor" stroke="none" />
+                <circle cx="17.5" cy="10.5" r="1" fill="currentColor" stroke="none" />
+                <circle cx="8.5" cy="7.5" r="1" fill="currentColor" stroke="none" />
+                <circle cx="6.5" cy="12.5" r="1" fill="currentColor" stroke="none" />
+              </svg>
+            </span>
+            <span class="settings-nav-card__text">
+              <span class="settings-nav-card__title" data-i18n="settings_appearance">Appearance &amp; Accessibility</span>
+              <span class="settings-nav-card__desc" data-i18n="settings_card_appearance_desc">Choose theme, language and more.</span>
+            </span>
             <span class="settings-nav-arrow" aria-hidden="true">›</span>
           </button>
           <button class="settings-nav-btn" type="button" data-settings-page="notifications" id="settings-nav-notifications" aria-label="Notifications">
-            <span data-i18n="settings_notifications">Notifications</span>
+            <span class="settings-nav-card__icon" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+                <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+              </svg>
+            </span>
+            <span class="settings-nav-card__text">
+              <span class="settings-nav-card__title" data-i18n="settings_notifications">Notifications</span>
+              <span class="settings-nav-card__desc" data-i18n="settings_card_notifications_desc">Manage alerts and notifications.</span>
+            </span>
             <span class="settings-nav-arrow" aria-hidden="true">›</span>
           </button>
           <button class="settings-nav-btn" type="button" data-settings-page="privacy" id="settings-nav-privacy" aria-label="Privacy">
-            <span data-i18n="settings_privacy">Privacy</span>
+            <span class="settings-nav-card__icon" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+            </span>
+            <span class="settings-nav-card__text">
+              <span class="settings-nav-card__title" data-i18n="settings_privacy">Privacy</span>
+              <span class="settings-nav-card__desc" data-i18n="settings_card_privacy_desc">Your data and privacy options.</span>
+            </span>
             <span class="settings-nav-arrow" aria-hidden="true">›</span>
           </button>
           <button class="settings-nav-btn" type="button" data-settings-page="advanced" id="settings-nav-advanced" aria-label="Advanced">
-            <span data-i18n="settings_advanced">Advanced</span>
+            <span class="settings-nav-card__icon" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="4" y1="21" x2="4" y2="14" />
+                <line x1="4" y1="10" x2="4" y2="3" />
+                <line x1="12" y1="21" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12" y2="3" />
+                <line x1="20" y1="21" x2="20" y2="16" />
+                <line x1="20" y1="12" x2="20" y2="3" />
+                <line x1="1" y1="14" x2="7" y2="14" />
+                <line x1="9" y1="8" x2="15" y2="8" />
+                <line x1="17" y1="16" x2="23" y2="16" />
+              </svg>
+            </span>
+            <span class="settings-nav-card__text">
+              <span class="settings-nav-card__title" data-i18n="settings_advanced">Advanced</span>
+              <span class="settings-nav-card__desc" data-i18n="settings_card_advanced_desc">Developer and advanced options.</span>
+            </span>
             <span class="settings-nav-arrow" aria-hidden="true">›</span>
           </button>
           <button class="settings-nav-btn" type="button" data-settings-page="about" id="settings-nav-about" aria-label="About & Diagnostics">
-            <span data-i18n="settings_about">About &amp; Diagnostics</span>
+            <span class="settings-nav-card__icon" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="16" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12.01" y2="8" />
+              </svg>
+            </span>
+            <span class="settings-nav-card__text">
+              <span class="settings-nav-card__title" data-i18n="settings_about">About &amp; Diagnostics</span>
+              <span class="settings-nav-card__desc" data-i18n="settings_card_about_desc">Version, help and diagnostics.</span>
+            </span>
             <span class="settings-nav-arrow" aria-hidden="true">›</span>
           </button>
         </nav>
@@ -656,7 +896,8 @@
             <div class="office-card__title">Office Manager Coordination</div>
             <p class="footnote">Link this browser extension to your organization's local Office Manager to switch to managed mode.</p>
             <div id="office-manager-status" class="footnote">Status: Local unmanaged</div>
-            <div id="office-manager-form" class="office-card__form">
+            <button id="office-pair-start-btn" class="btn btn--primary btn--sm" type="button" data-i18n="profile_pair_extension">Pair Extension</button>
+            <div id="office-manager-form" class="office-card__form" hidden>
               <input id="office-pairing-input" class="office-card__input" type="text" maxlength="6" placeholder="6-digit Pairing Code" />
               <div class="office-card__actions">
                 <button id="office-pair-btn" class="btn btn--primary btn--sm" type="button">Pair with Office Manager</button>
@@ -795,10 +1036,11 @@
               <option value="[DE-IDENTIFIED]">[DE-IDENTIFIED]</option>
             </select>
           </div>
-        </div>
+          <!-- Detection controls live here (merged from the former standalone
+               Detection page): every Detection control governs what Protection
+               detects or how its masks look. All control ids are unchanged. -->
 
-        <div class="settings-page" id="settings-page-detection" data-settings-page="detection" hidden>
-          <h3 data-i18n="detection_title">Detection</h3>
+          <h4 class="settings-subheading" data-i18n="detection_section_title">Detection categories &amp; thresholds</h4>
           <div class="form-row">
             <label for="preset-select" data-i18n="preset_config_label">Compliance preset</label>
             <select id="preset-select" class="preset-select">
@@ -1047,6 +1289,14 @@
             <span class="form-label" data-i18n="ocr_arch_label">OCR Architecture</span>
             <p class="footnote">Tesseract WASM with local language data</p>
           </div>
+      <div class="activity-section">
+        <div class="section-header">
+          <h3 data-i18n="activity_title">Activity</h3>
+          <button id="review-export-audit-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="export_audit_btn">Export signed audit log</button>
+        </div>
+        <p id="activity-empty" class="footnote" data-i18n="activity_empty">No recent activity. Scan a page to get started.</p>
+        <ul id="activity-list" class="findings-list"></ul>
+      </div>
         </div>
 
         <div class="settings-page" id="settings-page-about" data-settings-page="about" hidden>
@@ -1084,7 +1334,6 @@
           </div>
 
           <div class="about-actions">
-            <button id="export-audit-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="export_audit_btn">Export signed audit log</button>
             <div class="about-actions__pair">
               <button id="reset-settings-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="reset_settings_btn">Reset all settings</button>
               <button id="clear-audit-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="clear_audit_btn">Clear audit trail</button>
@@ -1239,17 +1488,17 @@
               <div id="guide-doc-redact" class="guide-card">
                 <h4 data-i18n="guide-doc-redact">Document Redaction — Step-by-Step Studio Guide</h4>
                 <ol class="guide-steps footnote">
-                  <li>Drag and drop a <strong>PDF (.pdf)</strong>, <strong>Word (.docx)</strong>, or <strong>Image (.png, .jpg, .webp)</strong> up to 20 MB into the upload box (in Popup mode, GovernWorld automatically opens the persistent Side Panel so the file picker never closes your session).</li>
+                  <li>Drag and drop a <strong>PDF (.pdf)</strong>, <strong>Word (.docx)</strong>, or <strong>Image (.png, .jpg, .webp)</strong> up to 20 MB into the upload box in the <strong>Document</strong> tab (in Popup mode, GovernWorld automatically opens the persistent Side Panel so the file picker never closes your session).</li>
                   <li>For documents over 20 pages, choose which 20-page window to scan first.</li>
                   <li>Click findings on page thumbnails to toggle them, or use <strong>✏️ Draw Box</strong> to drag custom redaction boxes. Draw boxes on 3+ pages and click <strong>📍 Learn Location Rule</strong> to save a reusable coordinate rule.</li>
-                  <li>Select <strong>Blackout</strong>, <strong>Whiteout</strong>, or <strong>Text Stamp</strong>, then click <strong>Open full-screen review</strong> or <strong>Redact &amp; Download</strong> to save a flattened, pixel-verified copy.</li>
+                  <li>Select <strong>Blackout</strong>, <strong>Whiteout</strong>, or <strong>Text Stamp</strong>, then click <strong>Open full-screen review</strong> or <strong>Redact Document</strong> to save a flattened, pixel-verified copy.</li>
                 </ol>
               </div>
               <div id="guide-verification" class="guide-card">
                 <h4 data-i18n="guide-verification">Verification &amp; Compliance Certificates</h4>
                 <ol class="guide-steps footnote">
                   <li>When you redact a document, GovernWorld re-reads the rendered output pixels to confirm every selected region is covered before declaring it verified.</li>
-                  <li>In the <strong>Review</strong> tab, check the <strong>Coverage</strong> grid to see whether all page content, images, and OCR regions were inspected.</li>
+                  <li>In <strong>Protection</strong>, under <strong>Tab Scan Status</strong>, check the <strong>Coverage</strong> section to see whether all page content, images, and OCR regions were inspected.</li>
                   <li>Click <strong>Export signed audit log</strong> to download the ECDSA P-256 signed <code>.jsonl</code> log, <code>.sig.json</code> signature, and printable <strong>Compliance Certificate</strong>.</li>
                 </ol>
               </div>
@@ -1264,13 +1513,13 @@
               </div>
               <div id="guide-categories" class="guide-card">
                 <h4 data-i18n="guide-categories">Categories &amp; Confidence Thresholds (24 Detectors)</h4>
-                <p class="footnote">Includes 24 detection categories (23 built-in plus custom rules) across PII, HIPAA/PHI (MRN, NPI, DEA, MBI), financial (Luhn payment cards, bank accounts, CUSIP/ISIN/IBAN), international IDs (SIN, NHS, Aadhaar, PAN, TFN, CPF), and developer secrets. In <strong>Settings → Detection</strong>, pick a compliance preset (HIPAA, PCI DSS, GDPR, etc.), toggle categories, and set per-category confidence thresholds.</p>
+                <p class="footnote">Includes 24 detection categories (23 built-in plus custom rules) across PII, HIPAA/PHI (MRN, NPI, DEA, MBI), financial (Luhn payment cards, bank accounts, CUSIP/ISIN/IBAN), international IDs (SIN, NHS, Aadhaar, PAN, TFN, CPF), and developer secrets. In <strong>Profile menu → Settings → Protection Settings</strong>, under Detection categories &amp; thresholds, pick a compliance preset (HIPAA, PCI DSS, GDPR, etc.), toggle categories, and set per-category confidence thresholds.</p>
               </div>
               <div id="guide-paste-guard" class="guide-card">
                 <h4 data-i18n="guide-paste-guard">Paste Guard — Protecting AI Prompts &amp; Forms</h4>
                 <ol class="guide-steps footnote">
                   <li><strong>This Tab (Default):</strong> Requires zero install-time host permissions; activates on the current tab once you open or scan with GovernWorld.</li>
-                  <li><strong>Always On:</strong> Toggle <strong>Always protect all sites</strong> in <strong>Settings → Protection</strong> and approve the browser site-access prompt (revocable anytime) to guard every tab automatically.</li>
+                  <li><strong>Always On:</strong> Toggle <strong>Always protect all sites</strong> in <strong>Profile menu → Settings → Protection</strong> and approve the browser site-access prompt (revocable anytime) to guard every tab automatically.</li>
                   <li>When you paste sensitive data into ChatGPT, Claude, Gemini, Slack, or web forms, Paste Shield pauses the paste and lets you choose <strong>Sanitize &amp; Paste</strong>, <strong>Paste Unchanged</strong>, or <strong>Cancel</strong>.</li>
                 </ol>
               </div>
@@ -1284,27 +1533,27 @@
               </div>
               <div id="guide-ocr-languages" class="guide-card">
                 <h4 data-i18n="guide-ocr-languages">OCR Languages</h4>
-                <p class="footnote">English (eng) in this build. Additional languages can be added by bundling their traineddata; nothing is downloaded at runtime. Select your bundled OCR language in Document Studio or Settings → Advanced before scanning image-based PDFs or screenshots.</p>
+                <p class="footnote">English (eng) in this build. Additional languages can be added by bundling their traineddata; nothing is downloaded at runtime. Select your bundled OCR language in the Document tab or Profile menu → Settings → Advanced before scanning image-based PDFs or screenshots.</p>
               </div>
               <div id="guide-redaction-styles" class="guide-card">
                 <h4 data-i18n="guide-redaction-styles">Redaction Styles — Blackout, Whiteout &amp; Stamp</h4>
-                <p class="footnote">Choose how redacted boxes are baked into downloaded documents: <strong>Blackout</strong> (solid opaque black rectangle), <strong>Whiteout</strong> (solid white box with subtle border), or <strong>Text Stamp</strong> (opaque box stamped with <code>[REDACTED]</code>, <code>[CONFIDENTIAL]</code>, <code>[PHI REMOVED]</code>, or custom text). Set your default style in <strong>Settings → Protection</strong>.</p>
+                <p class="footnote">Choose how redacted boxes are baked into downloaded documents: <strong>Blackout</strong> (solid opaque black rectangle), <strong>Whiteout</strong> (solid white box with subtle border), or <strong>Text Stamp</strong> (opaque box stamped with <code>[REDACTED]</code>, <code>[CONFIDENTIAL]</code>, <code>[PHI REMOVED]</code>, or custom text). Set your default style in <strong>Profile menu → Settings → Protection</strong>.</p>
               </div>
               <div id="guide-accessibility" class="guide-card">
                 <h4 data-i18n="guide-accessibility">Accessibility — Vision, Motion &amp; Screen Readers</h4>
-                <p class="footnote">In <strong>Settings → Appearance &amp; Accessibility</strong>, customize Text Size (Default to Extra Large), <strong>High Contrast</strong> borders, <strong>Dyslexia-Friendly Mode</strong> spacing, <strong>Reduced Motion</strong>, <strong>Speech Announcements</strong> (Web Speech API audio readouts), and <strong>Verbose ARIA Mode</strong>.</p>
+                <p class="footnote">In <strong>Profile menu → Settings → Appearance &amp; Accessibility</strong>, customize Text Size (Default to Extra Large), <strong>High Contrast</strong> borders, <strong>Dyslexia-Friendly Mode</strong> spacing, <strong>Reduced Motion</strong>, <strong>Speech Announcements</strong> (Web Speech API audio readouts), and <strong>Verbose ARIA Mode</strong>.</p>
               </div>
               <div id="guide-languages" class="guide-card">
                 <h4 data-i18n="guide-languages">Languages — 7 Localized UI Languages</h4>
-                <p class="footnote">Switch the entire interface instantaneously in <strong>Settings → Appearance &amp; Accessibility → Language</strong> between English, Español, Français, Deutsch, 日本語, Português, and 简体中文.</p>
+                <p class="footnote">Switch the entire interface instantaneously in <strong>Profile menu → Settings → Appearance &amp; Accessibility → Language</strong> between English, Español, Français, Deutsch, 日本語, Português, and 简体中文.</p>
               </div>
               <div id="guide-notifications" class="guide-card">
                 <h4 data-i18n="guide-notifications">Notifications &amp; Zero-Knowledge Privacy Mode</h4>
                 <p class="footnote" data-i18n="guide_notifications_desc">Configure how alerts appear across icon badges, in-page toasts, and desktop notifications without leaking sensitive data. Switch Notification Privacy Mode to Minimal to hide category names from alert banners.</p>
               </div>
               <div id="guide-settings" class="guide-card">
-                <h4 data-i18n="guide-settings">Settings — Navigating All 8 Sections</h4>
-                <p class="footnote">Use the top-right circular <strong>Profile Avatar</strong> menu or the <strong>Settings</strong> tab to access: <strong>Profile &amp; Account</strong> (Office Manager pairing, Enterprise Device Enrollment, OAuth/API), <strong>Protection</strong>, <strong>Detection</strong> (presets, 24 categories, confidence thresholds), <strong>Appearance</strong>, <strong>Notifications</strong>, <strong>Privacy</strong>, <strong>Advanced</strong> (scan limits &amp; OCR), and <strong>About &amp; Diagnostics</strong>.</p>
+                <h4 data-i18n="guide-settings">Settings — Navigating All 7 Sections</h4>
+                <p class="footnote">Use the top-right <strong>Profile Avatar</strong> menu and choose <strong>Settings</strong> to access: <strong>Profile &amp; Account</strong> (Office Manager pairing, Enterprise Device Enrollment, OAuth/API), <strong>Protection</strong> (Paste Shield, Always-On, detection presets, 24 categories, confidence thresholds), <strong>Appearance</strong>, <strong>Notifications</strong>, <strong>Privacy</strong>, <strong>Advanced</strong> (scan limits &amp; OCR), and <strong>About &amp; Diagnostics</strong>.</p>
               </div>
               <div id="guide-shortcuts" class="guide-card">
                 <h4 data-i18n="guide-shortcuts">Shortcuts — Keyboard Hotkeys</h4>
@@ -1314,13 +1563,13 @@
                 <h4 data-i18n="guide-troubleshooting">Troubleshooting — Common Questions</h4>
                 <ul class="guide-steps footnote">
                   <li><strong>Scan says restricted or unavailable:</strong> Browser internal pages (<code>chrome://</code>, <code>edge://</code>, <code>about:</code>, Chrome Web Store) block extensions by browser security policy. Test on any regular <code>https://</code> website.</li>
-                  <li><strong>Page has 0 characters:</strong> The page is likely a scanned image or canvas; use the offered <strong>Capture Image to Document Studio</strong> button to run local OCR.</li>
+                  <li><strong>Page has 0 characters:</strong> The page is likely a scanned image or canvas; use the offered <strong>Capture Image</strong> button to send the page image to the Document tab for local OCR.</li>
                   <li><strong>Paste Shield says Waiting for access:</strong> Click the <strong>Paste Shield</strong> pill or <strong>Grant site access</strong> in Settings → Protection to approve browser host permissions.</li>
                 </ul>
               </div>
               <div id="guide-cloud" class="guide-card">
                 <h4 data-i18n="guide-cloud">Cloud &amp; Enterprise Coordination</h4>
-                <p class="footnote">Cloud analysis is disabled by default so all page and document scanning runs locally on your device. Optional Organization Gateway, OAuth, and Office Manager pairing in <strong>Settings → Profile &amp; Account</strong> pull Ed25519-signed compliance policies and emit 15-minute metadata-only status checks (device UUID, browser info, extension/policy versions) while keeping accessibility controls unlocked and transmitting zero browsing history, URLs, page text, or documents.</p>
+                <p class="footnote">Cloud analysis is disabled by default so all page and document scanning runs locally on your device. Optional Organization Gateway, OAuth, and Office Manager pairing in <strong>Profile menu → Settings → Profile &amp; Account</strong> pull Ed25519-signed compliance policies and emit 15-minute metadata-only status checks (device UUID, browser info, extension/policy versions) while keeping accessibility controls unlocked and transmitting zero browsing history, URLs, page text, or documents.</p>
               </div>
               <div id="guide-privacy" class="guide-card">
                 <h4 data-i18n="guide-privacy">Privacy &amp; Zero-Egress Guarantee</h4>
@@ -1328,12 +1577,28 @@
               </div>
               <div id="guide-contributions" class="guide-card">
                 <h4 data-i18n="guide-contributions">Contributions</h4>
-                <p class="footnote">Community rule packs are <strong>not active in this release</strong>. Nothing you write leaves your device: rule sharing is disabled and there is no server to send it to. Your local logic stays local and works exactly as it does now. Voluntary project sponsorship is available via <a href="https://github.com/sponsors/ACR-LOGIC" target="_blank" rel="noopener noreferrer">GitHub Sponsors</a> and <a href="https://buymeacoffee.com/governworld" target="_blank" rel="noopener noreferrer">Buy Me a Coffee</a>.</p>
+                <p class="footnote">Community rule packs are <strong>not active in this release</strong>. Sharing a rule is separate and opt-in: from Logic, Share Rule sends only that rule's pattern, category, and context cues to the GovernWorld gateway — after the extension screens the submission on your device for sensitive values, and only if your workspace is connected with the logic_submission capability. Nothing is shared unless you choose Share Rule and confirm it. Your local logic stays local and works exactly as it does now. Voluntary project sponsorship is available via <a href="https://github.com/sponsors/ACR-LOGIC" target="_blank" rel="noopener noreferrer">GitHub Sponsors</a> and <a href="https://buymeacoffee.com/governworld" target="_blank" rel="noopener noreferrer">Buy Me a Coffee</a>.</p>
               </div>
             </div>
           </details>
         </div>
       </div>
+      </div>
+
+      <!-- Bottom Pair Extension card (second trigger for the same pairing
+           form on the Profile & Account page — one form, one handler). -->
+      <div class="settings-pair-card">
+        <span class="settings-nav-card__icon" aria-hidden="true">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+          </svg>
+        </span>
+        <div class="settings-pair-card__text">
+          <strong data-i18n="settings_pair_card_title">Pair Extension</strong>
+          <span class="footnote" data-i18n="settings_pair_card_desc">Connect this extension with your organization for centralized management.</span>
+        </div>
+        <button id="settings-pair-now-btn" class="btn btn--primary btn--sm" type="button" data-i18n="settings_pair_now">Pair Now</button>
       </div>
     </section>
   </main>
@@ -1514,7 +1779,7 @@
 
   <dialog id="contrib-consent-dialog" class="dialog" aria-labelledby="contrib-dialog-title">
     <h3 id="contrib-dialog-title" data-i18n="contrib_title">Share with GovernWorld?</h3>
-    <p class="footnote" data-i18n="contrib_desc">Your personal logic will be reviewed by GovernWorld before possible publication.</p>
+    <p class="footnote" data-i18n="contrib_desc">Your rule pattern and cues will be sent to GovernWorld after local screening, and reviewed before possible publication.</p>
     <label class="toggle-row">
       <input id="contrib-consent-checkbox" type="checkbox" />
       <span data-i18n="contrib_consent_text">I reviewed the logic and understand it will be reviewed before publication.</span>

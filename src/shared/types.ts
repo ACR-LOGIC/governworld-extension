@@ -210,6 +210,8 @@ export interface ScannableTabSummary {
   url: string;
   domain: string;
   active: boolean;
+  /** Browser-provided favicon URL when the tab exposes one; absent otherwise. */
+  favIconUrl?: string;
 }
 
 export interface PinnedTargetInfo {

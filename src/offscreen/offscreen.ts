@@ -10,6 +10,7 @@ import {
 import { runDocumentPreview, runDocumentRedact, runDocumentCount } from "../document-pipeline/impl.js";
 import { resetOcr } from "../document-pipeline/ocr.js";
 import { getDocBytes } from "../shared/docStore.js";
+import { sanitizeErrorForLog } from "../shared/errorSanitizer.js";
 
 /**
  * Offscreen document entry point. This page exists only to host pdf.js +
@@ -226,6 +227,9 @@ port.onMessage.addListener((raw: unknown) => {
       await withJobTimeout(controller, executeJob());
     } catch (error) {
       const e = toError(error);
+      if (e.code !== "DOC_CANCELLED") {
+        console.warn(`[governworld] offscreen ${op} failed (${e.code}):`, sanitizeErrorForLog(error));
+      }
       port.postMessage({ channel: OFFSCREEN_CHANNEL, op, jobId, ok: false, ...e });
     } finally {
       releaseSlot();

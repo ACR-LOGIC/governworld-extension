@@ -208,8 +208,8 @@ try {
   await popupPage.waitForTimeout(400);
   await captureElementOrPage(popupPage, "#app", join(DESKTOP_OUT, "07_popup_settings_protection_location.png"));
 
-  // Settings: Detection Presets & 20 Categories
-  await popupPage.click('[data-settings-page="detection"]');
+  // Settings: Detection Presets & Categories (merged into Protection Settings)
+  await popupPage.click('[data-settings-page="protection"]');
   await popupPage.waitForTimeout(400);
   await captureElementOrPage(popupPage, "#app", join(DESKTOP_OUT, "08_popup_settings_detection_categories.png"));
 

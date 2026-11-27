@@ -245,8 +245,11 @@ describe("UI/UX Redesign Static Layout & Hygiene Contracts", () => {
       expect(html, `${name} missing #profile-avatar-btn`).toContain('id="profile-avatar-btn"');
       expect(html, `${name} missing #profile-popover`).toContain('id="profile-popover"');
       expect(html, `${name} missing #profile-goto-account-btn`).toContain('id="profile-goto-account-btn"');
-      expect(html, `${name} missing #profile-goto-protection-btn`).toContain('id="profile-goto-protection-btn"');
-      expect(html, `${name} missing #profile-goto-appearance-btn`).toContain('id="profile-goto-appearance-btn"');
+      expect(html, `${name} missing #profile-goto-settings-btn`).toContain('id="profile-goto-settings-btn"');
+      expect(html, `${name} missing #profile-pair-btn`).toContain('id="profile-pair-btn"');
+      expect(html, `${name} missing #profile-help-btn`).toContain('id="profile-help-btn"');
+      expect(html, `${name} missing #profile-goto-about-btn`).toContain('id="profile-goto-about-btn"');
+      expect(html, `${name} missing #profile-signout-btn`).toContain('id="profile-signout-btn"');
     }
     expect(popupCss).toMatch(/\.profile-avatar-btn\s*\{[^}]*border-radius:\s*9999px/);
   });
@@ -265,7 +268,7 @@ describe("UI/UX Redesign Static Layout & Hygiene Contracts", () => {
       ["sidepanel.html", sidepanelHtml],
     ] as const) {
       expect(html, `${name} still has stray '>' before id="settings-nav-"`).not.toMatch(/>\s*id="settings-nav-/);
-      for (const page of ["profile", "protection", "detection", "appearance", "notifications", "privacy", "advanced", "about"]) {
+      for (const page of ["profile", "protection", "appearance", "notifications", "privacy", "advanced", "about"]) {
         expect(html, `${name} missing #settings-nav-${page}`).toContain(`id="settings-nav-${page}"`);
       }
     }
@@ -506,7 +509,7 @@ describe("UI/UX Redesign Behavioral Flows (JSDOM)", () => {
     );
   });
 
-  it("aggregates real audit telemetry in Review, navigates Coverage Details, and clears audit keys", async () => {
+  it("aggregates real audit telemetry in Tab Scan Status, navigates Coverage Details, and clears audit keys", async () => {
     const { localStore } = await setupPopupHarness({
       local: {
         auditLog: [
@@ -585,7 +588,7 @@ describe("UI/UX Redesign Behavioral Flows (JSDOM)", () => {
     }
 
     // 3. Wizard empty-input error uses localized UI_TRANSLATIONS (never raw key)
-    (document.getElementById("open-wizard-btn") as HTMLButtonElement).click();
+    (document.getElementById("open-wizard-btn-2") as HTMLButtonElement).click();
     expect((document.getElementById("wizard-dialog") as HTMLDialogElement).open).toBe(true);
     (document.getElementById("wizard-analyze-btn") as HTMLButtonElement).click();
     await flushAsync();
@@ -638,7 +641,7 @@ describe("UI/UX Redesign Behavioral Flows (JSDOM)", () => {
       events.push("sidePanel.open");
     });
 
-    (document.getElementById("open-doc-btn") as HTMLButtonElement).click();
+    (document.getElementById("doc-dropzone") as HTMLDivElement).click();
     await new Promise((resolve) => setTimeout(resolve, 25));
     expect(events.indexOf("sidePanel.open")).toBeGreaterThan(-1);
     expect(events.indexOf("sidePanel.open")).toBeLessThan(events.indexOf("storage.set.done"));
@@ -651,11 +654,14 @@ describe("UI/UX Redesign Behavioral Flows (JSDOM)", () => {
         (c) => c[0] as Record<string, unknown>
       );
 
-    // 1. All 4 tab how-to instruction cards exist
+    // 1. The three primary tabs' how-to instruction cards exist (the Review
+    // tab is gone; its coverage/audit how-to now lives in Tab Scan Status)
     expect(document.getElementById("protection-howto-card")).toBeTruthy();
     expect(document.getElementById("doc-howto-card")).toBeTruthy();
     expect(document.getElementById("logic-howto-card")).toBeTruthy();
-    expect(document.getElementById("review-howto-card")).toBeTruthy();
+    expect(document.getElementById("tab-scan-howto-card")).toBeTruthy();
+    expect(document.getElementById("review-howto-card")).toBeNull();
+    expect(document.getElementById("tab-review")).toBeNull();
 
     // 2. Clicking a [data-guide] link opens the in-place contextual guide modal without leaving the current tab
     const howToScanLink = document.querySelector('[data-guide="guide-page-scan"]') as HTMLButtonElement;
@@ -712,7 +718,7 @@ describe("UI/UX Redesign Behavioral Flows (JSDOM)", () => {
     expect(getSentMessages().some((m) => m.type === "POPUP_API_DISCONNECT")).toBe(true);
 
     // 4. Wizard Step 4 saves contextCues, captureGroup, minLength, and maxLength
-    (document.getElementById("open-wizard-btn") as HTMLButtonElement).click();
+    (document.getElementById("open-wizard-btn-2") as HTMLButtonElement).click();
     (document.getElementById("wizard-rule-name") as HTMLInputElement).value = "Badge ID";
     (document.getElementById("wizard-regex-input") as HTMLInputElement).value = "BADGE-(\\d{5})";
     (document.getElementById("wizard-rule-cues") as HTMLInputElement).value = "badge, employee";
@@ -730,5 +736,284 @@ describe("UI/UX Redesign Behavioral Flows (JSDOM)", () => {
     expect(saveMsg?.pattern.contextCues).toEqual(["badge", "employee"]);
     expect(saveMsg?.pattern.minLength).toBe(5);
     expect(saveMsg?.pattern.maxLength).toBe(12);
+  });
+});
+
+describe("Frontend Redesign (3 tabs, Document home, profile-menu Settings)", () => {
+  it("has exactly three primary tabs and puts document controls only in the Document tab", () => {
+    for (const [name, html] of [
+      ["index.html", popupHtml],
+      ["sidepanel.html", sidepanelHtml],
+    ] as const) {
+      const tabBtns = [...html.matchAll(/id="tab-btn-[a-z]+"/g)].map((m) => m[0]);
+      expect(tabBtns, `${name} tab buttons`).toEqual([
+        'id="tab-btn-protection"',
+        'id="tab-btn-logic"',
+        'id="tab-btn-document"',
+      ]);
+      expect(html).not.toContain('id="tab-btn-review"');
+      expect(html).not.toContain('id="tab-btn-settings"');
+      expect(html).not.toContain('id="tab-review"');
+      expect(html).not.toContain("link-community-btn");
+      expect(html).not.toContain("fetch-community-rules-btn");
+      expect(html).not.toContain("community-disclosure");
+      // Document is the only home for upload/redaction.
+      expect(html).toContain('id="tab-document"');
+      expect(html).toContain('id="doc-workspace"');
+      expect(html).toContain('id="doc-dropzone"');
+      expect(html).toContain('id="doc-redact-btn"');
+      // Protection keeps scan + findings + tab scan status + quick tools.
+      expect(html).toContain('id="tab-scan-list"');
+      expect(html).toContain('id="results-section"');
+      expect(html).toContain('id="quick-tools"');
+      expect(html).toContain('id="paste-mode-this-tab-btn"');
+      // Settings is a dedicated view behind the profile menu, with a back button.
+      expect(html).toContain('id="tab-settings"');
+      expect(html).toContain('id="settings-back-btn"');
+      // Audit export is deduplicated into Settings -> Advanced.
+      expect(html).toContain('id="review-export-audit-btn"');
+      expect(html).not.toContain('id="export-audit-btn"');
+    }
+    // Document controls appear exactly once in the popup (no duplicates in Protection).
+    expect((popupHtml.match(/id="doc-workspace"/g) || []).length).toBe(1);
+    expect((popupHtml.match(/id="doc-dropzone"/g) || []).length).toBe(1);
+  });
+
+  it("never promises anonymization and routes Share Rule through the live gateway path", () => {
+    expect(popupTs).not.toMatch(/anonymiz/i);
+    expect(popupTs).toContain('type: "POPUP_API_SUBMIT_LOGIC"');
+    expect(popupTs).not.toContain('type: "POPUP_COMMUNITY_CONTRIBUTE"');
+  });
+
+  it("renders Tab Scan Status from real per-tab sessions and scans from a tab entry", async () => {
+    const { emitRuntimeMessage, chromeMock } = await setupPopupHarness({
+      session: {
+        "scan:2": {
+          sessionId: "s-2",
+          mode: "local",
+          findings: [{}, {}, {}],
+          stats: { visibleChars: 100, truncated: false, totalFindings: 3 },
+          scannedAt: Date.now() - 60_000,
+          scanning: false,
+        },
+      },
+    });
+    await emitRuntimeMessage({
+      type: "POPUP_STATE",
+      state: makePopupState({
+        scanned: true,
+        visibleChars: 500,
+        findings: [sampleFinding],
+        totalFindings: 1,
+        pinnedTarget: {
+          status: "pinned",
+          pinnedTabId: 1,
+          title: "Patient Record",
+          url: "https://ehr.test/record",
+          domain: "ehr.test",
+          availableTabs: [
+            { tabId: 1, title: "Patient Record", url: "https://ehr.test/record", domain: "ehr.test", active: true },
+            { tabId: 2, title: "Lab Results", url: "https://labs.test/r", domain: "labs.test", active: false },
+            { tabId: 3, title: "News", url: "https://news.test/", domain: "news.test", active: false },
+          ],
+        },
+      }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 25));
+    const list = document.getElementById("tab-scan-list") as HTMLUListElement;
+    expect(list.children.length).toBe(3);
+    const rows = [...list.children].map((li) => (li as HTMLElement).textContent ?? "");
+    expect(rows[0]).toContain("Patient Record");
+    expect(rows[0]).toContain("Scanned");
+    expect(rows[0]).toContain("Pinned");
+    expect(rows[1]).toContain("Lab Results");
+    expect(rows[1]).toContain("Scanned");
+    expect(rows[1]).toContain("3");
+    expect(rows[1]).toContain("Last scan:");
+    expect(rows[2]).toContain("News");
+    expect(rows[2]).toContain("Not scanned");
+    expect((document.getElementById("tab-scan-empty") as HTMLElement).hidden).toBe(true);
+
+    const getSentMessages = () =>
+      (chromeMock.runtime as { sendMessage: ReturnType<typeof vi.fn> }).sendMessage.mock.calls.map(
+        (c) => c[0] as Record<string, unknown>
+      );
+    const scanBtn = list.children[2].querySelector("button") as HTMLButtonElement;
+    expect(scanBtn.textContent).toBe("Scan");
+    scanBtn.click();
+    expect(getSentMessages().some((m) => m.type === "POPUP_PIN_TAB" && m.tabId === 3)).toBe(true);
+    expect(getSentMessages().some((m) => m.type === "POPUP_SCAN" && m.tabId === 3)).toBe(true);
+  });
+
+  it("sends Share Rule consent through the live gateway path, never the stubbed community path", async () => {
+    const { emitRuntimeMessage, chromeMock } = await setupPopupHarness();
+    await emitRuntimeMessage({
+      type: "POPUP_CUSTOM_PATTERNS_STATE",
+      patterns: [
+        {
+          id: "11111111-1111-4111-8111-111111111111",
+          name: "Badge ID",
+          category: "custom",
+          pattern: "BADGE-\\d{5}",
+          flags: "",
+          confidence: 0.85,
+          createdAt: "2026-11-25T00:00:00.000Z",
+          source: "local",
+          contributionStatus: "local_only",
+        },
+      ],
+    });
+    const list = document.getElementById("custom-patterns-list") as HTMLUListElement;
+    expect(list.children.length).toBe(1);
+    const shareBtn = [...list.querySelectorAll("button")].find((b) => b.textContent === "Share Rule") as HTMLButtonElement;
+    expect(shareBtn).toBeTruthy();
+    expect(shareBtn.title).not.toMatch(/anonymiz/i);
+    shareBtn.click();
+    expect((document.getElementById("contrib-consent-dialog") as HTMLDialogElement).open).toBe(true);
+    const checkbox = document.getElementById("contrib-consent-checkbox") as HTMLInputElement;
+    checkbox.checked = true;
+    checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+    (document.getElementById("contrib-confirm-btn") as HTMLButtonElement).click();
+    await flushAsync();
+    const sent = (chromeMock.runtime as { sendMessage: ReturnType<typeof vi.fn> }).sendMessage.mock.calls.map(
+      (c) => c[0] as Record<string, unknown>
+    );
+    expect(sent.some((m) => m.type === "POPUP_API_SUBMIT_LOGIC" && m.patternId === "11111111-1111-4111-8111-111111111111")).toBe(true);
+    expect(sent.some((m) => typeof m.type === "string" && m.type.startsWith("POPUP_COMMUNITY"))).toBe(false);
+  });
+
+  it("opens Settings behind the profile menu and returns with the back button", async () => {
+    await setupPopupHarness();
+    (document.getElementById("profile-avatar-btn") as HTMLButtonElement).click();
+    expect((document.getElementById("profile-popover") as HTMLElement).hidden).toBe(false);
+    (document.getElementById("profile-goto-settings-btn") as HTMLButtonElement).click();
+    await flushAsync();
+    expect((document.getElementById("tab-settings") as HTMLElement).hidden).toBe(false);
+    expect((document.getElementById("settings-page-profile") as HTMLElement).hidden).toBe(false);
+    expect(document.getElementById("app")?.classList.contains("settings-view-open")).toBe(true);
+    (document.getElementById("settings-back-btn") as HTMLButtonElement).click();
+    expect((document.getElementById("tab-protection") as HTMLElement).hidden).toBe(false);
+    expect((document.getElementById("tab-settings") as HTMLElement).hidden).toBe(true);
+    expect(document.getElementById("app")?.classList.contains("settings-view-open")).toBe(false);
+  });
+
+  it("switches Paste Shield mode from Protection Quick Tools through the same settings path", async () => {
+    const { localStore } = await setupPopupHarness();
+    expect(
+      (document.getElementById("paste-mode-this-tab-btn") as HTMLButtonElement).getAttribute("aria-pressed")
+    ).toBe("true");
+    (document.getElementById("paste-mode-off-btn") as HTMLButtonElement).click();
+    await flushAsync();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const saved = localStore.settings as { protectionMode?: string } | undefined;
+    expect(saved?.protectionMode).toBe("off");
+    expect((document.getElementById("paste-mode-off-btn") as HTMLButtonElement).getAttribute("aria-pressed")).toBe(
+      "true"
+    );
+  });
+});
+
+describe("Mockup Layout Iteration (7 settings cards, hero, banner, tool tiles)", () => {
+  it("has exactly seven settings cards with Detection folded into Protection Settings", () => {
+    for (const [name, html] of [
+      ["index.html", popupHtml],
+      ["sidepanel.html", sidepanelHtml],
+    ] as const) {
+      expect(html, `${name} still has a Detection nav`).not.toContain('id="settings-nav-detection"');
+      expect(html, `${name} still has a Detection page`).not.toContain('id="settings-page-detection"');
+      const navBtns = [...html.matchAll(/id="settings-nav-[a-z]+"/g)].map((m) => m[0]);
+      expect(navBtns, `${name} settings nav buttons`).toEqual([
+        'id="settings-nav-profile"',
+        'id="settings-nav-protection"',
+        'id="settings-nav-appearance"',
+        'id="settings-nav-notifications"',
+        'id="settings-nav-privacy"',
+        'id="settings-nav-advanced"',
+        'id="settings-nav-about"',
+      ]);
+      // Every Detection control survived the fold, inside the Protection page.
+      expect(html).toContain('id="preset-select"');
+      expect(html).toContain('id="category-list"');
+      expect(html).toContain('id="auto-mask-single-names-toggle"');
+      expect(html).toContain('id="medical-dictionary-toggle"');
+      expect(html).toContain('id="threshold-apply-all-btn"');
+      expect(html).toContain('id="mask-color-select"');
+      expect(html).toContain('id="settings-nav-pair-btn"');
+      expect(html).toContain('id="settings-pair-now-btn"');
+      expect(html).toContain('data-i18n="settings_subtitle"');
+    }
+    expect(popupTs).toContain('document.getElementById("settings-nav-pair-btn")');
+    expect(popupTs).toContain('document.getElementById("settings-pair-now-btn")');
+  });
+
+  it("adds the Protection hero, Scan Complete banner, three tool tiles, and footer", () => {
+    for (const [name, html] of [
+      ["index.html", popupHtml],
+      ["sidepanel.html", sidepanelHtml],
+    ] as const) {
+      expect(html, `${name} missing hero`).toContain('class="protection-hero"');
+      expect(html, `${name} missing banner`).toContain('id="scan-result-banner"');
+      expect(html, `${name} missing banner details button`).toContain('id="scan-banner-details-btn"');
+      expect(html, `${name} missing Paste Shield tile`).toContain('id="tool-tile-paste-shield"');
+      expect(html, `${name} missing Page Masking tile`).toContain('id="tool-tile-page-masking"');
+      expect(html, `${name} missing More Tools tile`).toContain('id="tool-tile-more-tools"');
+      // Exactly three tiles, and no Document Redaction tile in Protection
+      // (the Document tab is its only home).
+      const tiles = [...html.matchAll(/id="tool-tile-(?:paste-shield|page-masking|more-tools)"/g)].map((m) => m[0]);
+      expect(tiles, `${name} tool tiles`).toEqual([
+        'id="tool-tile-paste-shield"',
+        'id="tool-tile-page-masking"',
+        'id="tool-tile-more-tools"',
+      ]);
+      expect(html, `${name} missing protection footer`).toContain('id="protection-footer-learn-more"');
+      expect(html, `${name} missing avatar chevron`).toContain('class="profile-avatar-chevron"');
+    }
+    // Page Masking is a jump tile: it scrolls to the findings and focuses
+    // Apply Masks, and there is still exactly one Apply Masks button.
+    expect(popupTs).toContain('document.getElementById("tool-tile-page-masking")');
+    expect((popupHtml.match(/id="apply-masks-btn"/g) || []).length).toBe(1);
+    // The banner renders only for a real scan (see renderState).
+    expect(popupTs).toMatch(/showBanner = state\.scanned && !state\.error && state\.visibleChars > 0/);
+  });
+
+  it("adds the Document Tools card without Apply Masks / Block Sensitive Data rows", () => {
+    for (const [name, html] of [
+      ["index.html", popupHtml],
+      ["sidepanel.html", sidepanelHtml],
+    ] as const) {
+      expect(html, `${name} missing doc tools card`).toContain('class="doc-tools-card"');
+      expect(html, `${name} missing Choose File`).toContain('id="doc-choose-file-btn"');
+      expect(html, `${name} missing doc footer`).toContain('data-i18n="doc_footer_note"');
+      expect(html, `${name} renders a Block Sensitive Data row`).not.toMatch(/>Block Sensitive Data</);
+      // Scoped to the Document tab: the legitimate Apply Masks button lives
+      // in Protection (Scan Findings), not here.
+      const docTab = html.slice(html.indexOf('id="tab-document"'), html.indexOf('id="tab-settings"'));
+      expect(docTab, `${name} renders an Apply Masks row in Document`).not.toMatch(/>Apply Masks</);
+    }
+    // Redact Document and Open Full-Screen Review still exist exactly once,
+    // now grouped in the card; Print stays gated on a verified redaction.
+    expect((popupHtml.match(/id="doc-redact-btn"/g) || []).length).toBe(1);
+    expect((popupHtml.match(/id="doc-open-review-btn"/g) || []).length).toBe(1);
+    expect((popupHtml.match(/id="doc-print-btn"/g) || []).length).toBe(1);
+    expect(popupTs).toContain('document.getElementById("doc-choose-file-btn")');
+  });
+
+  it("fixes F1: a fresh document-state restore lands on the Document tab", () => {
+    const branch = popupTs.slice(popupTs.indexOf('message.type === "POPUP_DOC_STATE"'));
+    expect(branch).toContain("const isFreshRestore = lastDoc === null;");
+    expect(branch).toContain('if (isFreshRestore) switchTab("document");');
+  });
+
+  it("fixes F2: Contributions no longer claims rule sharing is disabled", () => {
+    for (const [name, html] of [
+      ["index.html", popupHtml],
+      ["sidepanel.html", sidepanelHtml],
+    ] as const) {
+      expect(html, `${name} still claims sharing is disabled`).not.toContain("rule sharing is disabled");
+      expect(html, `${name} still claims there is no server`).not.toContain("there is no server to send it to");
+      expect(html, `${name} missing corrected Contributions copy`).toContain(
+        "Sharing a rule is separate and opt-in"
+      );
+    }
   });
 });
