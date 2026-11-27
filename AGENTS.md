@@ -256,7 +256,7 @@ npm run build:safari
 
 ## Project Status
 
-Current release version: `0.4.1`. The repository is actively maintained with continuous improvements in:
+Current release version: `0.5.0`. The repository is actively maintained with continuous improvements in:
 - Detection algorithm accuracy
 - Security hardening
 - Accessibility compliance

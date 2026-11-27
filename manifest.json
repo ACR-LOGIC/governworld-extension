@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GovernWorld Redaction",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Local-first PII/PHI detection and redaction for pages and documents you choose to scan. Content stays on this device.",
   "minimum_chrome_version": "116",
   "browser_specific_settings": {
