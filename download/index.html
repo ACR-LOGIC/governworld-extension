@@ -440,6 +440,16 @@
       color: var(--text-muted);
     }
 
+    .platform-limitation {
+      margin: 14px 0 0;
+      padding: 11px 14px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-inset);
+      border: 1px solid var(--border);
+      font-size: 0.88rem;
+      color: var(--text-secondary);
+    }
+
     /* Footer */
     .release-footer {
       display: flex;
@@ -537,7 +547,7 @@
       </div>
       <div class="release-pill">
         <span class="release-pill__dot" aria-hidden="true"></span>
-        <span>Sealed CRX Distribution · Local-First</span>
+        <span>v0.5.0 · Sealed CRX Distribution · Local-First</span>
       </div>
       <h1>Download GovernWorld Extension</h1>
     </header>
@@ -569,7 +579,7 @@
           <h2 id="download-heading">Sealed Extension Package</h2>
           <p>Direct CRX package matched to the public GitHub release and SHA-256 checksum below.</p>
         </div>
-        <a id="download-crx-btn" class="btn-download" href="[INSERT_DIRECT_CRX_RELEASE_URL]" download="governworld.crx">
+        <a id="download-crx-btn" class="btn-download" href="https://github.com/ACR-LOGIC/governworld-extension/releases/download/v0.5.0/governworld-v0.5.0.crx" download="governworld-v0.5.0.crx">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
           <span>Download GovernWorld Extension</span>
         </a>
@@ -578,22 +588,22 @@
       <div class="manifest-ledger" aria-label="Release verification details">
         <div class="manifest-row">
           <span class="manifest-key">SHA-256</span>
-          <code id="sha256-value" class="manifest-val manifest-val--hash">[INSERT_SHA256_HASH_HERE]</code>
+          <code id="sha256-value" class="manifest-val manifest-val--hash">9a9e3640c27b1e7ea6a70989532f22f434c1501b0045610c865ee6eab175d750</code>
           <button class="btn-copy" type="button" data-copy-target="sha256-value">Copy hash</button>
         </div>
         <div class="manifest-row">
           <span class="manifest-key">GitHub source</span>
-          <a class="manifest-val" href="[INSERT_GITHUB_REPO_URL]">[INSERT_GITHUB_REPO_URL]</a>
+          <a class="manifest-val" href="https://github.com/ACR-LOGIC/governworld-extension">https://github.com/ACR-LOGIC/governworld-extension</a>
           <span></span>
         </div>
         <div class="manifest-row">
           <span class="manifest-key">GitHub release</span>
-          <a class="manifest-val" href="[INSERT_GITHUB_RELEASE_URL]">[INSERT_GITHUB_RELEASE_URL]</a>
+          <a class="manifest-val" href="https://github.com/ACR-LOGIC/governworld-extension/releases/tag/v0.5.0">https://github.com/ACR-LOGIC/governworld-extension/releases/tag/v0.5.0</a>
           <span></span>
         </div>
         <div class="manifest-row">
           <span class="manifest-key">Direct CRX from release</span>
-          <a class="manifest-val" href="[INSERT_DIRECT_CRX_RELEASE_URL]">[INSERT_DIRECT_CRX_RELEASE_URL]</a>
+          <a class="manifest-val" href="https://github.com/ACR-LOGIC/governworld-extension/releases/download/v0.5.0/governworld-v0.5.0.crx">https://github.com/ACR-LOGIC/governworld-extension/releases/download/v0.5.0/governworld-v0.5.0.crx</a>
           <span></span>
         </div>
       </div>
@@ -610,18 +620,18 @@
         <div class="verify-card">
           <div class="verify-card__head">
             <span class="verify-card__title">For Windows</span>
-            <button class="btn-copy" type="button" data-copy-text="Get-FileHash governworld.crx -Algorithm SHA256">Copy</button>
+            <button class="btn-copy" type="button" data-copy-text="Get-FileHash governworld-v0.5.0.crx -Algorithm SHA256">Copy</button>
           </div>
-          <p>Open PowerShell and run <code>Get-FileHash governworld.crx -Algorithm SHA256</code>, then compare it to the hash above.</p>
-          <div class="cmd-box">Get-FileHash governworld.crx -Algorithm SHA256</div>
+          <p>Open PowerShell and run <code>Get-FileHash governworld-v0.5.0.crx -Algorithm SHA256</code>, then compare it to the hash above.</p>
+          <div class="cmd-box">Get-FileHash governworld-v0.5.0.crx -Algorithm SHA256</div>
         </div>
         <div class="verify-card">
           <div class="verify-card__head">
             <span class="verify-card__title">For Mac</span>
-            <button class="btn-copy" type="button" data-copy-text="shasum -a 256 governworld.crx">Copy</button>
+            <button class="btn-copy" type="button" data-copy-text="shasum -a 256 governworld-v0.5.0.crx">Copy</button>
           </div>
-          <p>Open Terminal and run <code>shasum -a 256 governworld.crx</code>, then compare it to the hash above.</p>
-          <div class="cmd-box">shasum -a 256 governworld.crx</div>
+          <p>Open Terminal and run <code>shasum -a 256 governworld-v0.5.0.crx</code>, then compare it to the hash above.</p>
+          <div class="cmd-box">shasum -a 256 governworld-v0.5.0.crx</div>
         </div>
         <div class="verify-card">
           <div class="verify-card__head">
@@ -669,17 +679,18 @@
           <p class="install-note">This installs the app shortcut. Local features like page scan, redaction, and page blocking run on device.</p>
         </article>
       </div>
+      <p class="platform-limitation"><strong>Not supported in this version:</strong> iOS and Safari are not supported in this version. Use Chrome or Edge on Windows or Mac, or Chrome on Android.</p>
     </section>
 
     <footer class="release-footer">
       <div class="footer-links">
-        <a class="footer-link-card" href="[INSERT_GITHUB_REPO_URL]">
+        <a class="footer-link-card" href="https://github.com/ACR-LOGIC/governworld-extension">
           <span class="footer-link-card__label">View full source on GitHub</span>
-          <span class="footer-link-card__url">[INSERT_GITHUB_REPO_URL]</span>
+          <span class="footer-link-card__url">https://github.com/ACR-LOGIC/governworld-extension</span>
         </a>
-        <a class="footer-link-card" href="[INSERT_GITHUB_RELEASE_URL]">
+        <a class="footer-link-card" href="https://github.com/ACR-LOGIC/governworld-extension/releases/tag/v0.5.0">
           <span class="footer-link-card__label">Get it from the GitHub release instead</span>
-          <span class="footer-link-card__url">[INSERT_GITHUB_RELEASE_URL]</span>
+          <span class="footer-link-card__url">https://github.com/ACR-LOGIC/governworld-extension/releases/tag/v0.5.0</span>
         </a>
       </div>
       <p class="manual-note">If you do not want to use this page, you can always go to the release yourself, download the CRX there, and install it manually.</p>

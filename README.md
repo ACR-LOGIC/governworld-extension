@@ -1,7 +1,7 @@
 # GovernWorld Extension
 
 [![CI](https://github.com/ACR-LOGIC/governworld-extension/actions/workflows/ci.yml/badge.svg)](https://github.com/ACR-LOGIC/governworld-extension/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/Version-0.4.1-blue.svg)](https://github.com/ACR-LOGIC/governworld-extension/releases/tag/v0.4.1)
+[![Version](https://img.shields.io/badge/Version-0.5.0-blue.svg)](https://github.com/ACR-LOGIC/governworld-extension/releases/tag/v0.5.0)
 [![License](https://img.shields.io/badge/License-BSL--1.1%20Source--Available-orange.svg)](LICENSE)
 [![Manifest V3](https://img.shields.io/badge/Extension-Manifest%20V3-green.svg)](manifest.json)
 [![Local-First](https://img.shields.io/badge/Architecture-Local--First-brightgreen.svg)](#local-first-architecture--privacy-guarantees)
@@ -9,7 +9,7 @@
 [![Support on Buy Me A Coffee](https://img.shields.io/badge/Support-Buy%20Me%20A%20Coffee-ff813f?logo=buy-me-a-coffee&logoColor=white)](https://buymeacoffee.com/governworld)
 [![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-ea4aaa?logo=github)](https://github.com/sponsors/ACR-LOGIC)
 
-The **GovernWorld Extension** (`v0.4.1`) is a local-first browser protection tool that runs GovernWorld's deterministic detection and redaction engine directly in your web browser. It lets users detect, mask, and redact sensitive Personally Identifiable Information (PII), Protected Health Information (PHI), financial data, credentials, and custom patterns on web pages you choose to scan and in uploaded documents (PDF, DOCX, images). The page text and document content you scan **never leave your device** — the local detection and document pipelines have no network path at all. Optional organizational pairing (`MANAGE` mode) and optional account-linking flows are inactive by default and transmit non-content metadata only when explicitly enabled.
+The **GovernWorld Extension** (`v0.5.0`) is a local-first browser protection tool that runs GovernWorld's deterministic detection and redaction engine directly in your web browser. It lets users detect, mask, and redact sensitive Personally Identifiable Information (PII), Protected Health Information (PHI), financial data, credentials, and custom patterns on web pages you choose to scan and in uploaded documents (PDF, DOCX, images). The page text and document content you scan **never leave your device** — the local detection and document pipelines have no network path at all. Optional organizational pairing (`MANAGE` mode) and optional account-linking flows are inactive by default and transmit non-content metadata only when explicitly enabled.
 
 > **Licensing:** GovernWorld Extension is source-available under **Business Source License 1.1 (BSL 1.1)** — free for personal, educational, academic, government, and internal non-commercial use (transitioning to Apache License 2.0 on November 13, 2030). Commercial hosting, resale, or competing products require a separate commercial license from Andres Chavez Ramirez (`andres@acr-logic.com`). This is not an OSI-approved open-source license. See [LICENSE](LICENSE) for details.
 
@@ -230,7 +230,7 @@ iMessage, native apps, or the OS.
 
 ## Operating Modes: LOCAL vs. MANAGE
 
-GovernWorld Extension v0.4.1 supports two user-facing operating modes:
+GovernWorld Extension v0.5.0 supports two user-facing operating modes:
 
 ```text
 +-----------------------------------------------------------------------------------+

@@ -3,7 +3,9 @@
 All notable changes to the GovernWorld Extension are documented in this file.
 Historical release notes prior to directive `GW-DEV-DIRECTIVE-2026-001` are preserved in [`docs/releases/RELEASE_NOTES.md`](docs/releases/RELEASE_NOTES.md).
 
-## [Unreleased] — GW-SUPABASE-DESIGN-2026-001 (Supabase pairing)
+## [Unreleased]
+
+## [0.5.0] - 2026-11-27 — Frontend Redesign, DOCX Fix, /download & Supabase Pairing
 
 - **Self-contained `/download` release page**: Added single-file `download/index.html` with embedded GovernWorld PNG logo, top transparency notice before the download CTA, SHA-256 and GitHub release verification manifest, OS hash verification steps (Windows PowerShell, Mac Terminal, Android), install steps for Windows/Mac/Android only, and local preview route `/download` in `scripts/preview-server.mjs` (`tests/download-page.test.ts`).
 

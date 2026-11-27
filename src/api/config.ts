@@ -17,7 +17,7 @@
 export const DEFAULT_PROD_API_URL = "https://api.governworld.acrlogic.com";
 export const SUPABASE_URL = "https://lkgcehdwasewwoieyoip.supabase.co";
 export const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_BCVFc4dLjWcJIUaXlnv_IQ_F5usIS-C";
-export const CURRENT_EXTENSION_VERSION = "0.4.1";
+export const CURRENT_EXTENSION_VERSION = "0.5.0";
 
 /**
  * Known RFC 8032 Section 7.1 Test Vector 1 public key (paired with publicly

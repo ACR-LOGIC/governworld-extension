@@ -6,6 +6,12 @@ import { resolve } from "node:path";
 const html = readFileSync(resolve("download/index.html"), "utf8");
 const styleBlock = html.match(/<style>([\s\S]*?)<\/style>/i)?.[1] ?? "";
 
+const EXPECTED_SHA256 = "9a9e3640c27b1e7ea6a70989532f22f434c1501b0045610c865ee6eab175d750";
+const REPO_URL = "https://github.com/ACR-LOGIC/governworld-extension";
+const RELEASE_URL = "https://github.com/ACR-LOGIC/governworld-extension/releases/tag/v0.5.0";
+const DIRECT_CRX_URL =
+  "https://github.com/ACR-LOGIC/governworld-extension/releases/download/v0.5.0/governworld-v0.5.0.crx";
+
 describe("/download self-contained release page", () => {
   it("sets exact page title, heading, and embedded PNG logo", () => {
     expect(html).toContain("<title>Download GovernWorld Extension</title>");
@@ -36,27 +42,31 @@ describe("/download self-contained release page", () => {
     expect(downloadBtnIdx).toBeGreaterThan(localIdx);
   });
 
-  it("includes all required release placeholders", () => {
-    expect(html).toContain("[INSERT_SHA256_HASH_HERE]");
-    expect(html).toContain("[INSERT_GITHUB_REPO_URL]");
-    expect(html).toContain("[INSERT_GITHUB_RELEASE_URL]");
-    expect(html).toContain("[INSERT_DIRECT_CRX_RELEASE_URL]");
+  it("includes live v0.5.0 release URLs and verified SHA-256 with no placeholders", () => {
+    expect(html).not.toContain("[INSERT_");
+    expect(html).toContain(EXPECTED_SHA256);
+    expect(html).toContain(REPO_URL);
+    expect(html).toContain(RELEASE_URL);
+    expect(html).toContain(DIRECT_CRX_URL);
   });
 
   it("includes hash verification instructions for Windows, Mac, and Android", () => {
     expect(html).toContain("Verify the hash before you install");
-    expect(html).toContain("Get-FileHash governworld.crx -Algorithm SHA256");
-    expect(html).toContain("shasum -a 256 governworld.crx");
+    expect(html).toContain("Get-FileHash governworld-v0.5.0.crx -Algorithm SHA256");
+    expect(html).toContain("shasum -a 256 governworld-v0.5.0.crx");
     expect(html).toContain("Verify on desktop if you can. The hash above is the same file from the GitHub release.");
   });
 
-  it("includes install steps for only Windows, Mac, and Android and excludes iPhone/iPad", () => {
+  it("includes install steps for only Windows, Mac, and Android and notes iOS/Safari unsupported", () => {
+    const installCards = html.match(/class="install-card"/g) ?? [];
+    expect(installCards).toHaveLength(3);
     expect(html).toContain("Windows, Chrome or Edge");
     expect(html).toContain("Safari is not supported on Windows.");
     expect(html).toContain("Mac, Chrome or Edge");
     expect(html).toContain("Safari on Mac does not support Chrome extensions. Use Chrome or Edge.");
     expect(html).toContain("Android, Chrome");
     expect(html).toContain("Tap Install app or Add to Home Screen when prompted.");
+    expect(html).toContain("iOS and Safari are not supported in this version.");
     expect(html).not.toMatch(/iphone|ipad/i);
   });
 
