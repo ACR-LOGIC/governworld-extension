@@ -252,8 +252,8 @@ body[data-reduced-motion="true"] *::after {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  background: rgba(34, 211, 238, 0.06);
-  border: 1px solid rgba(34, 211, 238, 0.24);
+  background: rgba(148, 163, 184, 0.07);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 8px 10px;
 }
@@ -378,16 +378,16 @@ body[data-reduced-motion="true"] *::after {
 }
 
 .btn--primary {
-  background: linear-gradient(135deg, #06b6d4 0%, #10b981 100%);
-  border-color: rgba(34, 211, 238, 0.55);
-  color: #03151e;
+  background: #2563eb;
+  border-color: #1d4ed8;
+  color: #ffffff;
   font-weight: 600;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 4px 14px -2px rgba(16, 185, 129, 0.35);
+  box-shadow: 0 2px 8px -2px rgba(37, 99, 235, 0.5);
 }
 
 .btn--primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, #22d3ee 0%, #34d399 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 6px 18px -2px rgba(34, 211, 238, 0.45);
+  background: #1d4ed8;
+  box-shadow: 0 4px 12px -2px rgba(37, 99, 235, 0.55);
   transform: translateY(-1px);
 }
 
@@ -903,10 +903,10 @@ body[data-reduced-motion="true"] *::after {
 }
 
 .tab-btn--active {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: rgba(37, 99, 235, 0.16);
+  color: #93c5fd;
   font-weight: 600;
-  border-color: rgba(34, 211, 238, 0.35);
+  border-color: rgba(59, 130, 246, 0.45);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 2px 6px rgba(0, 0, 0, 0.35);
 }
 
@@ -1235,8 +1235,10 @@ body[data-reduced-motion="true"] *::after {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 4px 2px 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+  padding: 8px 10px;
+  background: #0b1526;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
   position: relative;
 }
 
@@ -1352,9 +1354,9 @@ body[data-reduced-motion="true"] *::after {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: #34d399;
-  background: rgba(52, 211, 153, 0.1);
-  border: 1px solid rgba(52, 211, 153, 0.28);
+  color: var(--text-muted);
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid var(--border-strong);
   border-radius: 999px;
   padding: 2px 7px;
   white-space: nowrap;
@@ -1370,8 +1372,7 @@ body[data-reduced-motion="true"] *::after {
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: #34d399;
-  box-shadow: 0 0 6px #34d399;
+  background: #94a3b8;
 }
 
 .mode-badge.badge--cloud {
@@ -1386,7 +1387,6 @@ body[data-reduced-motion="true"] *::after {
 
 .mode-badge.badge--managed::before {
   background: #60a5fa;
-  box-shadow: 0 0 6px #60a5fa;
 }
 
 .profile-menu-anchor {
@@ -1446,7 +1446,7 @@ body[data-reduced-motion="true"] *::after {
   width: 9px;
   height: 9px;
   border-radius: 9999px;
-  background: var(--ok);
+  background: #94a3b8;
   border: 2px solid var(--bg);
 }
 
@@ -1576,6 +1576,10 @@ body[data-reduced-motion="true"] *::after {
   background: rgba(34, 211, 238, 0.08);
 }
 
+.profile-popover__item--danger {
+  color: var(--danger);
+}
+
 /* ---------- Tab strip ---------- */
 .tab-nav {
   display: flex;
@@ -1624,12 +1628,6 @@ body[data-reduced-motion="true"] *::after {
   gap: 6px;
 }
 
-.action-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 6px;
-}
-
 .action-row {
   display: flex;
   align-items: center;
@@ -1658,7 +1656,6 @@ body[data-reduced-motion="true"] *::after {
 .doc-findings-section,
 .custom-patterns-section,
 .policy-studio-section,
-.community-section,
 .logic-actions,
 .dropzone-section,
 .review-stats,
@@ -1675,8 +1672,7 @@ body[data-reduced-motion="true"] *::after {
 .coverage-section h3,
 .activity-section h3,
 .custom-patterns-section h3,
-.policy-studio-section h3,
-.community-section h3 {
+.policy-studio-section h3 {
   margin: 0;
   font-size: 12px;
   font-weight: 600;
@@ -1926,48 +1922,51 @@ body[data-reduced-motion="true"] *::after {
 
 .settings-nav {
   display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  gap: 4px;
-  padding: 5px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
 }
 
 .settings-nav-btn {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 5px;
-  width: auto;
-  flex: 0 0 auto;
-  white-space: nowrap;
-  padding: 5px 8px;
-  background: transparent;
-  border: 1px solid transparent;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  color: var(--text-muted);
+  color: var(--text);
   font-family: var(--sans);
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 500;
   text-align: left;
+  white-space: normal;
   cursor: pointer;
   transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
 }
 
 .settings-nav-arrow {
-  display: none;
+  display: inline;
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 16px;
+  flex: 0 0 auto;
 }
 
 .settings-nav-btn:hover {
   background: var(--bg-inset);
+  border-color: var(--border-strong);
   color: var(--text);
 }
 
 .settings-nav-btn--active {
-  background: var(--accent-soft);
-  border-color: rgba(34, 211, 238, 0.25);
-  color: var(--accent);
+  background: rgba(37, 99, 235, 0.14);
+  border-color: rgba(59, 130, 246, 0.55);
+  color: var(--text);
   font-weight: 600;
 }
 
@@ -1988,7 +1987,6 @@ body[data-reduced-motion="true"] *::after {
   margin-top: 8px;
 }
 
-.community-disclosure,
 .about-collapsible {
   background: var(--bg-inset);
   border: 1px solid var(--border);
@@ -1997,7 +1995,6 @@ body[data-reduced-motion="true"] *::after {
   margin-top: 8px;
 }
 
-.community-disclosure summary,
 .about-collapsible summary {
   cursor: pointer;
   font-size: 12px;
@@ -3016,7 +3013,7 @@ body[data-reduced-motion="true"] *::after {
   flex: 1;
   min-width: 0;
   font-size: 12px;
-  padding: 4px 8px;
+  padding: 4px 32px 4px 8px;
 }
 
 .pinned-target-warning {
@@ -3038,3 +3035,570 @@ body[data-reduced-motion="true"] *::after {
   line-height: 1.35;
 }
 
+
+/* ---------- Frontend redesign (3 tabs): settings view, tab scan status,
+   quick tools, overflow menus, document controls ---------- */
+
+/* Settings is a dedicated view behind the profile menu: hide the tab bar
+   while it is open; the back bar at the top of the view returns. */
+#app.settings-view-open .tab-nav {
+  display: none;
+}
+
+.settings-back-bar {
+  display: flex;
+  margin-bottom: 2px;
+}
+
+.settings-back-btn::before {
+  content: "← ";
+}
+
+/* Tab Scan Status (Protection) */
+.tab-scan-status {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tab-scan-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tab-scan-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+}
+
+.tab-scan-item--pinned {
+  border-color: rgba(59, 130, 246, 0.45);
+}
+
+.tab-scan-item__icon {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--surface-alt);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+}
+
+.tab-scan-item__favicon {
+  width: 16px;
+  height: 16px;
+}
+
+.tab-scan-item__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.tab-scan-item__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-scan-item__domain {
+  font-size: 11px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-scan-item__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.tab-scan-item__status {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted);
+}
+
+.tab-scan-item__status[data-tone="ok"] {
+  color: #6ee7b7;
+  border-color: rgba(52, 211, 153, 0.35);
+}
+
+.tab-scan-item__status[data-tone="warn"] {
+  color: var(--warning);
+  border-color: rgba(251, 191, 36, 0.35);
+}
+
+.tab-scan-item__status[data-tone="error"] {
+  color: var(--danger);
+  border-color: rgba(248, 113, 113, 0.4);
+}
+
+.tab-scan-item__pin {
+  font-size: 10px;
+  font-weight: 600;
+  color: #93c5fd;
+}
+
+.tab-scan-item__last {
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+/* Protection Quick Tools */
+.quick-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.quick-tools__group h4 {
+  margin: 0 0 4px;
+  font-size: 12px;
+}
+
+.paste-mode-selector {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.paste-mode-btn {
+  flex: 0 0 auto;
+}
+
+.paste-mode-btn--active {
+  background: rgba(37, 99, 235, 0.18);
+  border-color: rgba(59, 130, 246, 0.55);
+  color: #93c5fd;
+  font-weight: 600;
+}
+
+.quick-tools__more {
+  margin-top: 2px;
+}
+
+.settings-view {
+  gap: 10px;
+}
+
+.tab-scan-item--active {
+  border-color: var(--border-strong);
+}
+
+/* Compact overflow menus (Logic Import/Export, More Tools) */
+.overflow-menu {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  background: var(--bg-inset);
+}
+
+.overflow-menu > summary {
+  list-style: none;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.overflow-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.overflow-menu__body {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 8px;
+}
+
+/* Document tab: grouped redaction controls */
+.doc-controls-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  background: var(--bg-inset);
+}
+
+.doc-controls-group > summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+/* Side panel: use the extra width for the tab list and document thumbnails. */
+html[data-surface="sidepanel"] .tab-scan-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+html[data-surface="sidepanel"] .doc-thumbs {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+/* ---------- Mockup layout iteration (2026-11-25) ---------- */
+
+/* Header avatar chevron: small badge on the avatar button, presentational. */
+.profile-avatar-chevron {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  color: var(--text-muted);
+  display: grid;
+  place-items: center;
+}
+
+.tab-btn__icon svg {
+  display: block;
+}
+
+/* Protection hero: restrained shield + heading + description. The live strip
+   above stays the status surface; the hero is a heading block, not a second
+   status indicator. */
+.protection-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 2px 2px;
+}
+
+.protection-hero__shield {
+  flex: 0 0 auto;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #60a5fa;
+  background: rgba(37, 99, 235, 0.14);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+}
+
+.protection-hero__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.protection-hero__text h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.protection-hero__text .footnote {
+  margin: 0;
+}
+
+/* Scan Complete banner: shown only for a real scan (see renderState).
+   Clean tone is green; a scan with findings is amber. */
+.scan-result-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(52, 211, 153, 0.4);
+  background: var(--ok-soft);
+  color: var(--text);
+}
+
+.scan-result-banner[data-tone="findings"] {
+  border-color: rgba(251, 191, 36, 0.45);
+  background: var(--warning-soft);
+}
+
+.scan-result-banner__icon {
+  color: #34d399;
+  flex: 0 0 auto;
+  display: flex;
+}
+
+.scan-result-banner[data-tone="findings"] .scan-result-banner__icon {
+  color: var(--warning);
+}
+
+.scan-result-banner__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  font-size: 12px;
+}
+
+.scan-result-banner__text strong {
+  font-size: 12px;
+}
+
+/* Protection tool tiles: jump tiles, not duplicate controls. */
+.tool-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.tool-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 10px 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-family: var(--sans);
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.tool-tile:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-inset);
+}
+
+.tool-tile__icon {
+  color: #60a5fa;
+  display: flex;
+}
+
+.tool-tile__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.tool-tile__label {
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.tool-tile__sub {
+  font-size: 10px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.tool-tile__chevron {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  color: var(--text-faint);
+  font-size: 13px;
+}
+
+/* Footers: Protection privacy note and Document safety note. */
+.protection-footer,
+.doc-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 12px;
+  background: rgba(37, 99, 235, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: var(--radius-sm);
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.protection-footer__icon {
+  color: #60a5fa;
+  flex: 0 0 auto;
+  display: flex;
+}
+
+.protection-footer a {
+  color: #93c5fd;
+  white-space: nowrap;
+}
+
+/* Document upload icon + Choose File button. */
+.dropzone__icon {
+  color: #60a5fa;
+  display: flex;
+}
+
+#doc-choose-file-btn {
+  align-self: center;
+}
+
+/* Document Tools card: groups the document actions. Print / Save as PDF
+   stays hidden until a verified redaction (printBar logic unchanged). */
+.doc-tools-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+}
+
+.doc-tools-card h4 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.doc-tools-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.doc-tools-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg-inset);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.doc-tools-list__btn {
+  flex: 1;
+  justify-content: flex-start;
+}
+
+.doc-tools-list__chevron {
+  color: var(--text-faint);
+  font-size: 14px;
+}
+
+/* Settings: nav cards (icon + title + description + chevron). */
+.settings-nav-card {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+}
+
+.settings-nav-card:has(.settings-nav-btn--active) {
+  border-color: rgba(59, 130, 246, 0.55);
+  background: rgba(37, 99, 235, 0.12);
+}
+
+.settings-nav-card .settings-nav-btn {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 0;
+  background: transparent;
+  border-color: transparent;
+  padding: 6px 8px;
+}
+
+.settings-nav-card__icon {
+  flex: 0 0 auto;
+  color: #60a5fa;
+  display: flex;
+}
+
+.settings-nav-card__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  text-align: left;
+}
+
+.settings-nav-card__title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.settings-nav-card__desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: normal;
+}
+
+/* Merged Detection sub-section inside Protection Settings. */
+.settings-subheading {
+  margin: 14px 0 6px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* Bottom Pair Extension card in Settings. */
+.settings-pair-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: rgba(37, 99, 235, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: var(--radius-sm);
+}
+
+.settings-pair-card__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-pair-card__text strong {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.settings-pair-card__text .footnote {
+  margin: 0;
+}

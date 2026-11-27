@@ -310,7 +310,7 @@ GovernWorld Extension is engineered for high-assurance data privacy, but users m
 - **Operating Mode Badge Displays "LOCAL":** The extension is in standalone mode with zero coordinator connections. To enroll in enterprise management, enter your organization's 6-digit pairing code or enrollment credentials in **Settings → Profile & Account**.
 - **Operating Mode Badge Displays "MANAGE":** The extension is actively paired or OS-managed. Administrator-mandated modes, categories, thresholds, and rule wizards are locked while accessibility settings stay editable.
 - **Document Studio Reports "No Text Layer Found":** Scanned PDFs or photos without embedded text automatically invoke the bundled offline Tesseract OCR engine. Ensure the document is right-side up and legible.
-- **Diagnostic Export:** Download the signed audit ledger via the **Review** tab (**Export signed audit log**) or **Settings → Privacy → Export signed audit log**.
+- **Diagnostic Export:** Download the signed audit ledger via **Profile menu → Settings → Advanced** (**Export signed audit log**).
 
 ---
 

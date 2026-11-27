@@ -1046,10 +1046,10 @@ try {
       stage.innerHTML = `<p id="single-name-line">Patient: Maria</p><p id="full-name-line">Patient: Maria Gonzalez</p>`;
     });
 
-    // Ensure setting starts at default OFF via Settings -> Detection UI
+    // Ensure setting starts at default OFF via Settings -> Protection UI (Detection merged there)
     await popup.evaluate(() => {
       document.querySelector('[data-tab="settings"]')?.click();
-      document.querySelector('[data-settings-page="detection"]')?.click();
+      document.querySelector('[data-settings-page="protection"]')?.click();
     });
     await popup.waitForTimeout(150);
 
@@ -1079,10 +1079,10 @@ try {
       await popup.screenshot({ path: join(SCREENSHOT_DIR, "A1-single-name-off.png") });
     }
 
-    // 2. Turn checkbox ON in Settings -> Detection and rescan
+    // 2. Turn checkbox ON in Settings -> Protection and rescan
     await popup.evaluate(() => {
       document.querySelector('[data-tab="settings"]')?.click();
-      document.querySelector('[data-settings-page="detection"]')?.click();
+      document.querySelector('[data-settings-page="protection"]')?.click();
     });
     await popup.waitForTimeout(150);
     const toggleOnState = await popup.evaluate(() => {

@@ -692,6 +692,7 @@ async function listScannableTabs(): Promise<import("../shared/types.js").Scannab
         url: t.url,
         domain: tabDomain(t.url),
         active: Boolean(t.active),
+        ...(t.favIconUrl ? { favIconUrl: t.favIconUrl } : {}),
       });
     }
     return out;
@@ -1285,6 +1286,7 @@ async function handlePopupDocPreview(
       void recordAudit({ ts: new Date().toISOString(), action: "doc_cleared", outcome: "ok" });
       return;
     }
+    console.warn("[governworld] doc preview failed:", sanitizeErrorForLog(error));
     const userMessage = error instanceof Error ? error.message : "The document could not be processed.";
     notifyPopup({ type: "POPUP_DOC_ERROR", requestId, code: "DOC_ERROR", userMessage });
     void recordAudit({ ts: new Date().toISOString(), action: "doc_previewed", outcome: "error" });
@@ -1312,6 +1314,7 @@ async function handlePopupDocCount(
     const totalPages = await countDocument({ fileKey, name, mimeType, kind });
     notifyPopup({ type: "POPUP_DOC_COUNT_RESULT", requestId, totalPages });
   } catch (error) {
+    console.warn("[governworld] doc count failed:", sanitizeErrorForLog(error));
     const userMessage = error instanceof Error ? error.message : "The document could not be read.";
     notifyPopup({ type: "POPUP_DOC_ERROR", requestId, code: "DOC_ERROR", userMessage });
     void recordAudit({ ts: new Date().toISOString(), action: "doc_previewed", outcome: "error" });
@@ -1535,6 +1538,7 @@ async function handlePopupDocRedact(
       });
     }
   } catch (error) {
+    console.warn("[governworld] doc redact failed:", sanitizeErrorForLog(error));
     const userMessage = error instanceof Error ? error.message : "The document could not be redacted.";
     notifyPopup({ type: "POPUP_DOC_STATUS", requestId, stage: "verified", problem: userMessage });
     notifyPopup({ type: "POPUP_DOC_ERROR", requestId, code: "DOC_ERROR", userMessage });

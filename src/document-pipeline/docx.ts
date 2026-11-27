@@ -3,7 +3,7 @@ import mammoth from "mammoth";
 import type { OcrToken } from "./ocr.js";
 import { MAX_DOCX_CHARS } from "../shared/docLimits.js";
 import { SecurityTelemetry } from "../shared/telemetry.js";
-import { extractSafeError } from "../shared/errorSanitizer.js";
+import { extractSafeError, sanitizeErrorForLog } from "../shared/errorSanitizer.js";
 
 /**
  * DOCX-page loading. Extracts raw text with mammoth, then lays it out on a
@@ -182,7 +182,8 @@ function toControlledDocxError(error: unknown): Error {
     return error;
   }
   const safe = extractSafeError(error);
-  SecurityTelemetry.record("docx_parse_exception", { errorName: safe.name });
+  SecurityTelemetry.record("docx_parse_exception", { errorName: safe.name, errorMessage: safe.message });
+  console.warn("[governworld] DOCX parse exception:", sanitizeErrorForLog(error));
   return new Error("The DOCX document is corrupt or could not be safely parsed.");
 }
 
@@ -199,10 +200,12 @@ function toControlledDocxError(error: unknown): Error {
 export async function extractDocxText(bytes: ArrayBuffer): Promise<{ text: string; truncated: boolean }> {
   try {
     assertSafeDocxArchive(bytes);
-    const input = { buffer: new Uint8Array(bytes.slice(0)) };
-    const result = await mammoth.extractRawText(
-      input as unknown as Parameters<typeof mammoth.extractRawText>[0]
-    );
+    const copy = bytes.slice(0);
+    // Pass both shapes: mammoth's browser build (browser/unzip.js) only honors
+    // `arrayBuffer`, while its Node build (lib/unzip.js, used in Vitest) only
+    // honors `buffer`.
+    const input = { arrayBuffer: copy, buffer: new Uint8Array(copy) };
+    const result = await mammoth.extractRawText(input);
     const raw = typeof result?.value === "string" ? result.value : "";
     const text = raw.slice(0, MAX_DOCX_CHARS);
     // "Was anything dropped?" rather than "is it over the cap?": mammoth appends

@@ -1,9 +1,12 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { tokenSpans, findingsFromOcrPages } from "../src/document-pipeline/core.js";
 import type { OcrPageResult, OcrToken } from "../src/document-pipeline/ocr.js";
 import { assertSafeDocxArchive, extractDocxText } from "../src/document-pipeline/docx.js";
 import { MAX_DOCX_CHARS } from "../src/shared/docLimits.js";
+import { SecurityTelemetry } from "../src/shared/telemetry.js";
 
 function token(text: string, lineIndex: number, x: number, width: number): OcrToken {
   return { text, confidence: 90, lineIndex, bbox: { x, y: 10, width, height: 16 } };
@@ -165,6 +168,64 @@ describe("DOCX character cap is disclosed, not silent", () => {
     const { text, truncated } = await extractDocxText(docxWithText("y".repeat(MAX_DOCX_CHARS - 2)));
     expect(text.length).toBe(MAX_DOCX_CHARS);
     expect(truncated).toBe(false);
+  });
+
+  it("extracts synthetic fixture sample.docx cleanly", async () => {
+    const fileBytes = readFileSync(resolve("tests/fixtures/sample.docx"));
+    const buf = fileBytes.buffer.slice(fileBytes.byteOffset, fileBytes.byteOffset + fileBytes.byteLength);
+    const { text, truncated } = await extractDocxText(buf);
+    expect(truncated).toBe(false);
+    expect(text).toContain("jane.doe@example.com");
+    expect(text).toContain("123-45-6789");
+  });
+
+  it("records sanitized errorMessage in SecurityTelemetry on mammoth parse failure", async () => {
+    SecurityTelemetry.clear();
+    // Valid stored ZIP frame that lacks word/document.xml so mammoth rejects inside extractRawText.
+    const encoder = new TextEncoder();
+    const name = "note.txt";
+    const body = encoder.encode("hello");
+    const crc = crc32(body);
+    const lh = new Uint8Array(30 + name.length);
+    const lv = new DataView(lh.buffer);
+    lv.setUint32(0, 0x04034b50, true);
+    lv.setUint16(4, 20, true);
+    lv.setUint32(14, crc, true);
+    lv.setUint32(18, body.length, true);
+    lv.setUint32(22, body.length, true);
+    lv.setUint16(26, name.length, true);
+    for (let i = 0; i < name.length; i += 1) lh[30 + i] = name.charCodeAt(i);
+
+    const ch = new Uint8Array(46 + name.length);
+    const cv = new DataView(ch.buffer);
+    cv.setUint32(0, 0x02014b50, true);
+    cv.setUint16(4, 20, true);
+    cv.setUint16(6, 20, true);
+    cv.setUint32(16, crc, true);
+    cv.setUint32(20, body.length, true);
+    cv.setUint32(24, body.length, true);
+    cv.setUint16(28, name.length, true);
+    for (let i = 0; i < name.length; i += 1) ch[46 + i] = name.charCodeAt(i);
+
+    const eocd = new Uint8Array(22);
+    const ev = new DataView(eocd.buffer);
+    ev.setUint32(0, 0x06054b50, true);
+    ev.setUint16(8, 1, true);
+    ev.setUint16(10, 1, true);
+    ev.setUint32(12, ch.length, true);
+    ev.setUint32(16, lh.length + body.length, true);
+
+    const zip = new Uint8Array(lh.length + body.length + ch.length + eocd.length);
+    zip.set(lh, 0);
+    zip.set(body, lh.length);
+    zip.set(ch, lh.length + body.length);
+    zip.set(eocd, lh.length + body.length + ch.length);
+
+    await expect(extractDocxText(zip.buffer)).rejects.toThrow("The DOCX document is corrupt or could not be safely parsed.");
+    const evts = SecurityTelemetry.getEvents().filter((e) => e.kind === "docx_parse_exception");
+    expect(evts.length).toBeGreaterThan(0);
+    expect(typeof evts[evts.length - 1].errorMessage).toBe("string");
+    expect(String(evts[evts.length - 1].errorMessage).length).toBeGreaterThan(0);
   });
 });
 

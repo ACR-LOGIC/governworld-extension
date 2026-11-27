@@ -9,12 +9,16 @@ const extRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 describe("Instructions, Tab Navigation & Contextual Guidance", () => {
   const pages = ["src/popup/index.html", "src/sidepanel/sidepanel.html"];
 
-  it.each(pages)("%s declares the 4 primary tabs with proper roles", (pagePath) => {
+  it.each(pages)("%s declares the 3 primary tabs with proper roles", (pagePath) => {
     const html = readFileSync(join(extRoot, pagePath), "utf8");
-    for (const tab of ["protection", "logic", "review", "settings"]) {
+    for (const tab of ["protection", "logic", "document"]) {
       expect(html, `${pagePath} missing tab button for ${tab}`).toContain(`data-tab="${tab}"`);
       expect(html, `${pagePath} missing tab panel for ${tab}`).toContain(`id="tab-${tab}"`);
     }
+    // Settings is a dedicated view behind the profile menu, not a fourth tab.
+    expect(html, `${pagePath} still has a Settings tab button`).not.toContain('data-tab="settings"');
+    expect(html, `${pagePath} missing the settings view panel`).toContain('id="tab-settings"');
+    expect(html, `${pagePath} still has a Review tab`).not.toContain('data-tab="review"');
   });
 
   it.each(pages)("%s contains contextual help links that resolve to valid guide cards", (pagePath) => {

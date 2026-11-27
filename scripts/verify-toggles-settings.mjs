@@ -166,7 +166,7 @@ try {
   check("notifyRedactionComplete persisted", storedNotifs && storedNotifs.notifyRedactionComplete === redAfter);
 
   console.log("\n3. Verify Detection categories checkboxes");
-  await popup.click('[data-settings-page="detection"]');
+  await popup.click('[data-settings-page="protection"]');
   await popup.waitForTimeout(300);
 
   const emailCheckbox = await popup.$('#category-list input[value="email"]');

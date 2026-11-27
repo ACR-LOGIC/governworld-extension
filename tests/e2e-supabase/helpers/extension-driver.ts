@@ -351,9 +351,15 @@ export async function launchExtensionContext(
   const extensionId = new URL(sw.url()).host;
 
   async function navigateToProfileSettings(page: Page): Promise<void> {
-    const settingsBtn = page.locator("#tab-btn-settings");
-    if ((await settingsBtn.count()) > 0 && (await settingsBtn.isVisible())) {
-      await settingsBtn.click();
+    // Settings lives behind the profile menu now (no Settings tab): open the
+    // avatar menu, choose Settings, then the Profile & Account page.
+    const avatarBtn = page.locator("#profile-avatar-btn");
+    if ((await avatarBtn.count()) > 0 && (await avatarBtn.isVisible())) {
+      await avatarBtn.click();
+    }
+    const settingsItem = page.locator("#profile-goto-settings-btn");
+    if ((await settingsItem.count()) > 0 && (await settingsItem.isVisible())) {
+      await settingsItem.click();
     }
     const profileNav = page.locator("#settings-nav-profile");
     if ((await profileNav.count()) > 0 && (await profileNav.isVisible())) {

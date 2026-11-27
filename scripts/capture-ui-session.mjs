@@ -401,7 +401,7 @@ try {
   }
 
   // --- Every settings sub-page --------------------------------------------
-  for (const sub of ["profile", "protection", "detection", "appearance", "notifications", "privacy", "advanced", "about"]) {
+  for (const sub of ["profile", "protection", "appearance", "notifications", "privacy", "advanced", "about"]) {
     await step(`settings-${sub}`, async () => {
       await popup.click(`[data-settings-page="${sub}"]`);
       await popup.waitForTimeout(350);

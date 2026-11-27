@@ -6,6 +6,7 @@ import { PDFDocument, StandardFonts } from "pdf-lib";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { deflateRawSync } from "node:zlib";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const outDir = join(root, "..", "tests", "fixtures");
@@ -79,3 +80,118 @@ const bytes = await doc.save();
 mkdirSync(outDir, { recursive: true });
 writeFileSync(join(outDir, "sample.pdf"), bytes);
 console.log("Wrote tests/fixtures/sample.pdf", bytes.length, "bytes");
+
+function escapeXml(value) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+function crc32(buf) {
+  let crc = ~0;
+  for (const byte of buf) {
+    crc ^= byte;
+    for (let k = 0; k < 8; k += 1) {
+      crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+    }
+  }
+  return ~crc >>> 0;
+}
+
+function buildDeflatedZip(entries) {
+  const locals = [];
+  const central = [];
+  let offset = 0;
+
+  for (const [name, data] of entries) {
+    const nameBytes = Buffer.from(name, "utf8");
+    const raw = Buffer.from(data, "utf8");
+    const compressed = deflateRawSync(raw);
+    const crc = crc32(raw);
+
+    const lh = Buffer.alloc(30 + nameBytes.length);
+    lh.writeUInt32LE(0x04034b50, 0);
+    lh.writeUInt16LE(20, 4);
+    lh.writeUInt16LE(0, 6);
+    lh.writeUInt16LE(8, 8); // deflate
+    lh.writeUInt32LE(crc, 14);
+    lh.writeUInt32LE(compressed.length, 18);
+    lh.writeUInt32LE(raw.length, 22);
+    lh.writeUInt16LE(nameBytes.length, 26);
+    nameBytes.copy(lh, 30);
+    locals.push(lh, compressed);
+
+    const ch = Buffer.alloc(46 + nameBytes.length);
+    ch.writeUInt32LE(0x02014b50, 0);
+    ch.writeUInt16LE(20, 4);
+    ch.writeUInt16LE(20, 6);
+    ch.writeUInt16LE(0, 8);
+    ch.writeUInt16LE(8, 10); // deflate
+    ch.writeUInt32LE(crc, 16);
+    ch.writeUInt32LE(compressed.length, 20);
+    ch.writeUInt32LE(raw.length, 24);
+    ch.writeUInt16LE(nameBytes.length, 28);
+    ch.writeUInt32LE(offset, 42);
+    nameBytes.copy(ch, 46);
+    central.push(ch);
+
+    offset += lh.length + compressed.length;
+  }
+
+  const centralBuf = Buffer.concat(central);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(entries.length, 8);
+  eocd.writeUInt16LE(entries.length, 10);
+  eocd.writeUInt32LE(centralBuf.length, 12);
+  eocd.writeUInt32LE(offset, 16);
+
+  return Buffer.concat([...locals, centralBuf, eocd]);
+}
+
+const docxParagraphs = lines
+  .map((line) => (line === "" ? "<w:p/>" : `<w:p><w:r><w:t xml:space="preserve">${escapeXml(line)}</w:t></w:r></w:p>`))
+  .join("");
+
+const docxBytes = buildDeflatedZip([
+  [
+    "[Content_Types].xml",
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+      '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/>' +
+      "</Types>",
+  ],
+  [
+    "_rels/.rels",
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+      "</Relationships>",
+  ],
+  [
+    "word/_rels/document.xml.rels",
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
+      "</Relationships>",
+  ],
+  [
+    "word/styles.xml",
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
+  ],
+  [
+    "word/document.xml",
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      `<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${docxParagraphs}</w:body></w:document>`,
+  ],
+]);
+
+writeFileSync(join(outDir, "sample.docx"), docxBytes);
+console.log("Wrote tests/fixtures/sample.docx", docxBytes.length, "bytes");
