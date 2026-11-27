@@ -56,6 +56,12 @@ jobs:
       - name: Verify Release Digests
         run: npm run verify:digests
 
+      # --- Multi-Target Production Builds ---
+      # Build Chromium dist/ before running Vitest because dist-manifest and
+      # lazy-dictionary bundle assertions verify dist/content.js and assets.
+      - name: Build Extension (Chromium)
+        run: npm run build
+
       - name: Run Test Suite
         run: npm test
 
@@ -64,10 +70,6 @@ jobs:
 
       - name: Run Section 4 Hard CI Gates (G1-G9)
         run: xvfb-run --auto-servernum npm run gates:ci
-
-      # --- Multi-Target Production Builds ---
-      - name: Build Extension (Chromium)
-        run: npm run build
 
       - name: Build Extension (Firefox)
         run: npm run build:firefox
