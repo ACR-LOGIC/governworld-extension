@@ -71,7 +71,7 @@ export function sanitizePastedText(
 ): string {
   if (!matches || matches.length === 0) return text;
   // Sort descending by start to safely slice from end to beginning
-  const sorted = [...matches].sort((a, b) => b.start - a.start);
+  const sorted = matches.toSorted((a, b) => b.start - a.start);
   let result = text;
   for (const match of sorted) {
     result = result.slice(0, match.start) + placeholder + result.slice(match.end);

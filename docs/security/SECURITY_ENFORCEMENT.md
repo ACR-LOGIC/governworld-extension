@@ -118,7 +118,9 @@ process; unit pins in `tests/paste-enforcement.test.ts`):
   banner reads "waiting for access".
 - Managed lock + user toggle/clear attempts → policy enforced at the decision
   point, not just in the UI (checkboxes disabled *and* mandated categories
-  re-added on save; content guard merges independently).
+  re-added on save; content guard merges independently). Post-pairing, all 13 `ADMIN_CONTROLLABLE_FEATURES` auto-lock unless explicitly delegated via the administrator's separate `"Unlock for User"` control, user-facing unpair controls are hidden, and `POPUP_MANAGEMENT_UNENROLL` is refused fail-closed in the service worker (only admin-side `410` revocation or confirmed duplicate-browser replacement resets to `LOCAL` defaults).
+- Lapsed subscription (`HTTP 402`) → cloud heartbeats and policy fetches halt immediately while keeping all previously pushed policies locked locally (fail-closed continuity rather than resetting to unmanaged).
+- Isolated telemetry boundary → telemetry validation runs inside `telemetrySandbox.ts` / `telemetry-worker.js` with zero imports from DOM extraction, payload storage, OCR, or audit stores, rejecting any free-text or unlisted fields.
 - Policy Studio full website blocking → intercepts matching origins with an isolated, closed Shadow DOM shield (`__governworld-full-site-block-shield`) preventing all interactions, clicks, and underlying DOM leaks.
 - AI Leakage Rule → pasting or uploading PHI (Patient Name, DOB, MRN, Diagnosis, Medications) into external AI platforms (`chatgpt.com`, `claude.ai`, `gemini.google.com`, `perplexity.ai`, `deepseek.com`) triggers an immediate `100 CRITICAL` hard block with non-bypassable rejection (`policyBlocked: true`, no "Paste Unchanged" button).
 - Explainable Compliance Scoring (Risk Formula v1) → replaces opaque heuristics with deterministic mathematical scoring ($0-100$) and explicit human-readable justifications ("Blocked because: Patient Name + DOB + AI Destination = 92 Risk").
@@ -127,3 +129,7 @@ process; unit pins in `tests/paste-enforcement.test.ts`):
 Anything on this list that regresses to an unlisted bypass is a release
 blocker until fixed or explicitly documented as an unsupported browser
 limitation.
+
+---
+
+Last verified on: November 28, 2026

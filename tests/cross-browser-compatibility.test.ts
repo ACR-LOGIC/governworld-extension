@@ -50,7 +50,8 @@ describe("Cross-Browser Compatibility Gates (Chrome, Firefox, Edge, Safari, Brav
       expect(manifest.browser_specific_settings).toBeDefined();
       expect(manifest.browser_specific_settings.gecko).toBeDefined();
       expect(manifest.browser_specific_settings.gecko.id).toBeTruthy();
-      expect(manifest.browser_specific_settings.gecko.strict_min_version).toBe("109.0");
+      // Firefox 115+ is required for ES2023 non-mutating array methods (toSorted/toReversed).
+      expect(manifest.browser_specific_settings.gecko.strict_min_version).toBe("115.0");
     });
 
     it("uses standard WebExtension APIs that Firefox aliases or polyfills", () => {

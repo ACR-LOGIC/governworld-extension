@@ -3,6 +3,7 @@ import { build } from "esbuild";
 import { copyFileSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { inputSwitchPolyfillPlugin } from "./scripts/lib/esbuild-plugins.mjs";
 
 const root = dirname(fileURLToPath(import.meta.url));
 const outDir = join(root, "dist");
@@ -16,8 +17,9 @@ const common = {
   sourcemap: false,
   legalComments: "none",
   minify: !dev,
-  target: "chrome109",
+  target: "chrome116",
   logLevel: "info",
+  plugins: [inputSwitchPolyfillPlugin()],
 };
 
 const entries = [
@@ -32,6 +34,7 @@ const entries = [
   // Full-screen document review: the document at natural size, controls beside
   // it. Separate entry so a review page never loads the popup controller.
   { entry: "src/popup/review.ts", out: "review.js", format: "iife" },
+  { entry: "src/service-worker/telemetryWorker.ts", out: "telemetry-worker.js", format: "esm" },
 ];
 
 for (const { entry, out, format } of entries) {

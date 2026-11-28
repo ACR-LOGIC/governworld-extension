@@ -202,6 +202,7 @@ export async function getInstallationId(): Promise<string> {
   } catch (err) {
     throw new Error(
       `Failed to read installation ID from extension storage: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
     );
   }
 
@@ -229,6 +230,7 @@ export async function getInstallationId(): Promise<string> {
   } catch (err) {
     throw new Error(
       `Failed to persist installation ID to extension storage: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
     );
   }
 

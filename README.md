@@ -256,18 +256,18 @@ In **LOCAL mode**, the extension starts and runs as an autonomous, self-containe
 
 ### 2. MANAGE Mode (Administrator-Managed Operation — Opt-In / Paired)
 
-**MANAGE mode** activates only when an organization deploys OS-level managed policy (`chrome.storage.managed`) or an employee explicitly pairs the browser using a 6-digit pairing code or Enterprise Device Enrollment under **Settings → Profile & Account**:
-- **Pairing & Policy Synchronization:** Validates the pairing code with the organization's Office Coordinator (`http://127.0.0.1:4820` or HTTPS coordinator URL), records `ManagementEnrollment` with the device's public installation UUID, and downloads signed administrator rules (`Ed25519` signature + anti-rollback version check + anti-replay nonce/timestamp window).
+**MANAGE mode** activates only when an organization deploys OS-level managed policy (`chrome.storage.managed`) or an employee explicitly pairs the browser via the single-entry **Office Manager Coordination** section under **Settings → Profile & Account**:
+- **Single-Entry Email-Bound Pairing & Multi-Browser Licensing:** Admins issue single-use pairing tokens bound to a user's email hash. One user counts as **1 seat across distinct browser families** (at most 1 active instance per browser family, with explicit conflict confirmation if re-pairing the same browser family).
+- **Pre-Pairing Consent & Non-Reversible Admin Lock:** Before finalizing pairing, an alert dialog informs the user that pairing grants organization administrators control over extension configuration and policies and that **once paired, the user cannot unpair the extension themselves**. Once paired, user-facing unpair/disconnect controls are hidden and local unenroll requests are refused by the service worker; only administrator revocation or confirmed duplicate-browser replacement resets the seat.
 - **Administrative Feature Lockdown vs. Employee Accommodations:**
-  - **Locked by Administrator:** Protection modes (`always-on` / `this-tab`), mandated detection categories, preset selection, category filter buttons, confidence threshold overrides, network destination rules, and the custom pattern wizard button are locked so compliance baselines cannot be switched off.
-  - **Unlocked for Employees:** Accessibility and personal usability settings (font scaling, high contrast, dyslexia mode, reduced motion, speech announcements, verbose ARIA, mask highlight colors, UI language, and local notification preferences) remain fully adjustable.
-- **Periodic Lightweight Heartbeat Status Checks:** Strictly post-pairing (never in standalone `LOCAL` mode), `chrome.alarms` schedules a 15-minute check transmitting only non-sensitive health metadata (`device_id`, `organization_id`, `employee_id`, `browser_info`, `extension_version`, `policy_version`, `policy_status`, `timestamp`, `status`).
-- **Zero Surveillance Boundary:** Browsing history, visited URLs, search queries, page text, form inputs, keystrokes, credentials, emails, chats, uploaded documents, OCR text, and detected findings **never leave the device**.
-- **Offline Continuity:** If the coordinator is unreachable, the extension continues enforcing the last valid policy locally and never fails open.
+  - **Locked by Administrator:** Automatically locks all policy-governed protection modes, mandated detection categories, confidence thresholds, network destination rules, site policies, redaction styles, and custom rules on pairing, with an explicit per-feature administrator **"Unlock for User"** delegation control.
+  - **Unlocked for Employees:** Accessibility and personal usability settings (font scaling, high contrast, dyslexia mode, reduced motion, speech announcements, verbose ARIA, mask highlight colors, UI language, and local notification preferences) remain adjustable.
+- **Isolated Telemetry & Dual-State Lifecycle Detection:** Strictly post-pairing (never in standalone `LOCAL` mode), `telemetry-worker.js` and `chrome.alarms` emit closed-schema health metadata every 15 minutes (status enum, UTC timestamp, `browser_family` enum, policy version/integrity hashes), distinguishing **Online**, **Offline (Clean Shutdown)** (`runtime.onSuspend` / `windows.onRemoved`), and **Uninstalled / Terminated** (`runtime.setUninstallURL` feedback endpoint).
+- **Zero Surveillance Boundary & Offline Continuity:** Browsing history, visited URLs, search queries, page text, form inputs, keystrokes, credentials, emails, chats, uploaded documents, OCR text, and detected findings **never leave the device**. If the coordinator is unreachable or an organization's subscription lapses (`HTTP 402`), cloud heartbeats/sync pause while previously pushed policies remain enforced and locked locally.
 
 ---
 
-> **Supabase pairing:** MANAGE mode pairs through a pinned Supabase backend (fail-closed, signature-verified policy, 15-minute heartbeat and session rotation). LOCAL mode is unchanged: zero network egress. Details in [docs/supabase-pairing.md](docs/supabase-pairing.md).
+> **Supabase pairing:** MANAGE mode pairs through a pinned Supabase backend (`https://lkgcehdwasewwoieyoip.supabase.co/*`; fail-closed Ed25519 signature verification, closed-schema telemetry isolation, single-seat multi-browser binding). LOCAL mode is unchanged: zero network egress. Details in [docs/security/SUPABASE_PUBLIC_ARCHITECTURE.md](docs/security/SUPABASE_PUBLIC_ARCHITECTURE.md).
 
 ## Extension Policy Updates vs. Extension Software Updates
 
@@ -644,3 +644,7 @@ You can also contribute by submitting new regex/checksum patterns, opening issue
 Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 
 GovernWorld Extension is **source-available** under **Business Source License 1.1 (BSL 1.1)** ([LICENSE](LICENSE)): free for personal, educational, academic, government, and internal non-commercial company use, transitioning to Apache License 2.0 after November 13, 2030. Commercial use, redistribution, resale, hosting, SaaS offerings, or competing products require a separate commercial license from Andres Chavez Ramirez (`andres@acr-logic.com`). This is not an open-source (OSI-approved) license.
+
+---
+
+Last verified on: November 28, 2026

@@ -61,6 +61,9 @@ Deno.serve(async (req: Request) => {
       seat_id: String(data.seat_id),
       installation_id: body.installation_id,
       unlocked: Boolean(data.unlocked),
+      unlocked_features: Array.isArray(data.unlocked_features)
+        ? (data.unlocked_features as string[])
+        : [],
       policy_seq: Number(data.policy_seq ?? 1),
     });
 
@@ -71,6 +74,7 @@ Deno.serve(async (req: Request) => {
       organisation_name: data.organisation_name,
       seat_id: data.seat_id,
       unlocked: Boolean(data.unlocked),
+      unlocked_features: Array.isArray(data.unlocked_features) ? data.unlocked_features : [],
       policy_version: signed.policy_version,
       policy_envelope: signed.policy_envelope,
     });

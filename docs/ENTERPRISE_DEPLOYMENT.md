@@ -203,7 +203,7 @@ GovernWorld allows enterprises to restrict page-derived network fetches (for ima
 
 ## 7. GovernWorld Office Manager Dynamic Policy Synchronization (MANAGE Mode)
 
-In addition to OS-level `chrome.storage.managed` (GPO / MDM), GovernWorld Extension v0.4.0 supports dynamic policy orchestration via the **GovernWorld Office Manager**:
+In addition to OS-level `chrome.storage.managed` (GPO / MDM), GovernWorld Extension v0.5.0 supports dynamic policy orchestration via single-entry **Office Manager Coordination**:
 
 ```
 +-----------------------+         +----------------------------+         +---------------------------+
@@ -216,22 +216,21 @@ In addition to OS-level `chrome.storage.managed` (GPO / MDM), GovernWorld Extens
 ### A. Lifecycle & Enrollment Modes
 1. **Standalone LOCAL Mode (Default on Install):**
    - The extension initially boots strictly on-device with **zero heartbeats, zero connection attempts, and zero network calls**.
-   - Operates fully independently until explicitly paired with an organization coordinator.
-2. **One-Time Pairing Code Registration:**
-   - The employee receives a 6-digit pairing code from their administrator.
-   - Submitting the code in the extension validates the pairing against the coordinator, links the device's public installation UUID (`deviceId`), and transitions the extension state from `LOCAL` to `MANAGE`.
-3. **Automatic Policy Pull & Local Enforcement:**
-   - Immediately upon pairing, the extension pulls the signed organizational rules and enforces them locally in the browser DOM and paste-shield runtime.
-4. **Policy Lockdown vs. Employee Usability:**
-   - **Locked by Admin 🔒:** Protection modes (PasteGuard / Always-on), required detection categories (SSN, MRN, Payment Cards, etc.), confidence thresholds, network destination boundaries, and custom rule overrides are locked against modification or downgrading.
-   - **Unlocked for Employees 🔓:** Personal accessibility accommodations (font sizing, high contrast, dyslexia-friendly text spacing, reduced motion, speech synthesis/announcements) and visual mask colors remain fully configurable by the employee.
-5. **Periodic Lightweight Heartbeat Verification:**
-   - Heartbeats **never run prior to pairing**.
-   - Once paired, the extension uses `chrome.alarms` (15-minute intervals) to send a lightweight compliance health check to `/api/v1/management/heartbeat`.
-   - **Payload Invariants**: Contains strictly device public UUID, browser metadata (name, version, platform), extension version, policy version, timestamp, and health status.
-   - **Zero Surveillance Invariant**: The extension **never** sends browsing history, visited URLs, search queries, page text, form data, keystrokes, credentials, emails, chats, or personal files to administrators.
-6. **Unpairing & Safe Teardown:**
-   - Unpairing immediately deletes enrollment credentials and stored policies, clears the background heartbeat alarm, and returns the extension to standalone `LOCAL` mode with zero egress.
+   - Operates fully independently until explicitly paired via **Settings → Profile & Account → Office Manager Coordination**.
+2. **Email-Bound Pairing, Single-Seat Multi-Browser Rule & Pre-Pairing Consent:**
+   - The administrator issues an email-bound pairing token (1 user = 1 seat across distinct browser families; max 1 active instance per browser family per email, with a replacement conflict prompt if re-pairing the same browser family).
+   - Before finalizing pairing, the extension presents a mandatory confirmation modal warning that pairing grants organization administrators control over extension configuration/policies and that **once paired, only the administrator can unpair the extension**.
+3. **Automatic Policy Pull, Auto-Lock & Per-Feature Delegation:**
+   - Immediately upon pairing confirmation, all 13 `ADMIN_CONTROLLABLE_FEATURES` auto-lock against local modification (`unlocked = false`, `unlockedFeatures = []`).
+   - Administrators can separately grant **"Unlock for User"** per feature (`seat_unlock_feature` / `seat_lock_feature`) to delegate control back to the user without toggling the feature state itself.
+   - **Unlocked for Employees 🔓:** Personal accessibility accommodations (font sizing, high contrast, dyslexia-friendly text spacing, reduced motion, speech synthesis/announcements) remain configurable.
+4. **Isolated Telemetry & Dual-State Health Detection:**
+   - Heartbeats **never run prior to pairing** and schema validation runs inside an isolated background worker (`telemetry-worker.js` / `telemetrySandbox.ts`) with zero access to DOM or payload storage.
+   - Emits closed-schema checks every 15 minutes and distinguishes **Online**, **Offline (Clean Shutdown)** (`runtime.onSuspend` / `windows.onRemoved`), and **Uninstalled / Terminated** (`runtime.setUninstallURL` -> `uninstall-signal`).
+   - **Zero Surveillance Invariant**: Never transmits browsing history, visited URLs, search queries, page text, form data, keystrokes, credentials, emails, chats, or personal files.
+5. **Non-Reversible Admin Lock & Lapsed-Subscription Continuity:**
+   - Once paired, user-facing unpair/disconnect controls are hidden and local unenroll messages are refused fail-closed by the service worker; only administrator revocation (`HTTP 410`) or confirmed duplicate-browser replacement resets to `LOCAL` defaults.
+   - If a subscription lapses (`HTTP 402`), cloud heartbeats/sync pause while pushed policies stay **locked locally** (fail-closed continuity).
 
 ### B. Dynamic Security Architecture
 1. **Ed25519 Cryptographic Verification:** Every policy envelope is signed by the administrator using an Ed25519 private key. The extension verifies the signature against a pinned trusted public key before applying any settings.
@@ -240,3 +239,7 @@ In addition to OS-level `chrome.storage.managed` (GPO / MDM), GovernWorld Extens
 4. **Anti-Replay Protection:** Envelopes require a fresh nonce and timestamp within an allowable validation window (+/- 5 minutes).
 5. **Targeting Validation:** Each envelope specifies `organization_id`, `employee_id`, and `device_id`. Policies targeted to different entities are rejected with `TARGET_MISMATCH`.
 6. **Offline Continuity:** The last verified policy is persisted in local storage. In the event of network disruption, offline travel, or coordinator unavailability, the extension continues enforcing the policy. Protections are never suspended due to lack of network connectivity.
+
+---
+
+Last verified on: November 28, 2026

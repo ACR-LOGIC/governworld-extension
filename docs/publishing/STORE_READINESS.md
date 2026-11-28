@@ -165,4 +165,10 @@ cloud analysis exists.
 The side-panel **account linking** surface is a distinct, opt-in feature: it
 only stores a user-pasted gateway origin + API key for profile display and
 Stripe checkout of the extension add-on. It never sends scan content and does
-not enable cloud analysis.
+not enable cloud analysis. In `v0.5.0`, pairing is consolidated into a single
+**Office Manager Coordination** entry point under Settings → Profile & Account
+with a mandatory pre-pairing consent warning and administrator-only unpairing.
+
+---
+
+Last verified on: November 28, 2026

@@ -438,3 +438,7 @@ distributable.
     Re-confirm on the exact submitted SHA before submission; the v0.1.0
     approval in item 2 does not carry over.
 7. **Playwright runtime:** Updated `@playwright/test` to `^1.65.1` in `package.json`; full Node/Vitest/build/digest/ZIP verification gates run cleanly in CI on every commit.
+
+---
+
+Last verified on: November 28, 2026

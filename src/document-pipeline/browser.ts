@@ -42,6 +42,7 @@ class OffscreenGoneError extends Error {
 
 const pending = new Map<string, PendingJob>();
 let offscreenPort: chrome.runtime.Port | null = null;
+let pendingPortPromise: Promise<chrome.runtime.Port> | null = null;
 
 function isTrustedOffscreenPort(port: chrome.runtime.Port): boolean {
   return (
@@ -79,14 +80,30 @@ chrome.runtime.onConnect.addListener((port) => {
   });
 });
 
-async function waitForPort(): Promise<chrome.runtime.Port> {
+async function hasOffscreenDocument(): Promise<boolean> {
+  const runtime = chrome.runtime as typeof chrome.runtime & {
+    getContexts?: (filter: { contextTypes: string[] }) => Promise<unknown[]>;
+  };
+  if (typeof runtime.getContexts !== "function") return true;
+  try {
+    const contexts = await runtime.getContexts({ contextTypes: ["OFFSCREEN_DOCUMENT"] });
+    return Array.isArray(contexts) && contexts.length > 0;
+  } catch {
+    return true;
+  }
+}
+
+async function openOffscreenPort(): Promise<chrome.runtime.Port> {
   if (offscreenPort) return offscreenPort;
   // Register the onConnect listener BEFORE creating the document. The offscreen
   // module connects at module load, which happens while createDocument() is
   // still pending; a listener added after createDocument resolves would miss
   // that connect and time out even though the port exists.
   return new Promise<chrome.runtime.Port>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("Offscreen document did not become ready.")), CONNECT_TIMEOUT_MS);
+    const timer = setTimeout(() => {
+      chrome.runtime.onConnect.removeListener?.(listener);
+      reject(new Error("Offscreen document did not become ready."));
+    }, CONNECT_TIMEOUT_MS);
     const listener = (port: chrome.runtime.Port) => {
       if (port.name !== OFFSCREEN_CHANNEL) return;
       if (!isTrustedOffscreenPort(port)) {
@@ -94,13 +111,15 @@ async function waitForPort(): Promise<chrome.runtime.Port> {
         return;
       }
       clearTimeout(timer);
-      chrome.runtime.onConnect.removeListener(listener);
+      chrome.runtime.onConnect.removeListener?.(listener);
       resolve(port);
     };
     chrome.runtime.onConnect.addListener(listener);
     void (async () => {
       try {
-        await chrome.offscreen.closeDocument().catch(() => undefined);
+        if (await hasOffscreenDocument()) {
+          await chrome.offscreen.closeDocument().catch(() => undefined);
+        }
         await chrome.offscreen.createDocument({
           url: chrome.runtime.getURL("offscreen.html"),
           reasons: [chrome.offscreen.Reason.WORKERS],
@@ -108,16 +127,34 @@ async function waitForPort(): Promise<chrome.runtime.Port> {
         });
       } catch (error) {
         clearTimeout(timer);
-        chrome.runtime.onConnect.removeListener(listener);
+        chrome.runtime.onConnect.removeListener?.(listener);
         reject(error instanceof Error ? error : new Error(String(error)));
       }
     })();
   });
 }
 
+async function waitForPort(): Promise<chrome.runtime.Port> {
+  if (offscreenPort) return offscreenPort;
+  if (pendingPortPromise) return pendingPortPromise;
+  let inFlight: Promise<chrome.runtime.Port> | null = null;
+  inFlight = (async () => {
+    try {
+      return await openOffscreenPort();
+    } finally {
+      if (pendingPortPromise === inFlight) {
+        pendingPortPromise = null;
+      }
+    }
+  })();
+  pendingPortPromise = inFlight;
+  return inFlight;
+}
+
 async function closeOffscreenDocument(): Promise<void> {
   const port = offscreenPort;
   offscreenPort = null;
+  pendingPortPromise = null;
   port?.disconnect();
   await chrome.offscreen.closeDocument().catch(() => undefined);
 }

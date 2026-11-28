@@ -68,3 +68,7 @@ document in that language.
 
 If the user base turns out to need many languages, the on-demand model is the
 one that scales, and it should be decided on its own terms.
+
+---
+
+Last verified on: November 28, 2026

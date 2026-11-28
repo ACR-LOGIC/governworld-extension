@@ -246,7 +246,7 @@ describe("UI/UX Redesign Static Layout & Hygiene Contracts", () => {
       expect(html, `${name} missing #profile-popover`).toContain('id="profile-popover"');
       expect(html, `${name} missing #profile-goto-account-btn`).toContain('id="profile-goto-account-btn"');
       expect(html, `${name} missing #profile-goto-settings-btn`).toContain('id="profile-goto-settings-btn"');
-      expect(html, `${name} missing #profile-pair-btn`).toContain('id="profile-pair-btn"');
+      expect(html, `${name} must not have duplicate #profile-pair-btn`).not.toContain('id="profile-pair-btn"');
       expect(html, `${name} missing #profile-help-btn`).toContain('id="profile-help-btn"');
       expect(html, `${name} missing #profile-goto-about-btn`).toContain('id="profile-goto-about-btn"');
       expect(html, `${name} missing #profile-signout-btn`).toContain('id="profile-signout-btn"');
@@ -685,37 +685,38 @@ describe("UI/UX Redesign Behavioral Flows (JSDOM)", () => {
     expect((document.getElementById("about-guides-details") as HTMLDetailsElement).open).toBe(true);
     expect(document.getElementById("guide-page-scan")?.classList.contains("guide-card--highlight")).toBe(true);
 
-    // 3. Account disconnect, Enterprise MANAGE enrollment/sync/unenroll, and Gateway OAuth/API actions
+    // 3. Account disconnect + Single-entry Office Manager Coordination + Pre-pairing Consent Modal & Admin Lock
     (document.getElementById("account-clear-btn") as HTMLButtonElement).click();
     expect(getSentMessages().some((m) => m.type === "POPUP_ACCOUNT_CLEAR")).toBe(true);
 
-    (document.getElementById("mgmt-org-id-input") as HTMLInputElement).value = "org-acme-01";
-    (document.getElementById("mgmt-org-name-input") as HTMLInputElement).value = "Acme Health";
-    (document.getElementById("mgmt-emp-id-input") as HTMLInputElement).value = "emp-42";
-    (document.getElementById("mgmt-enroll-btn") as HTMLButtonElement).click();
-    expect(
-      getSentMessages().some(
-        (m) =>
-          m.type === "POPUP_MANAGEMENT_ENROLL" &&
-          m.organizationId === "org-acme-01" &&
-          m.employeeId === "emp-42"
-      )
-    ).toBe(true);
+    // Removed redundant panels and duplicate triggers must not exist in DOM
+    expect(document.getElementById("enterprise-mgmt-card")).toBeNull();
+    expect(document.getElementById("gateway-api-card")).toBeNull();
+    expect(document.getElementById("office-unpair-btn")).toBeNull();
+    expect(document.getElementById("profile-pair-btn")).toBeNull();
+    expect(document.getElementById("settings-nav-pair-btn")).toBeNull();
+    expect(document.getElementById("settings-pair-now-btn")).toBeNull();
 
-    (document.getElementById("mgmt-sync-policy-btn") as HTMLButtonElement).click();
-    expect(getSentMessages().some((m) => m.type === "POPUP_SYNC_MANAGED_POLICY")).toBe(true);
+    // Accessible pairing controls & consent dialog
+    const emailInput = document.getElementById("office-pairing-email-input") as HTMLInputElement;
+    const tokenInput = document.getElementById("office-pairing-input") as HTMLInputElement;
+    const consentDialog = document.getElementById("pairing-consent-dialog") as HTMLDialogElement;
+    expect(emailInput.getAttribute("aria-label")).toBeTruthy();
+    expect(tokenInput.getAttribute("aria-label")).toBeTruthy();
+    expect(consentDialog.getAttribute("role")).toBe("alertdialog");
+    expect(consentDialog.getAttribute("aria-modal")).toBe("true");
+    expect(document.getElementById("pairing-consent-desc")?.textContent).toContain("cannot unpair this extension yourself");
 
-    (document.getElementById("mgmt-unenroll-btn") as HTMLButtonElement).click();
-    expect(getSentMessages().some((m) => m.type === "POPUP_MANAGEMENT_UNENROLL")).toBe(true);
-
-    (document.getElementById("oauth-connect-btn") as HTMLButtonElement).click();
-    expect(getSentMessages().some((m) => m.type === "POPUP_OAUTH_CONNECT")).toBe(true);
-
-    (document.getElementById("api-sync-policy-btn") as HTMLButtonElement).click();
-    expect(getSentMessages().some((m) => m.type === "POPUP_API_SYNC_POLICY")).toBe(true);
-
-    (document.getElementById("api-disconnect-btn") as HTMLButtonElement).click();
-    expect(getSentMessages().some((m) => m.type === "POPUP_API_DISCONNECT")).toBe(true);
+    // Pre-pairing consent modal blocks pairing until accepted
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const pairBtn = document.getElementById("office-pair-btn") as HTMLButtonElement;
+    tokenInput.value = "ABCD1234";
+    pairBtn.click();
+    await flushAsync();
+    // Fails precondition cleanly without trusted public key or HTTPS coordinator URL configured -> no modal, no fetch
+    expect(consentDialog.open).toBe(false);
+    expect(fetchSpy).not.toHaveBeenCalled();
 
     // 4. Wizard Step 4 saves contextCues, captureGroup, minLength, and maxLength
     (document.getElementById("open-wizard-btn-2") as HTMLButtonElement).click();
@@ -736,6 +737,29 @@ describe("UI/UX Redesign Behavioral Flows (JSDOM)", () => {
     expect(saveMsg?.pattern.contextCues).toEqual(["badge", "employee"]);
     expect(saveMsg?.pattern.minLength).toBe(5);
     expect(saveMsg?.pattern.maxLength).toBe(12);
+
+    // 5. Post-pairing admin lock hides pairing form & signout, shows admin lock notice
+    await setupPopupHarness({
+      local: {
+        gw_management_enrollment: {
+          organization_id: "org-acme-01",
+          organization_name: "Acme Health",
+          employee_id: "emp-42",
+          device_id: "dev-1",
+          enrolled_at: "2026-11-28T00:00:00Z",
+          management_mode: "MANAGE",
+        },
+        gw_applied_managed_policy: {
+          organization_id: "org-acme-01",
+          organization_name: "Acme Health",
+          policy_version: 2,
+        },
+      },
+    });
+    expect((document.getElementById("office-admin-lock-notice") as HTMLElement).hidden).toBe(false);
+    expect((document.getElementById("office-pair-start-btn") as HTMLButtonElement).hidden).toBe(true);
+    expect((document.getElementById("office-manager-form") as HTMLElement).hidden).toBe(true);
+    expect((document.getElementById("profile-signout-btn") as HTMLButtonElement).hidden).toBe(true);
   });
 });
 
@@ -938,12 +962,19 @@ describe("Mockup Layout Iteration (7 settings cards, hero, banner, tool tiles)",
       expect(html).toContain('id="medical-dictionary-toggle"');
       expect(html).toContain('id="threshold-apply-all-btn"');
       expect(html).toContain('id="mask-color-select"');
-      expect(html).toContain('id="settings-nav-pair-btn"');
-      expect(html).toContain('id="settings-pair-now-btn"');
+      expect(html).not.toContain('id="settings-nav-pair-btn"');
+      expect(html).not.toContain('id="settings-pair-now-btn"');
+      expect(html).not.toContain('id="enterprise-mgmt-card"');
+      expect(html).not.toContain('id="gateway-api-card"');
+      expect(html).not.toContain('id="office-unpair-btn"');
+      expect(html).toContain('id="office-pair-start-btn"');
+      expect(html).toContain('id="pairing-consent-dialog"');
+      expect(html).toContain('id="office-admin-lock-notice"');
       expect(html).toContain('data-i18n="settings_subtitle"');
     }
-    expect(popupTs).toContain('document.getElementById("settings-nav-pair-btn")');
-    expect(popupTs).toContain('document.getElementById("settings-pair-now-btn")');
+    expect(popupTs).not.toContain('document.getElementById("settings-nav-pair-btn")');
+    expect(popupTs).not.toContain('document.getElementById("settings-pair-now-btn")');
+    expect(popupTs).toContain('document.getElementById("pairing-consent-dialog")');
   });
 
   it("adds the Protection hero, Scan Complete banner, three tool tiles, and footer", () => {

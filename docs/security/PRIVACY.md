@@ -1,9 +1,9 @@
 # GovernWorld Chrome Extension — Privacy Policy
 
-- **Version:** 2.1.0
-- **Applies to Extension Version:** 0.4.0
-- **Effective date:** November 19, 2026
-- **Last updated:** November 19, 2026
+- **Version:** 2.2.0
+- **Applies to Extension Version:** 0.5.0
+- **Effective date:** November 28, 2026
+- **Last updated:** November 28, 2026
 - **Product:** GovernWorld Chrome Extension
 - **Developer:** ACR LOGIC
 - **Website:** governworld.acrlogic.com
@@ -11,7 +11,7 @@
 - **Canonical URL:** `https://governworld.acrlogic.com/chrome-extension-privacy`
 - **Support:** `https://github.com/ACR-LOGIC/governworld-extension/issues`
 
-> **Policy notice:** This Privacy Policy describes the data handling of the shipped GovernWorld Chrome Extension (`v0.4.0`) across standalone `LOCAL` zero-egress mode and optional organizational `MANAGE` pairing, matching its manifest permissions, local storage lifecycle, and Chrome Web Store disclosures. Read it alongside [`src/popup/legal.html`](../../src/popup/legal.html) and [`LICENSE`](../../LICENSE) (BSL 1.1).
+> **Policy notice:** This Privacy Policy describes the data handling of the shipped GovernWorld Chrome Extension (`v0.5.0`) across standalone `LOCAL` zero-egress mode and optional organizational `MANAGE` pairing, matching its manifest permissions, local storage lifecycle, and Chrome Web Store disclosures. Read it alongside [`src/popup/legal.html`](../../src/popup/legal.html) and [`LICENSE`](../../LICENSE) (BSL 1.1).
 
 ---
 
@@ -407,4 +407,8 @@ Support: https://github.com/ACR-LOGIC/governworld-extension/issues
 
 ## Supabase pairing (MANAGE mode only)
 
-In LOCAL mode the extension makes no network requests. If an organisation pairs a seat, the extension contacts only the pinned GovernWorld Supabase project to redeem the pairing code, fetch signed policy and send a 15-minute metadata heartbeat (install UUID, browser and extension versions, policy version, health status). It never sends browsing history, URLs, page text, form data, keystrokes or credentials. See `docs/supabase-pairing.md`.
+In LOCAL mode the extension makes no network requests. If an organisation pairs a seat via the single-entry **Office Manager Coordination** section (after user confirmation of the administrator-control and non-reversible unpair notice), the extension contacts only the pinned GovernWorld Supabase project (`https://lkgcehdwasewwoieyoip.supabase.co/*`) to redeem the email-bound pairing token under the 1-user = 1-seat multi-browser model, fetch signed policies, register `runtime.setUninstallURL` uninstall checks, and send a 15-minute closed-schema metadata heartbeat from an isolated telemetry sandbox (`telemetry-worker.js`) containing fixed status enums, UTC timestamps, `browser_family`, and policy/extension versions/hashes only. Unpairing requires administrator revocation or confirmed duplicate-browser replacement. It never sends browsing history, URLs, page text, form data, keystrokes or credentials. See [`docs/security/SUPABASE_PUBLIC_ARCHITECTURE.md`](SUPABASE_PUBLIC_ARCHITECTURE.md).
+
+---
+
+Last verified on: November 28, 2026

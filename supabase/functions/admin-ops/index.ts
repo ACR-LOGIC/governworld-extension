@@ -214,6 +214,48 @@ Deno.serve(async (req: Request) => {
     return jsonResponse(200, data);
   }
 
+  if (action === "seat_unlock_feature" || action === "seat_lock_feature") {
+    const seatId = body.seat_id;
+    const feature = typeof body.feature === "string" ? body.feature.trim() : "";
+    if (!isNonZeroUuid(seatId) || !feature || feature.length > 64) {
+      return jsonResponse(400, { ok: false, error: "Valid seat_id and feature are required" });
+    }
+    const { data, error } = await supabaseAdmin.rpc("rpc_seat_feature_unlock", {
+      p_admin_id: admin.id,
+      p_seat_id: seatId,
+      p_feature: feature,
+      p_unlock: action === "seat_unlock_feature",
+    });
+    if (error || !data) {
+      return jsonResponse(500, { ok: false, error: "Seat feature lock update failed" });
+    }
+    if (!data.ok) {
+      return jsonResponse(Number(data.http_status) || 400, {
+        ok: false,
+        error: data.error ?? "Seat feature lock update failed",
+      });
+    }
+    return jsonResponse(200, data);
+  }
+
+  if (action === "org_subscription_status") {
+    const status = typeof body.subscription_status === "string" ? body.subscription_status : "";
+    const { data, error } = await supabaseAdmin.rpc("rpc_set_org_subscription_status", {
+      p_admin_id: admin.id,
+      p_status: status,
+    });
+    if (error || !data) {
+      return jsonResponse(500, { ok: false, error: "Failed to update subscription status" });
+    }
+    if (!data.ok) {
+      return jsonResponse(Number(data.http_status) || 400, {
+        ok: false,
+        error: data.error ?? "Forbidden",
+      });
+    }
+    return jsonResponse(200, data);
+  }
+
   if (action === "audit_read") {
     const limit =
       typeof body.limit === "number" && Number.isInteger(body.limit) ? body.limit : 50;

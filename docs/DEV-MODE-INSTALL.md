@@ -63,3 +63,7 @@ not iMessage, native apps, or iOS. Never describe it otherwise.
 4. Always-on: Protection settings → check the always-on box → approve the
    browser's site-access prompt. The banner must read active only after the
    grant; revoke the grant and it must fall back to "waiting for access".
+
+---
+
+Last verified on: November 28, 2026

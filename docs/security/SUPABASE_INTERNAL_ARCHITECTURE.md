@@ -10,14 +10,14 @@
 - **Supabase Project Ref:** `lkgcehdwasewwoieyoip` (`GovernWorld Manager`, `us-east-1`)
 - **Pinned Base URL:** `https://lkgcehdwasewwoieyoip.supabase.co` ([`src/api/config.ts`](file:///c:/Projects/governworld-chrome-extension/src/api/config.ts#L18))
 - **Publishable Key:** `SUPABASE_PUBLISHABLE_KEY` (`sb_publishable_...`) in [`src/api/config.ts`](file:///c:/Projects/governworld-chrome-extension/src/api/config.ts#L19)
-- **Extension Version:** `CURRENT_EXTENSION_VERSION = "0.4.1"` ([`src/api/config.ts`](file:///c:/Projects/governworld-chrome-extension/src/api/config.ts#L20))
+- **Extension Version:** `CURRENT_EXTENSION_VERSION = "0.5.0"` ([`src/api/config.ts`](file:///c:/Projects/governworld-chrome-extension/src/api/config.ts))
 - **Transport Validation:** [`validateSupabaseUrl()`](file:///c:/Projects/governworld-chrome-extension/src/api/config.ts#L128-L152) enforces `https:` protocol, exact hostname (`lkgcehdwasewwoieyoip.supabase.co`), no custom ports, and no embedded URL credentials.
 
 ---
 
 ## 2. Database Schema Architecture
 
-All tables reside in PostgreSQL 17 across two schemas (`public` and `internal`), defined in [`20261122000200_core_schema_and_internal_tables.sql`](file:///c:/Projects/governworld-chrome-extension/supabase/migrations/20261122000200_core_schema_and_internal_tables.sql) (after [`20261122000100_reconcile_legacy_prototype.sql`](file:///c:/Projects/governworld-chrome-extension/supabase/migrations/20261122000100_reconcile_legacy_prototype.sql) dropped legacy prototype tables including `public.stripe_events`).
+All tables reside in PostgreSQL 17 across two schemas (`public` and `internal`), defined in [`20261122000200_core_schema_and_internal_tables.sql`](file:///c:/Projects/governworld-chrome-extension/supabase/migrations/20261122000200_core_schema_and_internal_tables.sql) and extended in [`20261128000100_multi_browser_licensing_and_health_states.sql`](file:///c:/Projects/governworld-chrome-extension/supabase/migrations/20261128000100_multi_browser_licensing_and_health_states.sql) (`subscription_status`, `target_email_hash`, `user_email_hash`, `unlocked_features`, `seat_browser_instances`, `heartbeat_state` lifecycle columns, `uninstall-signal` Edge Function, and HTTP `409`/`402`/`410` contracts).
 
 ### 2.1 `public` Schema Tables (10)
 | Table | Purpose |
@@ -109,3 +109,7 @@ All 8 Edge Functions are deployed under `supabase/functions/`:
 Supabase and Stripe operate as strictly decoupled planes:
 - **Stripe:** Handles checkout and subscription billing exclusively (`https://checkout.stripe.com`, validated in [`src/service-worker/index.ts`](file:///c:/Projects/governworld-chrome-extension/src/service-worker/index.ts#L1973)). When a user links a workspace in the side panel, the `gw_` API key is held in browser session storage solely to query billing metadata and open Stripe Checkout ([`PRIVACY.md`](file:///c:/Projects/governworld-chrome-extension/docs/security/PRIVACY.md#L98)).
 - **Supabase:** Handles identity/authentication, organisation/seat management, pairing codes, signed policy distribution, and device health heartbeats. Legacy `public.stripe_events` was removed from the extension's Supabase schema in migration `20261122000100`.
+
+---
+
+Last verified on: November 28, 2026

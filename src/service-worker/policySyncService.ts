@@ -27,6 +27,10 @@ import { syncSiteProtection } from "./siteProtection.js";
 import { recordAudit } from "./auditService.js";
 import { dispatchExtensionNotification } from "./index.js";
 import { GovernWorldApiClient } from "../api/client.js";
+import {
+  enterLapsedSubscriptionContinuity,
+  unlinkAndResetToDefaults,
+} from "../shared/multiBrowserLicensing.js";
 
 const STORAGE_KEY_LAST_SYNC_TS = "gw_policy_last_sync_ts";
 /** Minimum interval between background sync check-ins (15 minutes). */
@@ -70,6 +74,17 @@ export async function syncManagedPolicy(force = false): Promise<PolicySyncResult
   // If not enrolled or in standalone LOCAL mode:
   if (!enrollment || enrollment.management_mode !== "MANAGE") {
     return { mode: "LOCAL", status: "idle" };
+  }
+
+  // Lapsed subscription: cease cloud sync while keeping previously applied policy locked locally.
+  if (enrollment.subscription_lapsed === true) {
+    const lastApplied = await loadLastAppliedManagedPolicy();
+    return {
+      mode: "MANAGE",
+      status: "offline_continuity",
+      policyId: lastApplied?.policy_id,
+      policyVersion: lastApplied?.policy_version,
+    };
   }
 
   // Throttle check-ins unless force is requested
@@ -117,6 +132,23 @@ export async function syncManagedPolicy(force = false): Promise<PolicySyncResult
     await setLastSyncTimestamp(now);
 
     if (!response.ok) {
+      // Lapsed subscription -> pause cloud sync, keep local policy locked
+      if (response.error.status_code === 402 || response.error.code === "SUBSCRIPTION_LAPSED") {
+        await enterLapsedSubscriptionContinuity();
+        return {
+          mode: "MANAGE",
+          status: "offline_continuity",
+          policyId: lastApplied?.policy_id,
+          policyVersion: lastApplied?.policy_version,
+        };
+      }
+
+      // Voluntary duplicate-browser replacement or explicit admin unpair -> unlink & reset
+      if (response.error.status_code === 410 || response.error.code === "REPLACED_BY_REPAIRING") {
+        await unlinkAndResetToDefaults();
+        return { mode: "LOCAL", status: "idle" };
+      }
+
       // If server returns 304 or not modified / up-to-date
       if (response.error.status_code === 304) {
         return {

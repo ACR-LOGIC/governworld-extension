@@ -779,14 +779,11 @@ export function isValidCommunityRule(raw: unknown): raw is CommunityRule {
 
 export async function fetchCommunityRules(): Promise<CommunityRule[]> {
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10_000);
     const res = await fetch("https://community.governworld.acrlogic.com/v1/community/rules", {
       headers: { Accept: "application/json" },
       credentials: "omit",
-      signal: controller.signal,
+      signal: AbortSignal.timeout(10_000),
     });
-    clearTimeout(timer);
     if (!res.ok) return [];
     const json: unknown = await res.json();
     if (typeof json !== "object" || json === null) return [];

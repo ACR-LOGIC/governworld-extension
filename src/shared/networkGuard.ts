@@ -684,20 +684,12 @@ export async function fetchWithPolicy(
       throw new Error(`Network policy blocked destination (${currentUrl}): ${evalResult.reason}`);
     }
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-
-    let response: Response;
-    try {
-      response = await fetch(currentUrl, {
-        ...options,
-        headers: currentHeaders,
-        redirect: "manual",
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
+    const response = await fetch(currentUrl, {
+      ...options,
+      headers: currentHeaders,
+      redirect: "manual",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
 
     // Fail-closed on browser opaqueredirect: when fetch with redirect:"manual"
     // encounters a cross-origin redirect in certain browser contexts, the response

@@ -6,16 +6,23 @@ import { isNonZeroUuid } from "../_shared/crypto.ts";
 import { ALL_CATEGORIES } from "../_shared/policySigner.ts";
 
 const ALLOWED_TOP_LEVEL_KEYS = new Set([
+  "schema_version",
+  "event_kind",
+  "lifecycle_state",
   "seat_id",
   "installation_id",
   "organisation_id",
   "extension_version",
   "browser_name",
   "browser_version",
+  "browser_family",
   "platform",
   "policy_version",
+  "policy_hash",
   "policy_status",
   "health_status",
+  "clean_shutdown_flag",
+  "last_clean_shutdown_at",
   "timestamp",
   "reported_policy",
 ]);
@@ -30,11 +37,15 @@ const ALLOWED_REPORTED_POLICY_KEYS = new Set([
 ]);
 
 const CATEGORY_SET = new Set<string>(ALL_CATEGORIES);
-const BROWSER_NAMES = new Set(["Chrome", "Firefox", "Edge", "Chromium", "Brave", "Safari", "unknown"]);
-const POLICY_STATUSES = new Set(["compliant", "out-of-date", "unmanaged_default", "error"]);
-const HEALTH_STATUSES = new Set(["healthy", "active", "degraded"]);
+const BROWSER_NAMES = new Set(["Chrome", "Firefox", "Edge", "Chromium", "Brave", "Safari", "Opera", "Vivaldi", "unknown"]);
+const BROWSER_FAMILIES = new Set(["chrome", "edge", "firefox", "safari", "brave", "opera", "vivaldi", "chromium", "unknown"]);
+const LIFECYCLE_STATES = new Set(["online", "offline_clean_shutdown", "uninstalled_or_terminated"]);
+const EVENT_KINDS = new Set(["heartbeat", "clean_shutdown"]);
+const POLICY_STATUSES = new Set(["compliant", "out-of-date", "locked_lapsed", "unmanaged_default", "error"]);
+const HEALTH_STATUSES = new Set(["healthy", "active", "degraded", "offline_clean"]);
 const PROTECTION_MODES = new Set(["off", "this-tab", "always-on"]);
 const NETWORK_DEST_POLICIES = new Set(["public_only", "managed_intranet", "disabled"]);
+const SHA256_HEX_REGEX = /^[0-9a-f]{64}$/;
 
 const SEMVER_REGEX = /^\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?$/;
 const BROWSER_VER_REGEX = /^(?:[0-9]{1,5}(?:\.[0-9]{1,5}){0,3}|unknown)$/;
@@ -174,6 +185,45 @@ Deno.serve(async (req: Request) => {
     return jsonResponse(400, { ok: false, error: "Invalid timestamp" });
   }
 
+  if (body.event_kind !== undefined && (typeof body.event_kind !== "string" || !EVENT_KINDS.has(body.event_kind))) {
+    return jsonResponse(400, { ok: false, error: "Invalid event_kind" });
+  }
+
+  const browserFamily =
+    body.browser_family === undefined
+      ? "unknown"
+      : typeof body.browser_family === "string" && BROWSER_FAMILIES.has(body.browser_family)
+        ? body.browser_family
+        : null;
+  if (!browserFamily) {
+    return jsonResponse(400, { ok: false, error: "Invalid browser_family" });
+  }
+
+  const lifecycleState =
+    body.lifecycle_state === undefined
+      ? "online"
+      : typeof body.lifecycle_state === "string" && LIFECYCLE_STATES.has(body.lifecycle_state)
+        ? body.lifecycle_state
+        : null;
+  if (!lifecycleState) {
+    return jsonResponse(400, { ok: false, error: "Invalid lifecycle_state" });
+  }
+
+  if (body.clean_shutdown_flag !== undefined && typeof body.clean_shutdown_flag !== "boolean") {
+    return jsonResponse(400, { ok: false, error: "Invalid clean_shutdown_flag" });
+  }
+
+  if (
+    body.last_clean_shutdown_at !== undefined &&
+    (typeof body.last_clean_shutdown_at !== "string" || Number.isNaN(Date.parse(body.last_clean_shutdown_at)))
+  ) {
+    return jsonResponse(400, { ok: false, error: "Invalid last_clean_shutdown_at" });
+  }
+
+  if (body.policy_hash !== undefined && (typeof body.policy_hash !== "string" || !SHA256_HEX_REGEX.test(body.policy_hash))) {
+    return jsonResponse(400, { ok: false, error: "Invalid policy_hash" });
+  }
+
   const reportedPolicy = validateReportedPolicy(body.reported_policy ?? {});
   if (!reportedPolicy) {
     return jsonResponse(400, { ok: false, error: "Invalid reported_policy payload" });
@@ -193,6 +243,11 @@ Deno.serve(async (req: Request) => {
     p_policy_status: body.policy_status,
     p_health_status: body.health_status,
     p_reported_policy: reportedPolicy,
+    p_browser_family: browserFamily,
+    p_lifecycle_state: lifecycleState,
+    p_clean_shutdown_flag: body.clean_shutdown_flag === true,
+    p_last_clean_shutdown_at: body.last_clean_shutdown_at ?? null,
+    p_policy_hash: body.policy_hash ?? null,
   });
 
   if (error || !data) {

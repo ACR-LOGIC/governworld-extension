@@ -764,12 +764,26 @@ body[data-reduced-motion="true"] *::after {
   color: var(--text);
 }
 
-.toggle-row input {
+.toggle-row input:not([switch]) {
   width: 15px;
   height: 15px;
   accent-color: var(--accent);
   cursor: pointer;
   flex: none;
+}
+
+.toggle-row input[type="checkbox"][switch] {
+  accent-color: var(--accent);
+  margin: 0;
+  cursor: pointer;
+  flex: none;
+  font-size: 14px;
+  top: 0;
+}
+
+.toggle-row input[type="checkbox"][switch]:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .toggle-row code {
@@ -2767,6 +2781,21 @@ body[data-reduced-motion="true"] *::after {
   color: var(--text);
 }
 
+.office-card__binding {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 8px;
+  border-radius: var(--radius-xs, 4px);
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  color: var(--text);
+  font-size: 11px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
 .office-card__form {
   display: flex;
   flex-direction: column;
@@ -2787,10 +2816,47 @@ body[data-reduced-motion="true"] *::after {
   box-sizing: border-box;
 }
 
+.office-card__input::placeholder {
+  letter-spacing: normal;
+  text-transform: none;
+  font-family: inherit;
+  font-size: 11.5px;
+}
+
+.office-card__input.office-card__input--email {
+  letter-spacing: normal;
+  text-transform: none;
+  font-family: inherit;
+  font-size: 12px;
+}
+
 .office-card__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.office-card__lock-notice {
+  margin: 2px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.dialog__body {
+  margin: 8px 0 14px;
+  line-height: 1.45;
+}
+
+.dialog__body p {
+  margin: 0 0 8px;
+}
+
+.dialog__body p:last-child {
+  margin-bottom: 0;
 }
 
 /* ---------- Step-by-Step How-To & Contextual Guide Drawer ---------- */
@@ -3512,32 +3578,6 @@ html[data-surface="sidepanel"] .doc-thumbs {
   font-size: 14px;
 }
 
-/* Settings: nav cards (icon + title + description + chevron). */
-.settings-nav-card {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 4px;
-}
-
-.settings-nav-card:has(.settings-nav-btn--active) {
-  border-color: rgba(59, 130, 246, 0.55);
-  background: rgba(37, 99, 235, 0.12);
-}
-
-.settings-nav-card .settings-nav-btn {
-  flex: 1 1 auto;
-  width: auto;
-  min-width: 0;
-  background: transparent;
-  border-color: transparent;
-  padding: 6px 8px;
-}
-
 .settings-nav-card__icon {
   flex: 0 0 auto;
   color: #60a5fa;
@@ -3573,32 +3613,4 @@ html[data-surface="sidepanel"] .doc-thumbs {
   font-size: 12px;
   font-weight: 600;
   color: var(--text);
-}
-
-/* Bottom Pair Extension card in Settings. */
-.settings-pair-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px;
-  background: rgba(37, 99, 235, 0.1);
-  border: 1px solid rgba(59, 130, 246, 0.25);
-  border-radius: var(--radius-sm);
-}
-
-.settings-pair-card__text {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.settings-pair-card__text strong {
-  font-size: 12px;
-  color: var(--text);
-}
-
-.settings-pair-card__text .footnote {
-  margin: 0;
 }

@@ -88,7 +88,7 @@ If GovernWorld helps protect your privacy or workflow, you can support ongoing m
 
 ## Release Versioning & Single-Source Parity
 
-`package.json` (`"version"`) is the **single source of truth** for the extension version (`0.4.1`). Do not edit version strings manually across manifests, source files, or documentation:
+`package.json` (`"version"`) is the **single source of truth** for the extension version (`0.5.0`). Do not edit version strings manually across manifests, source files, or documentation:
 
 1. Bump `"version"` in `package.json` only.
 2. Synchronize all derived surfaces (`package-lock.json`, `manifest.json`, `manifest.firefox.json`, `src/api/config.ts`, `src/popup/privacy.html`, `README.md`, and `AGENTS.md`) via:
@@ -130,3 +130,7 @@ All pull requests and release builds execute `npm run gates:ci` (`scripts/run-ci
 | **G7** | `1,000`-node page scan `< 75 ms` at `p50` (`300/300` at `10,000` nodes) | `tests/benchmark-measured.test.ts` (`pageScan["1000"].p50`) |
 | **G8** | Live paste dialog `< 100 ms` at `p50` across all sizes | Live Chrome Run 2 (`--stage=paste`, `short` / `10KB` / `68KB`) |
 | **G9** | Performance regression `> 20%` against `docs/benchmarks/ci-baselines.json` fails CI | `scripts/run-ci-gates.mjs` (`125.6 ms` -> `<= 150.72 ms`; `42.0 ms` -> `<= 50.4 ms`; `50.0 ms` -> `<= 60.0 ms`) |
+
+---
+
+Last verified on: November 28, 2026

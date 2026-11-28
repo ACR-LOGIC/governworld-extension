@@ -1435,7 +1435,7 @@ const DETECTORS: Partial<Record<FindingCategory, (text: string) => RawMatch[]>> 
  */
 export function resolveOverlaps(matches: RawMatch[]): RawMatch[] {
   if (matches.length === 0) return [];
-  const sorted = [...matches].sort((a, b) => a.start - b.start || a.end - b.end);
+  const sorted = matches.toSorted((a, b) => a.start - b.start || a.end - b.end);
   const winners: RawMatch[] = [];
   let cluster: RawMatch[] = [];
 
