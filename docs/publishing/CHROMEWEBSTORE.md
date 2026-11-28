@@ -1,8 +1,8 @@
 # Chrome Web Store Listing — GovernWorld Redaction
 
-> **Last Updated:** 2026-11-19  
+> **Last Updated:** 2026-11-28  
 > **Extension Name:** GovernWorld Redaction  
-> **Extension Version:** 0.4.0  
+> **Extension Version:** 0.5.0  
 > **Target Manifest Version:** Manifest V3  
 > **Status:** Ready for Submission
 
@@ -20,7 +20,7 @@
 **GovernWorld Redaction** finds sensitive values in the visible text of the page you are viewing and in the PDF, image, and Word files you open, then lets you redact or mask them directly on your device:
 
 - **Scan on demand.** Nothing scans automatically. Open the popup or side panel and press **Scan this page** to analyze the visible text of the current tab.
-- **Local only — enforced.** Scanning, detection, OCR, and redaction all run on your device in default standalone `LOCAL` mode with zero network requests. Your page text and documents never leave your device, and the local pipeline has no network path at all. Optional organizational pairing (`MANAGE` mode via 6-digit code or OS policy) synchronizes Ed25519-signed policies and lightweight health metadata only (never scan content), and optional account linking contacts GovernWorld for billing metadata only.
+- **Local only — enforced.** Scanning, detection, OCR, and redaction all run on your device in default standalone `LOCAL` mode with zero network requests. Your page text and documents never leave your device, and the local pipeline has no network path at all. Optional organizational pairing (`MANAGE` mode via email-bound token or OS policy) synchronizes signed organization policies and lightweight health metadata only (never scan content), and optional account linking contacts GovernWorld for billing metadata only.
 - **Review, then act.** Findings are listed with masked previews (for example, `phone: ***-***-1234`). Choose what to cover.
 - **Temporary page masks.** Masks are an on-screen overlay only. They do not change or store anything on the website you are viewing.
 - **Preset policies.** 10 compliance presets — Custom, HIPAA, PCI DSS, GDPR, PIPEDA, UK GDPR / NHS, India DPDP, Australia Privacy, Brazil LGPD, and Developer (API keys & secrets) — auto-select the categories they cover across 24 detection categories.
@@ -43,13 +43,14 @@ Every permission declared in `manifest.json` is strictly required for core local
 | `downloads` | Required to save locally flattened and redacted document files (PDFs/images) directly to the user's download directory. |
 | `offscreen` | Required to execute CPU-intensive local OCR extraction (Tesseract.js) and PDF canvas rendering in an isolated offscreen context without stalling UI responsiveness. |
 | `sidePanel` | Required to provide a persistent side panel interface (`Alt+Shift+P`) for document scanning, live wizard rule creation, and in-depth instruction viewing. |
-| `contextMenus` | Required to add three on-demand entries to the browser context menu — "Scan page for sensitive data", "Redact selection to clipboard", and "Mask selected text" — so the same user-initiated actions can be started from a right-click. The entries are created only while the setting is enabled and are removed when it is disabled, and each still runs the existing click-to-scan path. |
+| `contextMenus` | Required to add context menu entries — "Open GovernWorld Side Panel", "Scan page for sensitive data", "Redact selection to clipboard", and "Mask selected text" — so users can open the workspace or trigger user-initiated actions directly from a right-click. The selection/page scan entries are created only while the setting is enabled and are removed when it is disabled, and each runs the existing click-to-scan path with on-screen confirmation. |
 | `alarms` | Required to schedule periodic lightweight compliance status checks and policy synchronization strictly when an employee explicitly pairs the extension in organizational `MANAGE` mode. Completely inactive with zero network calls in default standalone `LOCAL` mode. |
 | `notifications` *(optional)* | Requested only if the user explicitly opts into a desktop notification when a scan finds sensitive data. |
 | `http://*/*`, `https://*/*` *(optional host access)* | Requested only if the user switches the always-on paste mode on, so it can guard pages on every visited site. The default this-tab mode needs no site access. Revoking the grant stops always-on coverage. |
 
 ### Host Permissions Justification
-- **Zero install-time host permissions:** The extension declares no `host_permissions` and installs with zero automatic access to any website. The only page access is the optional http(s) grant above, approved at runtime for always-on mode.
+- **Pinned coordinator origin (`https://lkgcehdwasewwoieyoip.supabase.co/*`):** Declared in `host_permissions` solely for optional organizational `MANAGE` mode (email-bound pairing redemption, signed policy delivery, and planned closed-schema health/uninstall status checks). Completely unused with zero network requests in default standalone `LOCAL` mode; no broad or wildcard install-time site access is declared.
+- **Runtime site access (`http://*/*`, `https://*/*` via `optional_host_permissions`):** Granted only if the user explicitly enables Always-On Paste Shield across websites.
 
 ---
 
@@ -59,9 +60,24 @@ Every permission declared in `manifest.json` is strictly required for core local
 - **Remote Code:** The extension does NOT execute remote code or download scripts dynamically. All scripts and WebAssembly modules are bundled locally within the extension.
 - **Data Collection:** In standalone `LOCAL` mode (default on install), the extension makes zero network requests and collects **NO user data, NO page content, and NO document bytes**. Your page text and documents never leave your device.
 
+### Data Use Disclosure Table
+
+| Data Type | Collected? | Transmitted Off-Device? | Purpose | Shared with Third Parties? |
+| :--- | :--- | :--- | :--- | :--- |
+| Website content / page text | No | Never (page text and documents never leave this device) | Local detection & redaction only | No |
+| Personally identifiable info / Health info / Financial info (scanned content) | No | Never | Local on-device detection & redaction | No |
+| Web history / browsing activity | No | Never | N/A | No |
+| Optional enterprise pairing metadata (`MANAGE` mode only) | When explicitly paired | Only email hash, browser family enum, device activation hash, policy version, and status enum | Single-seat licensing & compliance health status | No (pinned coordinator backend only) |
+| Optional billing / gateway account link | When explicitly linked | Gateway auth / license tier metadata | Account status verification | User-configured gateway only |
+
+**Data Use Certification:**
+- Data is NOT sold to third parties.
+- Data is NOT used or transferred for purposes unrelated to the extension's single purpose.
+- Data is NOT used for creditworthiness or lending purposes.
+
 In accordance with Chrome Web Store Developer Program Policies (Limited Use and Data Minimization requirements):
 
-1. **Manifest Alignment:** The extension declares zero install-time `host_permissions`. The `activeTab` permission grants ephemeral access solely upon explicit user interaction (clicking "Scan this page"). All code and WebAssembly binaries (pdf.js, Tesseract.js) are strictly bundled locally within the extension.
+1. **Manifest Alignment:** Install-time `host_permissions` is pinned strictly to the optional enterprise coordinator origin (`https://lkgcehdwasewwoieyoip.supabase.co/*`) with zero install-time site access to web pages. `activeTab` grants ephemeral page access solely upon explicit user interaction, and `http://*/*` + `https://*/*` remain optional runtime grants for always-on paste coverage. All code and WebAssembly binaries (pdf.js, Tesseract.js) are strictly bundled locally within the extension.
 2. **Developer Dashboard Privacy Practices:** 
    - **Local Page & Document Processing:** Not collected, not transmitted. Executed locally on the user's CPU/GPU without cloud transmission.
    - **Optional Organizational Pairing (`MANAGE` Mode):** Disabled by default. Only after explicit pairing with an organization pairing code or OS-managed policy does the extension synchronize signed policy JSON envelopes and emit lightweight status checks (device UUID, browser metadata, extension/policy versions, timestamp, health status). Browsing history, visited URLs, search queries, page text, credentials, chats, and personal files are never transmitted.
@@ -74,6 +90,12 @@ In accordance with Chrome Web Store Developer Program Policies (Limited Use and 
 
 ## 4. Version History
 
+- **0.5.0 (2026-11-28):** Single-entry Office Manager pairing, non-reversible admin lock, telemetry isolation, dual-state health detection, and multi-browser single-seat licensing release.
+  - Consolidated organizational pairing into single-entry Office Manager Coordination (Settings → Profile & Account) with a mandatory pre-pairing administrator-lock consent dialog (`#pairing-consent-dialog`) and non-reversible post-pairing enforcement (admin-only revocation).
+  - Added dedicated isolated telemetry worker (`telemetry-worker.js`) enforcing a closed-schema payload (status enums, UTC timestamps, browser family enum, and policy version/integrity hashes only).
+  - Added dual-state lifecycle detection distinguishing active Online heartbeats, clean-shutdown Offline state, and Uninstalled / Terminated uninstall signals.
+  - Implemented 1-user = 1-seat multi-browser licensing across distinct browser families with email-bound pairing tokens, duplicate-browser conflict resolution, per-feature admin "Unlock for User" delegation, and fail-closed local continuity on lapsed subscriptions.
+  - Hardened Manifest V3 service-worker user-gesture preservation for optional notification permission requests, single-flight offscreen document creation locking, batched overlay rendering, and context-menu feedback + side panel triggers.
 - **0.4.0 (2026-11-19):** Post-pairing governance, UI/UX redesign, and structured name enrichment release.
   - Added pairing-gated lightweight heartbeat service (`src/service-worker/heartbeatService.ts`) using `chrome.alarms`, strictly inactive in standalone `LOCAL` mode.
   - Wired 6-digit Office Manager pairing code flow directly to persistent `ManagementEnrollment` and locked admin-mandated policy controls while preserving employee accessibility accommodations.
@@ -111,3 +133,7 @@ In accordance with Chrome Web Store Developer Program Policies (Limited Use and 
   tesseract.js, pdf-lib, and mammoth) are separately licensed under
   Apache-2.0, MIT, and BSD-2-Clause and are credited in the extension's About
   page.
+
+---
+
+Last verified on: November 28, 2026

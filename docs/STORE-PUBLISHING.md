@@ -95,3 +95,7 @@ To automate store uploads from CI or local release scripts, configure the creden
    git push origin main --tags
    ```
 4. GitHub Actions will execute `.github/workflows/release.yml`, packaging all artifacts, uploading to configured stores, and publishing the GitHub Release with SHA-256 sums.
+
+---
+
+Last verified on: November 28, 2026

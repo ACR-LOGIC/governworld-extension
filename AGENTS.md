@@ -7,10 +7,10 @@ This document outlines the engineering setup for the GovernWorld Chrome Extensio
 ### Primary Directories
 
 #### src/
-- `src/service-worker/`: Core service worker orchestration, message handling, and lightweight heartbeat service (`heartbeatService.ts`)
+- `src/service-worker/`: Core service worker orchestration, message handling, heartbeat lifecycle (`heartbeatService.ts`), and isolated telemetry worker (`telemetryWorker.ts`)
 - `src/content/`: Content script for live DOM scanning and masking
 - `src/offscreen/`: Offscreen document for OCR processing and heavy computations
-- `src/shared/`: Common utilities, types, and helper functions shared across contexts
+- `src/shared/`: Common utilities, types, browser detection (`browserFamily.ts`), telemetry sandbox (`telemetrySandbox.ts`), and multi-browser licensing (`multiBrowserLicensing.ts`)
 
 #### scripts/
 - `build.mjs`: Main Chromium build configuration (at repo root)
@@ -29,10 +29,8 @@ This document outlines the engineering setup for the GovernWorld Chrome Extensio
 - `docs/community-trust-model.md`: Community trust model documentation
 - `docs/DEV-MODE-INSTALL.md`: Developer mode installation guide
 - `docs/ENTERPRISE_DEPLOYMENT.md`: Enterprise deployment configuration
-- `docs/git-history-tarballs.md`: Git history management documentation
 - `docs/ocr-languages.md`: OCR language configuration
 - `docs/STORE-PUBLISHING.md`: Store publishing guidelines
-- `docs/submission-package.md`: Submission package documentation
 
 ### Security Documentation
 
@@ -40,6 +38,8 @@ This document outlines the engineering setup for the GovernWorld Chrome Extensio
 - `PERMISSIONS.md`: Detailed permission justification and requirements
 - `PRIVACY.md`: Privacy policy and data handling documentation
 - `SECURITY_ENFORCEMENT.md`: Enterprise security enforcement guidelines
+- `SUPABASE_INTERNAL_ARCHITECTURE.md`: Internal Supabase schema, RPCs, and Edge Function architecture
+- `SUPABASE_PUBLIC_ARCHITECTURE.md`: Public zero-egress cloud & privacy architecture
 
 ### Release Documentation
 
@@ -161,11 +161,11 @@ The extension includes 24 detection categories:
 - No mandatory account, registration, or subscription
 
 #### MANAGE Mode (Enterprise Managed)
-- Activated via one-time 6-digit organization pairing code or OS-level `chrome.storage.managed`
-- Automatically synchronizes administrator-mandated policies locally into the browser
-- **Policy Lockdown**: Mandated categories, protection modes, thresholds, and custom pattern overrides are locked to prevent circumvention
+- Activated via single-entry Office Manager Coordination (email-bound token + explicit pre-pairing consent warning) or OS-level `chrome.storage.managed`
+- Enforces **1 user = 1 seat across distinct browser families** (at most 1 active instance per browser family, with replacement conflict prompt)
+- **Non-Reversible Admin Lock**: Once paired, all admin-controlled features lock automatically against user override (with separate per-feature `"Unlock for User"` delegation) and unpairing requires administrator revocation (local unenroll requests are refused fail-closed)
 - **Employee Accommodations**: Accessibility settings (font sizing, high contrast, dyslexia mode, reduced motion, speech announcements) and cosmetic styling remain unlocked
-- **Periodic Lightweight Heartbeat**: Uses `chrome.alarms` (15-min cadence) to send device installation UUID, browser metadata, extension/policy versions, and health status
+- **Isolated Telemetry & Lifecycle Detection**: Dedicated `telemetry-worker.js` + `chrome.alarms` (15-min cadence) emit strict closed-schema status checks (enums, UTC timestamps, browser family, policy version/hashes) distinguishing Online, Offline (clean shutdown via `onSuspend`), and Uninstalled (`setUninstallURL`), plus fail-closed local continuity on lapsed subscriptions (`HTTP 402`)
 - **Zero Surveillance Guarantee**: Absolutely NO browsing history, visited URLs, search queries, page text, form data, keystrokes, credentials, chats, or personal files are ever transmitted
 - Cryptographic Ed25519 verification, anti-rollback, anti-replay, and offline continuity enforcement
 
@@ -180,7 +180,8 @@ The extension includes 24 detection categories:
 
 ### Prerequisites
 - Node.js 22.13+ (CI runs Node 24 Active LTS)
-- Chrome 116+ or Firefox 109+
+- Chrome 116+ or Firefox 115+
+- **Browser Support:** Chrome 116+, Firefox 115+, Safari 16+ (offline-only; conditionally bundle local polyfills for Newly/Limited Available UI features rather than CDN imports).
 - npm 10+
 - TypeScript: `npm run typecheck` runs `tsc` from the `typescript` package, which is the TS6 compatibility alias (`@typescript/typescript6@6.0.2`). ESLint/typescript-eslint also run on the TS6 API, while the native TS7 compiler is installed as `@typescript/native`. typescript-eslint currently does not support TS 7 (typescript-eslint#10940); when a release states TS 7 support, point `typescript` back at the native package.
 
@@ -246,7 +247,9 @@ npm run build:safari
 - **Manifest Version**: V3 (Chrome, Firefox)
 - **Background Service Worker**: ES-module orchestrator
 - **Permissions**: Minimal, context-gesture-based access (`activeTab`, `scripting`, `storage`, `downloads`, `offscreen`, `sidePanel`, `contextMenus`, `alarms`)
-- **Host Access**: Optional runtime-granted (never `<all_urls>`)
+### Host Access
+- **Pinned Backend Origin**: `https://lkgcehdwasewwoieyoip.supabase.co/*` in `host_permissions` (used solely when explicitly paired in `MANAGE` mode; never `<all_urls>`)
+- **Website Access**: Optional runtime-granted `http://*/*` and `https://*/*` for Always-On Paste Shield only
 
 ### Security Controls
 - **Content Security Policy**: `script-src 'self' 'wasm-unsafe-eval'`
@@ -269,3 +272,7 @@ For development guidelines and contribution process, see `CONTRIBUTING.md`.
 ## Support
 
 For issues and support, refer to `SECURITY.md` for reporting guidelines.
+
+---
+
+Last verified on: November 28, 2026

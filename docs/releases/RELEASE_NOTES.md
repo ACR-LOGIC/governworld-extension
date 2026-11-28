@@ -1,5 +1,11 @@
 # GovernWorld Extension — Release Notes
 
+## Version 0.5.0 (2026-11-28)
+
+GovernWorld Extension v0.5.0 consolidates enterprise pairing into single-entry Office Manager Coordination with explicit pre-pairing administrator-lock consent, non-reversible post-pairing locking, isolated telemetry worker execution, dual-state Online/Offline/Uninstalled lifecycle detection, multi-browser single-seat licensing, and MV3 hardening. See [`CHANGELOG.md`](../../CHANGELOG.md) for the full changelog.
+
+---
+
 ## Version 0.4.0 (2026-11-19)
 
 GovernWorld Extension v0.4.0 delivers post-pairing governance with zero-egress standalone defaults, the redesigned popup and sidepanel experience, census-backed structured name intelligence, and release automation fixes.
@@ -97,4 +103,8 @@ GovernWorld Extension v0.3.0 introduces enterprise policy governance through the
 ### Upgrade & Migration Guide
 
 - **Existing Users:** Automatically retain all existing settings, custom rules, and audit records in `chrome.storage.local`. The extension defaults to **LOCAL** mode with full standalone functionality.
-- **Enrolling in MANAGE Mode:** Navigate to **Settings → Profile & Account** to enter a 6-digit Office Manager pairing code or configure Enterprise Device Enrollment credentials provided by your GovernWorld administrator.
+- **Enrolling in MANAGE Mode:** Navigate to **Settings → Profile & Account** → **Office Manager Coordination** to enter your email and email-bound pairing token provided by your GovernWorld administrator.
+
+---
+
+Last verified on: November 28, 2026

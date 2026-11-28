@@ -26,10 +26,10 @@ you cover them up:
   on your device in standalone `LOCAL` mode with zero network connections. Your
   page text and documents never leave your device, and the local pipeline has no
   network path at all. Optional organizational pairing (`MANAGE` mode via
-  6-digit code or OS policy) synchronizes Ed25519-signed policies and
-  15-minute metadata-only health checks while leaving employee accessibility
-  settings unlocked, and optional account linking contacts GovernWorld for
-  billing metadata only — neither ever carries scan content.
+  single-entry Office Manager Coordination with email-bound pairing token,
+  mandatory pre-pairing administrator-lock consent, or OS policy) synchronizes
+  Ed25519-signed policies and 15-minute closed-schema health checks while leaving
+  employee accessibility settings unlocked — never transmitting scan content.
 - **Review, then act.** Findings are listed with masked previews (for example,
   `phone: ***-***-1234`). Choose what to cover.
 - **Temporary page masks.** Masks are an on-screen overlay only. They do not
@@ -66,7 +66,11 @@ you cover them up:
 
 **Privacy by design.**
 
-- No install-time host permissions. No background scanning, keystroke capture, or
+- No install-time website access (`http://*/*` and `https://*/*` are optional at
+  runtime only for always-on paste mode). Install-time `host_permissions` is
+  pinned solely to the optional enterprise coordinator origin
+  (`https://lkgcehdwasewwoieyoip.supabase.co/*`), inactive with zero requests in
+  default standalone `LOCAL` mode. No background scanning, keystroke capture, or
   network monitoring. The extension asks only for `activeTab`, `scripting`,
   `storage`, `downloads`, `offscreen`, `sidePanel`, `contextMenus`, and `alarms` (plus
   optional, runtime-requested `notifications` and http(s) site access for the
@@ -104,10 +108,10 @@ scan. The extension does not change behavior based on which website is open.
   document.
 - `sidePanel` — show the side panel for scanning, document redaction,
   notifications, and account/license management.
-- `contextMenus` — add "Scan page for sensitive data", "Redact selection to
-  clipboard", and "Mask selected text" to the right-click menu, so
-  the same on-demand actions can be started from there. Each entry runs only
-  when you click it, and the entries can be switched off in settings.
+- `contextMenus` — add "Open GovernWorld Side Panel", "Scan page for sensitive data",
+  "Redact selection to clipboard", and "Mask selected text" to the right-click
+  menu, so you can open the panel or run on-demand actions directly. Page and
+  selection actions run only when you click them and can be switched off in settings.
 - `alarms` — schedule periodic lightweight compliance status checks and policy
   synchronization strictly when paired in MANAGE mode. Completely inactive with
   zero network calls in standalone LOCAL mode.
@@ -119,3 +123,7 @@ scan. The extension does not change behavior based on which website is open.
   access at all.
 
 See `PERMISSIONS.md` for the full justification.
+
+---
+
+Last verified on: November 28, 2026

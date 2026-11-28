@@ -19,9 +19,9 @@ GovernWorld is built **local-first**: all PII, PHI, financial, and secret detect
 For `MANAGE` mode, GovernWorld relies **exclusively on Supabase** (project `https://lkgcehdwasewwoieyoip.supabase.co`) for four tightly scoped responsibilities:
 
 1. **Administrator Authentication:** Organization administrators sign in through Supabase Auth to manage seats, groups, and compliance policies.
-2. **Pairing Code Generation & Redemption:** Admins generate short-lived (10-minute), single-use 8-digit pairing codes. Plaintext pairing codes are never stored in the database — they are cryptographically hashed with a server-side Vault pepper before lookup.
-3. **Signed Policy Delivery:** Paired devices receive organization policies wrapped in an **Ed25519 cryptographic signature**. The extension verifies this signature locally and **fails closed** if verification fails, preventing tampered or unauthorized policy injection.
-4. **Device Health Heartbeats:** Paired devices send a lightweight operational status check every 15 minutes so organization admins can verify that team browsers are active and running the expected policy version.
+2. **Email-Bound Pairing Tokens & Single-Seat Multi-Browser Licensing:** Admins enter the target user's email address to issue a single-use 8-digit pairing token (`user_email_hash`, 10-minute TTL). **1 user = 1 seat** across distinct browser families, with **at most 1 active instance per browser family** per user email (`(user_email_hash, browser_family, device_activation_hash)`). Duplicate browser pairing prompts for explicit replacement (unpairing and resetting the old instance) or cancellation. Before pairing finalizes, the user must confirm a modal warning that administrator policies take effect immediately and **once paired, only the administrator can unpair the extension**.
+3. **Signed Policy Delivery, Auto-Lock & Per-Feature Unlock:** Paired devices receive organization policies wrapped in an **Ed25519 cryptographic signature**. All admin-controlled features lock automatically upon pairing (with a separate administrator `"Unlock for User"` trigger per feature). If an organization's subscription lapses (`HTTP 402`), cloud heartbeats pause while previously pushed policies remain enforced and locked locally.
+4. **Isolated Telemetry & Dual-State Lifecycle Detection:** Health-check schema validation runs in an isolated worker (`telemetry-worker.js` / `telemetrySandbox.ts`) with zero access to DOM or payload storage. Paired devices emit closed-schema checks every 15 minutes and distinguish **Online** (active heartbeats), **Offline (Clean Shutdown)** (`runtime.onSuspend`), and **Uninstalled / Terminated** (`runtime.setUninstallURL` -> `uninstall-signal`).
 
 > [!IMPORTANT]
 > **Strictest Possible Transport Security (HTTPS / TLS):** Every connection from the extension to Supabase is validated by [`validateSupabaseUrl()`](file:///c:/Projects/governworld-chrome-extension/src/api/config.ts#L128-L152), which enforces **HTTPS/TLS**, pins the exact GovernWorld Supabase hostname, and rejects non-HTTPS URLs, custom ports, embedded credentials, or untrusted hosts.
@@ -69,3 +69,7 @@ Besides Supabase, GovernWorld uses **Stripe** exclusively as its payment and sub
 | **Auth, Policy & Health** | **Supabase** (`lkgcehdwasewwoieyoip.supabase.co`) | Admin auth, pairing codes, seat sessions, signed policies, and 15-minute device health signals. | Payment card details, browsing history, page content, or scanned documents. |
 
 When a user opens billing or upgrades to a paid tier from the extension side panel, the extension opens Stripe Checkout over strict HTTPS (`checkout.stripe.com`). Billing state remains decoupled from on-device protection and from the metadata-only Supabase health plane.
+
+---
+
+Last verified on: November 28, 2026

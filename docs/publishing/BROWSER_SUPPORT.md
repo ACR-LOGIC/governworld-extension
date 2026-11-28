@@ -124,3 +124,11 @@ Browser-run matrix (Chrome headed, Firefox `about:debugging`, Safari):
 No cell is marked PASS without an actual run. "Unit-proven" means the
 enforcement logic is tested against a real DOM in happy-dom; headed-browser
 runs remain to be recorded.
+
+## Multi-Browser Single-Seat Licensing (`MANAGE` mode)
+
+When paired in `MANAGE` mode, host browser family detection (`detectBrowserFamily()` in `src/shared/browserFamily.ts`) enforces **1 user = 1 seat across distinct browser families** (`Chrome`, `Edge`, `Firefox`, `Safari`, `Brave`, etc.) and **at most 1 active instance per browser family** per user email, with explicit duplicate-browser replacement confirmation.
+
+---
+
+Last verified on: November 28, 2026

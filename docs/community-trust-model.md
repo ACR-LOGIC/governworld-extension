@@ -327,3 +327,7 @@ rewrite replaced such digits with the literal string `"NaN"`.
 The normaliser runs only on the screening copy. The submitted rule is the user's
 own text, byte for byte, because normalising it would rewrite someone's pattern
 into a different rule from the one they tested.
+
+---
+
+Last verified on: November 28, 2026
