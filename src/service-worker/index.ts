@@ -68,8 +68,16 @@ import {
   scheduleHeartbeatAlarm,
   clearHeartbeatAlarm,
   sendHeartbeatStatusCheck,
+  recordCleanShutdown,
+  syncUninstallHook,
   ALARM_NAME_HEARTBEAT,
 } from "./heartbeatService.js";
+import { detectBrowserFamily } from "../shared/browserFamily.js";
+import {
+  computeDeviceActivationHash,
+  computeUserEmailHash,
+  unlinkAndResetToDefaults,
+} from "../shared/multiBrowserLicensing.js";
 import { getInstallationId } from "../api/config.js";
 
 /**
@@ -127,13 +135,7 @@ function buildScanSettingsMessage(
 }
 
 async function fetchWithTimeout(url: string, init?: RequestInit, timeoutMs = FETCH_TIMEOUT_MS): Promise<Response> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timer);
-  }
+  return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
 }
 
 interface SessionState {
@@ -2208,6 +2210,7 @@ chrome.runtime.onStartup?.addListener(() => {
   void syncManagedPolicy(false);
   void refreshOperatingMode();
   void scheduleHeartbeatAlarm();
+  void syncUninstallHook();
 });
 
 chrome.runtime.onInstalled?.addListener(() => {
@@ -2215,6 +2218,24 @@ chrome.runtime.onInstalled?.addListener(() => {
   void syncManagedPolicy(false);
   void refreshOperatingMode();
   void scheduleHeartbeatAlarm();
+  void syncUninstallHook();
+});
+
+chrome.runtime.onSuspend?.addListener(() => {
+  void recordCleanShutdown();
+});
+
+chrome.windows?.onRemoved?.addListener(() => {
+  void (async () => {
+    try {
+      const wins = await chrome.windows.getAll();
+      if (wins.length === 0) {
+        await recordCleanShutdown();
+      }
+    } catch {
+      // Ignore windows query error during browser shutdown
+    }
+  })();
 });
 
 // OAuth callback capture: when the provider redirects to chromiumapp.org,
@@ -2312,6 +2333,11 @@ async function syncContextMenus(): Promise<void> {
   const settings = await loadSettings();
   await new Promise<void>((resolve) => {
     chrome.contextMenus.removeAll(() => {
+      chrome.contextMenus.create({
+        id: "open_side_panel",
+        title: "Open GovernWorld Side Panel",
+        contexts: settings.contextMenusEnabled ? ["action", "page"] : ["action"],
+      });
       if (settings.contextMenusEnabled) {
         chrome.contextMenus.create({ id: "scan_page", title: "Scan page for sensitive data", contexts: ["page", "selection"] });
         chrome.contextMenus.create({ id: "redact_selection", title: "Redact selection to clipboard", contexts: ["selection"] });
@@ -2355,6 +2381,7 @@ void reconcileTabStatuses();
 void syncManagedPolicy(false);
 void refreshOperatingMode();
 void scheduleHeartbeatAlarm();
+void syncUninstallHook();
 void purgeOrphanedStagedKeys();
 
 if (typeof chrome !== "undefined" && chrome.alarms?.onAlarm) {
@@ -2368,6 +2395,29 @@ if (typeof chrome !== "undefined" && chrome.alarms?.onAlarm) {
 
 if (chrome.contextMenus?.onClicked) {
   chrome.contextMenus.onClicked.addListener((info, tab) => {
+    if (info.menuItemId === "open_side_panel") {
+      if (tab?.windowId !== undefined && chrome.sidePanel && typeof chrome.sidePanel.open === "function") {
+        void chrome.sidePanel.open({ windowId: tab.windowId }).catch(() => undefined);
+        return;
+      }
+      void (async () => {
+        const winId = tab?.windowId ?? (await chrome.windows?.getCurrent?.())?.id;
+        if (winId !== undefined && chrome.sidePanel && typeof chrome.sidePanel.open === "function") {
+          await chrome.sidePanel.open({ windowId: winId }).catch(() => undefined);
+          return;
+        }
+        if (chrome.windows && typeof chrome.windows.create === "function") {
+          await chrome.windows.create({
+            url: chrome.runtime.getURL("sidepanel.html"),
+            type: "popup",
+            width: 440,
+            height: 680,
+          });
+        }
+      })().catch(() => undefined);
+      return;
+    }
+
     void (async () => {
       const tabId = tab?.id ?? (await getActiveTab())?.id;
       if (!tabId) return;
@@ -2407,7 +2457,18 @@ if (chrome.contextMenus?.onClicked) {
           await reportActionFailure(tabId, `Redact selection: ${error || `Audit persistence failed (${auditError})`}`);
         } else {
           flashTabStatus(tabId, "ok");
-          console.info(`[governworld] Redacted selection copied to the clipboard (${Object.values(counts ?? {}).reduce((a, b) => a + b, 0)} values masked)`);
+          const totalMasked = Object.values(counts ?? {}).reduce((a, b) => a + b, 0);
+          await dispatchExtensionNotification({
+            tabId,
+            event: "redaction_complete",
+            level: "success",
+            title: "GovernWorld \u2014 Selection Redacted",
+            message:
+              totalMasked > 0
+                ? `Copied redacted selection to clipboard (${totalMasked} item${totalMasked === 1 ? "" : "s"} masked).`
+                : "Selection copied to clipboard (no sensitive items detected).",
+          });
+          console.info(`[governworld] Redacted selection copied to the clipboard (${totalMasked} values masked)`);
         }
       } else if (info.menuItemId === "mask_selection") {
         const msg: WorkerMessage = {
@@ -2428,6 +2489,13 @@ if (chrome.contextMenus?.onClicked) {
           await reportActionFailure(tabId, `Mask selection: ${error}`);
         } else {
           flashTabStatus(tabId, "ok");
+          await dispatchExtensionNotification({
+            tabId,
+            event: "redaction_complete",
+            level: "success",
+            title: "GovernWorld \u2014 Selection Masked",
+            message: "Selected text masked on this page.",
+          });
         }
       }
     })().catch((error) => {
@@ -2697,11 +2765,21 @@ async function handleManagementEnroll(
     normalizedCoordinatorUrl = urlCheck.normalizedUrl;
   }
   const deviceId = await getInstallationId();
+  const browserFamily = detectBrowserFamily().family;
+  const userEmailHash = msg.employeeEmail?.trim()
+    ? await computeUserEmailHash(msg.organizationId, msg.employeeEmail)
+    : undefined;
+  const deviceActivationHash = userEmailHash
+    ? await computeDeviceActivationHash(userEmailHash, browserFamily, deviceId)
+    : undefined;
   const enrollment: ManagementEnrollment = {
     organization_id: msg.organizationId,
     organization_name: msg.organizationName,
     employee_id: msg.employeeId,
     employee_email: msg.employeeEmail,
+    ...(userEmailHash ? { user_email_hash: userEmailHash } : {}),
+    browser_family: browserFamily,
+    ...(deviceActivationHash ? { device_activation_hash: deviceActivationHash } : {}),
     device_id: deviceId,
     enrolled_at: new Date().toISOString(),
     ...(normalizedCoordinatorUrl ? { coordinator_url: normalizedCoordinatorUrl } : {}),
@@ -2710,13 +2788,42 @@ async function handleManagementEnroll(
   await saveManagementEnrollment(enrollment);
   await syncManagedPolicy(true);
   await scheduleHeartbeatAlarm();
+  await syncUninstallHook();
   void sendHeartbeatStatusCheck();
   await handleManagementGetStatus(requestId);
 }
 
 async function handleManagementUnenroll(requestId: string): Promise<void> {
-  await clearManagementEnrollment();
+  const enrollment = await loadManagementEnrollment();
+  const enterprisePolicy = await loadEnterprisePolicy();
+  if (
+    enrollment?.management_mode === "MANAGE" ||
+    Boolean(enrollment?.organization_id) ||
+    enterprisePolicy.managed
+  ) {
+    console.warn("[governworld] Refused local unenroll attempt while managed by organization administrator.");
+    await refreshOperatingMode();
+    const lastApplied = await loadLastAppliedManagedPolicy();
+    const deviceId = await getInstallationId();
+    notifyPopup({
+      type: "POPUP_MANAGEMENT_STATUS_STATE",
+      requestId,
+      mode: currentOperatingMode,
+      enrolled: Boolean(enrollment && enrollment.management_mode === "MANAGE"),
+      ...(enrollment?.organization_id ? { organizationId: enrollment.organization_id } : {}),
+      ...(enrollment?.organization_name ? { organizationName: enrollment.organization_name } : {}),
+      ...(enrollment?.employee_id ? { employeeId: enrollment.employee_id } : {}),
+      ...(enrollment?.employee_email ? { employeeEmail: enrollment.employee_email } : {}),
+      deviceId,
+      ...(lastApplied?.policy_id ? { appliedPolicyId: lastApplied.policy_id } : {}),
+      ...(lastApplied?.policy_version ? { appliedPolicyVersion: lastApplied.policy_version } : {}),
+      error: "Unpairing is locked by your organization administrator and requires admin-side revocation.",
+    });
+    return;
+  }
+  await unlinkAndResetToDefaults();
   await clearHeartbeatAlarm();
+  await syncUninstallHook();
   void syncSiteProtection();
   await handleManagementGetStatus(requestId);
 }
@@ -2932,6 +3039,24 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
     return;
   }
 
+  // Must run synchronously before the first await to preserve the UI user gesture.
+  let earlyNotificationsPermissionRequest: Promise<boolean> | null = null;
+  if (
+    !startupCleanupError &&
+    typeof chrome !== "undefined" &&
+    typeof chrome.permissions?.request === "function" &&
+    ((msg.type === "POPUP_SET_NOTIFICATIONS" && msg.enabled) ||
+      (msg.type === "POPUP_SET_NOTIFICATION_PREFS" && msg.prefs.systemEnabled === true))
+  ) {
+    try {
+      earlyNotificationsPermissionRequest = Promise.resolve(
+        chrome.permissions.request({ permissions: ["notifications"] }) as Promise<boolean>
+      );
+    } catch {
+      earlyNotificationsPermissionRequest = Promise.resolve(false);
+    }
+  }
+
   const run = async () => {
     if (startupCleanupError) {
       sendResponse({ ok: false, error: "Local document storage cleanup failed." });
@@ -3061,7 +3186,14 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
         break;
       case "POPUP_SET_NOTIFICATIONS": {
         if (msg.enabled) {
-          const granted = (await chrome.permissions.request({ permissions: ["notifications"] })) as boolean;
+          let granted = false;
+          try {
+            granted = earlyNotificationsPermissionRequest
+              ? Boolean(await earlyNotificationsPermissionRequest)
+              : Boolean(await chrome.permissions.request({ permissions: ["notifications"] }));
+          } catch {
+            granted = false;
+          }
           const settings = await loadSettings();
           const prefs = { ...settings.notificationPrefs, systemEnabled: granted };
           await saveSettings({ ...settings, notificationsEnabled: granted, notificationPrefs: prefs });
@@ -3076,19 +3208,29 @@ chrome.runtime.onMessage.addListener((raw: unknown, sender, sendResponse) => {
         break;
       }
       case "POPUP_SET_NOTIFICATION_PREFS": {
+        let preRequestedGrant: boolean | null = null;
+        if (earlyNotificationsPermissionRequest) {
+          try {
+            preRequestedGrant = Boolean(await earlyNotificationsPermissionRequest);
+          } catch {
+            preRequestedGrant = false;
+          }
+        }
         const current = await loadSettings();
         const mergedPrefs = {
           ...current.notificationPrefs,
           ...msg.prefs,
         };
-        let granted = await notificationsGranted();
-        if (msg.prefs.systemEnabled === true && !granted) {
-          try {
-            granted = (await chrome.permissions.request({ permissions: ["notifications"] })) as boolean;
-            mergedPrefs.systemEnabled = granted;
-          } catch {
-            mergedPrefs.systemEnabled = false;
+        let granted = preRequestedGrant ?? (await notificationsGranted());
+        if (msg.prefs.systemEnabled === true) {
+          if (preRequestedGrant === null && !granted) {
+            try {
+              granted = Boolean(await chrome.permissions.request({ permissions: ["notifications"] }));
+            } catch {
+              granted = false;
+            }
           }
+          mergedPrefs.systemEnabled = granted;
         } else if (msg.prefs.systemEnabled === false && granted) {
           try {
             await chrome.permissions.remove({ permissions: ["notifications"] });

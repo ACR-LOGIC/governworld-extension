@@ -22,6 +22,7 @@ import { build } from "esbuild";
 import { copyFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
+import { inputSwitchPolyfillPlugin } from "./lib/esbuild-plugins.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = join(root, "dist-safari");
@@ -36,6 +37,7 @@ const common = {
   minify: true,
   target: "safari16",
   logLevel: "info",
+  plugins: [inputSwitchPolyfillPlugin()],
 };
 
 const entries = [
@@ -46,6 +48,7 @@ const entries = [
   { entry: "src/offscreen/offscreen.ts", out: "offscreen.js", format: "esm" },
   { entry: "src/popup/redact.ts", out: "redact.js", format: "iife" },
   { entry: "src/popup/review.ts", out: "review.js", format: "iife" },
+  { entry: "src/service-worker/telemetryWorker.ts", out: "telemetry-worker.js", format: "esm" },
 ];
 
 for (const { entry, out, format } of entries) {

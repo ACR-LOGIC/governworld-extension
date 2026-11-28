@@ -111,7 +111,7 @@
         <footer class="review__actions">
           <p class="review__status" id="action-status" role="status" aria-live="polite"></p>
           <button type="button" class="btn btn--ghost" id="close">Close</button>
-          <button type="button" class="btn btn--primary" id="redact">Redact &amp; download</button>
+          <button type="button" class="btn btn--primary" id="redact" commandfor="confirm" command="show-modal">Redact &amp; download</button>
         </footer>
       </aside>
     </div>
@@ -120,7 +120,7 @@
       <h3 id="confirm-title">Confirm redaction</h3>
       <p class="footnote">This creates a redacted copy. The original is not changed.</p>
       <div class="review__row review__row--end">
-        <button type="button" class="btn btn--ghost btn--sm" id="confirm-cancel">Cancel</button>
+        <button type="button" class="btn btn--ghost btn--sm" id="confirm-cancel" commandfor="confirm" command="close">Cancel</button>
         <button type="button" class="btn btn--primary btn--sm" id="confirm-go">Download redacted</button>
       </div>
     </dialog>

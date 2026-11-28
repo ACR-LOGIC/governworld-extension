@@ -7,7 +7,11 @@ import {
   generate8DigitCode,
   getPairingPepper,
   isNonZeroUuid,
+  sha256Hex,
 } from "../_shared/crypto.ts";
+import { isEmailDeliveryConfigured, sendPairingTokenEmail } from "../_shared/email.ts";
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 Deno.serve(async (req: Request) => {
   const preflight = handleCorsPreflight(req);
@@ -70,6 +74,12 @@ Deno.serve(async (req: Request) => {
     return jsonResponse(400, { ok: false, error: "Valid seat_id is required" });
   }
 
+  const rawEmail = typeof body.target_email === "string" ? body.target_email.trim().toLowerCase() : "";
+  if (!rawEmail || !EMAIL_RE.test(rawEmail) || rawEmail.length > 320) {
+    return jsonResponse(400, { ok: false, error: "Valid target_email is required to issue a pairing token" });
+  }
+  const targetEmailHash = await sha256Hex(`${admin.organisation_id.toLowerCase()}:${rawEmail}`);
+
   let pepper: string;
   try {
     pepper = await getPairingPepper(supabaseAdmin);
@@ -93,6 +103,7 @@ Deno.serve(async (req: Request) => {
       p_code_hash: orgHash,
       p_lookup_hash: lookupHash,
       p_expires_at: expiresAt,
+      p_target_email_hash: targetEmailHash,
     });
 
     if (error || !data) {
@@ -100,11 +111,24 @@ Deno.serve(async (req: Request) => {
     }
 
     if (data.ok) {
+      let emailDelivered = false;
+      if (isEmailDeliveryConfigured()) {
+        const sent = await sendPairingTokenEmail({
+          to: rawEmail,
+          organisationName: String(data.organisation_name ?? admin.organisation_name ?? "GovernWorld"),
+          code,
+          expiresAt: String(data.expires_at ?? expiresAt),
+        });
+        emailDelivered = sent.ok;
+      }
+
       return jsonResponse(200, {
         ok: true,
         code_id: data.code_id,
         seat_id: data.seat_id,
         code,
+        email_bound: true,
+        email_delivered: emailDelivered,
         expires_at: data.expires_at,
       });
     }

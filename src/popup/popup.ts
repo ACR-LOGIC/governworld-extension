@@ -1,4 +1,5 @@
 import { sanitizeErrorForLog } from "../shared/errorSanitizer.js";
+import { ensureInvokerPolyfill } from "../shared/webPlatformPolyfills.js";
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 import { validateMessage } from "../shared/messages.js";
 import { previewObjectUrl } from "../shared/docStore.js";
@@ -28,9 +29,17 @@ import {
 } from "../shared/enterprisePolicy.js";
 import {
   saveManagementEnrollment,
-  clearManagementEnrollment,
+  loadManagementEnrollment,
   type ManagementEnrollment,
 } from "../shared/managedPolicy.js";
+import { isFeatureUnlockedForUser } from "../shared/policyOwnership.js";
+import { detectBrowserFamily } from "../shared/browserFamily.js";
+import {
+  buildDuplicateBrowserConflictMessage,
+  computeDeviceActivationHash,
+  computeUserEmailHash,
+} from "../shared/multiBrowserLicensing.js";
+import { loadLocalLifecycleState } from "../service-worker/heartbeatService.js";
 import { getInstallationId, isTrustedPolicyPublicKeyConfigured, validateApiUrl } from "../api/config.js";
 import {
   ALWAYS_ON_ORIGINS,
@@ -951,6 +960,8 @@ function syncProfilePopoverSummary(): void {
   const popoverName = document.getElementById("profile-popover-name");
   const popoverSubtitle = document.getElementById("profile-popover-subtitle");
   const popoverMode = document.getElementById("profile-popover-mode");
+  const profileSignoutBtn = document.getElementById("profile-signout-btn") as HTMLButtonElement | null;
+  if (profileSignoutBtn) profileSignoutBtn.hidden = isManaged;
 
   if (badge) {
     if (isManaged) {
@@ -1469,7 +1480,7 @@ async function refreshReviewTelemetry(currentState?: PopupState | null): Promise
 
   if (activityList && activityEmpty) {
     activityList.replaceChildren();
-    const recent = [...events].reverse().slice(0, 12);
+    const recent = events.toReversed().slice(0, 12);
     activityEmpty.hidden = recent.length > 0;
     const actionKeys: Record<string, string> = {
       page_scan_completed: "activity_action_page_scan_completed",
@@ -1701,9 +1712,18 @@ function coverageVerdict(state: PopupState): { text: string; tone: CoverageTone 
   }
 }
 
+function safeRuntimeUrl(path: string): string {
+  return typeof chrome !== "undefined" && typeof chrome.runtime?.getURL === "function"
+    ? chrome.runtime.getURL(path)
+    : path;
+}
+
 async function sendMessage(message: PopupMessage): Promise<unknown> {
-  return chrome.runtime.sendMessage(message);
+  if (typeof chrome === "undefined" || typeof chrome.runtime?.sendMessage !== "function") {
+    return null;
   }
+  return chrome.runtime.sendMessage(message);
+}
 
 /**
  * Send a Document Studio message and surface anything the worker refuses.
@@ -1956,7 +1976,7 @@ async function openFullScreenReview(
     );
     return;
   }
-  const url = chrome.runtime.getURL("review.html");
+  const url = safeRuntimeUrl("review.html");
   let opened = false;
   try {
     await chrome.tabs.create({ url, active: true });
@@ -2876,6 +2896,34 @@ export async function refreshProtectionStatus(): Promise<ProtectionStatusSnapsho
     diagVersionVal.textContent = manifestVer || CURRENT_EXTENSION_VERSION;
   }
 
+  const detectedBrowser = detectBrowserFamily();
+  const diagBrowserVal = document.getElementById("diag-browser-family-value");
+  if (diagBrowserVal) {
+    diagBrowserVal.textContent =
+      detectedBrowser.version && detectedBrowser.version !== "unknown"
+        ? `${detectedBrowser.displayName} ${detectedBrowser.version}`
+        : detectedBrowser.displayName;
+  }
+
+  const diagHeartbeatVal = document.getElementById("diag-heartbeat-value");
+  if (diagHeartbeatVal) {
+    const [enrollment, lifecycle] = await Promise.all([
+      loadManagementEnrollment(),
+      loadLocalLifecycleState(),
+    ]);
+    if (!enrollment || enrollment.management_mode !== "MANAGE") {
+      diagHeartbeatVal.textContent = t(lang, "diag_heartbeat_local");
+    } else if (enrollment.subscription_lapsed) {
+      diagHeartbeatVal.textContent = "Paused (Policy Locked Locally)";
+    } else if (lifecycle.state === "offline_clean_shutdown") {
+      diagHeartbeatVal.textContent = "Offline (Clean Shutdown)";
+    } else if (lifecycle.last_heartbeat_at) {
+      diagHeartbeatVal.textContent = `Online ✓ (${lifecycle.last_heartbeat_at.slice(11, 19)} UTC)`;
+    } else {
+      diagHeartbeatVal.textContent = "Managed (Pending Check-in)";
+    }
+  }
+
   const managedNotice = document.getElementById("managed-lock-notice");
   if (managedNotice) {
     managedNotice.hidden = !effective.locked;
@@ -2901,35 +2949,46 @@ export async function refreshProtectionStatus(): Promise<ProtectionStatusSnapsho
   const isLocked = effective.locked;
 
   // Lock admin-mandated sections when under managed policy
+  const categoriesLocked = isLocked && !isFeatureUnlockedForUser("enabledCategories", policy);
   const presetSelect = document.getElementById("preset-select") as HTMLSelectElement | null;
   if (presetSelect) {
-    presetSelect.disabled = isLocked;
-    if (isLocked) presetSelect.title = t(lang, "managed_lock_notice");
+    presetSelect.disabled = categoriesLocked;
+    if (categoriesLocked) presetSelect.title = t(lang, "managed_lock_notice");
     else presetSelect.removeAttribute("title");
   }
 
   for (const btnId of ["cat-filter-all", "cat-filter-health", "cat-filter-intl", "cat-filter-finance", "cat-filter-none"]) {
     const btn = document.getElementById(btnId) as HTMLButtonElement | null;
     if (btn) {
-      btn.disabled = isLocked;
-      if (isLocked) btn.title = t(lang, "managed_lock_notice");
+      btn.disabled = categoriesLocked;
+      if (categoriesLocked) btn.title = t(lang, "managed_lock_notice");
       else btn.removeAttribute("title");
     }
   }
 
-  for (const elId of ["threshold-category-select", "threshold-value-select", "threshold-apply-all-btn", "auto-mask-single-names-toggle"]) {
-    const el = document.getElementById(elId) as HTMLSelectElement | HTMLButtonElement | HTMLInputElement | null;
+  const thresholdsLocked = isLocked && !isFeatureUnlockedForUser("confidenceThresholds", policy);
+  for (const elId of ["threshold-category-select", "threshold-value-select", "threshold-apply-all-btn"]) {
+    const el = document.getElementById(elId) as HTMLSelectElement | HTMLButtonElement | null;
     if (el) {
-      el.disabled = isLocked;
-      if (isLocked) el.title = t(lang, "managed_lock_notice");
+      el.disabled = thresholdsLocked;
+      if (thresholdsLocked) el.title = t(lang, "managed_lock_notice");
       else el.removeAttribute("title");
     }
   }
 
+  const autoMaskEl = document.getElementById("auto-mask-single-names-toggle") as HTMLInputElement | null;
+  if (autoMaskEl) {
+    const autoMaskLocked = isLocked && !isFeatureUnlockedForUser("autoMaskSingleNames", policy);
+    autoMaskEl.disabled = autoMaskLocked;
+    if (autoMaskLocked) autoMaskEl.title = t(lang, "managed_lock_notice");
+    else autoMaskEl.removeAttribute("title");
+  }
+
   const openWiz = document.getElementById("open-wizard-btn-2") as HTMLButtonElement | null;
   if (openWiz) {
-    openWiz.disabled = isLocked;
-    if (isLocked) openWiz.title = t(lang, "managed_lock_notice");
+    const customLocked = isLocked && !isFeatureUnlockedForUser("customRules", policy);
+    openWiz.disabled = customLocked;
+    if (customLocked) openWiz.title = t(lang, "managed_lock_notice");
     else openWiz.removeAttribute("title");
   }
 
@@ -2946,6 +3005,7 @@ export async function refreshProtectionStatus(): Promise<ProtectionStatusSnapsho
 
 /** Shared popup/panel bootstrap. */
 export async function initPopup(): Promise<void> {
+  ensureInvokerPolyfill();
   const { switchTab, switchSettingsPage } = initTabs();
 
   const isSidePanelContext =
@@ -3034,19 +3094,6 @@ export async function initPopup(): Promise<void> {
       profileAvatarBtn?.focus();
     }
   });
-  // Pair Extension is a deliberate step: the code/enrollment form stays
-  // hidden until the user asks for it. Three triggers share this one path —
-  // the profile menu, the Account & Pairing card, and the bottom Pair
-  // Extension card — and all three land on the same form.
-  const openPairingForm = (): void => {
-    setPopoverOpen(false);
-    switchTab("settings");
-    switchSettingsPage("profile");
-    document.getElementById("office-pair-start-btn")?.click();
-    window.setTimeout(() => {
-      document.getElementById("office-pairing-input")?.focus();
-    }, 0);
-  };
   document.getElementById("profile-goto-account-btn")?.addEventListener("click", () => {
     setPopoverOpen(false);
     switchTab("settings");
@@ -3056,15 +3103,6 @@ export async function initPopup(): Promise<void> {
     setPopoverOpen(false);
     switchTab("settings");
     switchSettingsPage("profile");
-  });
-  document.getElementById("profile-pair-btn")?.addEventListener("click", () => {
-    openPairingForm();
-  });
-  document.getElementById("settings-nav-pair-btn")?.addEventListener("click", () => {
-    openPairingForm();
-  });
-  document.getElementById("settings-pair-now-btn")?.addEventListener("click", () => {
-    openPairingForm();
   });
   document.getElementById("profile-help-btn")?.addEventListener("click", () => {
     setPopoverOpen(false);
@@ -3102,7 +3140,7 @@ export async function initPopup(): Promise<void> {
     "protection-footer-learn-more"
   ) as HTMLAnchorElement | null;
   if (protectionFooterLearnMore) {
-    protectionFooterLearnMore.href = chrome.runtime.getURL("privacy.html");
+    protectionFooterLearnMore.href = safeRuntimeUrl("privacy.html");
     protectionFooterLearnMore.target = "_blank";
     protectionFooterLearnMore.rel = "noopener noreferrer";
   }
@@ -3170,9 +3208,11 @@ export async function initPopup(): Promise<void> {
   const localRadio = document.getElementById("mode-local") as HTMLInputElement | null;
   const cloudRadio = document.getElementById("mode-cloud") as HTMLInputElement | null;
 
+  const hasRuntimeGetUrl = typeof chrome !== "undefined" && typeof chrome.runtime?.getURL === "function";
+
   const privacyLink = document.getElementById("privacy-link") as HTMLAnchorElement | null;
   if (privacyLink) {
-    const privacyUrl = chrome.runtime.getURL("privacy.html");
+    const privacyUrl = hasRuntimeGetUrl ? chrome.runtime.getURL("privacy.html") : "privacy.html";
     privacyLink.href = privacyUrl;
     privacyLink.target = "_blank";
     privacyLink.rel = "noopener noreferrer";
@@ -3180,7 +3220,7 @@ export async function initPopup(): Promise<void> {
 
   const termsLink = document.getElementById("terms-link") as HTMLAnchorElement | null;
   if (termsLink) {
-    const termsUrl = chrome.runtime.getURL("legal.html");
+    const termsUrl = hasRuntimeGetUrl ? chrome.runtime.getURL("legal.html") : "legal.html";
     termsLink.href = termsUrl;
     termsLink.target = "_blank";
     termsLink.rel = "noopener noreferrer";
@@ -3188,7 +3228,11 @@ export async function initPopup(): Promise<void> {
 
   const aboutPrivacyLink = document.getElementById("about-privacy-link") as HTMLAnchorElement | null;
   if (aboutPrivacyLink) {
-    aboutPrivacyLink.href = chrome.runtime.getURL("privacy.html");
+    if (hasRuntimeGetUrl) {
+      aboutPrivacyLink.href = chrome.runtime.getURL("privacy.html");
+    } else {
+      aboutPrivacyLink.href = "privacy.html";
+    }
     aboutPrivacyLink.target = "_blank";
     aboutPrivacyLink.rel = "noopener noreferrer";
   }
@@ -3269,17 +3313,17 @@ export async function initPopup(): Promise<void> {
       // Cross-browser fallback for Firefox/Safari/older Chromium without sidePanel API
       if (typeof chrome !== "undefined" && chrome.windows && typeof chrome.windows.create === "function") {
         await chrome.windows.create({
-          url: chrome.runtime.getURL("sidepanel.html"),
+          url: safeRuntimeUrl("sidepanel.html"),
           type: "popup",
           width: 440,
           height: 680,
         });
       } else if (typeof chrome !== "undefined" && chrome.tabs && typeof chrome.tabs.create === "function") {
-        await chrome.tabs.create({ url: chrome.runtime.getURL("sidepanel.html") });
+        await chrome.tabs.create({ url: safeRuntimeUrl("sidepanel.html") });
       }
     } catch {
       try {
-        window.open(chrome.runtime.getURL("sidepanel.html"), "_blank");
+        window.open(safeRuntimeUrl("sidepanel.html"), "_blank");
       } catch {
         // Ignored
       }
@@ -4208,17 +4252,9 @@ export async function initPopup(): Promise<void> {
   }
 
   // --- Reset Settings & Clear Audit Controls ---
-  const resetSettingsBtn = document.getElementById("reset-settings-btn") as HTMLButtonElement | null;
   const resetConfirmDialog = document.getElementById("reset-confirm-dialog") as HTMLDialogElement | null;
-  const resetCancel = document.getElementById("reset-cancel") as HTMLButtonElement | null;
   const resetConfirm = document.getElementById("reset-confirm") as HTMLButtonElement | null;
 
-  resetSettingsBtn?.addEventListener("click", () => {
-    resetConfirmDialog?.showModal();
-  });
-  resetCancel?.addEventListener("click", () => {
-    resetConfirmDialog?.close();
-  });
   resetConfirm?.addEventListener("click", async () => {
     resetConfirmDialog?.close();
     const defaults = await resetSettings();
@@ -4292,17 +4328,9 @@ export async function initPopup(): Promise<void> {
     speakAnnouncement(t(defaults.language, "speech_settings_reset"), defaults);
   });
 
-  const clearAuditBtn = document.getElementById("clear-audit-btn") as HTMLButtonElement | null;
   const clearAuditDialog = document.getElementById("clear-audit-dialog") as HTMLDialogElement | null;
-  const clearAuditCancel = document.getElementById("clear-audit-cancel") as HTMLButtonElement | null;
   const clearAuditConfirm = document.getElementById("clear-audit-confirm") as HTMLButtonElement | null;
 
-  clearAuditBtn?.addEventListener("click", () => {
-    clearAuditDialog?.showModal();
-  });
-  clearAuditCancel?.addEventListener("click", () => {
-    clearAuditDialog?.close();
-  });
   clearAuditConfirm?.addEventListener("click", async () => {
     clearAuditDialog?.close();
     await chrome.storage.local.remove(["auditLog", "auditCheckpointState"]);
@@ -4528,104 +4556,23 @@ export async function initPopup(): Promise<void> {
     });
   });
 
-  // ---------- Enterprise Management Enrollment & Gateway API Controls ----------
-  const mgmtStatusText = document.getElementById("mgmt-status-text") as HTMLParagraphElement | null;
-  const mgmtOrgIdInput = document.getElementById("mgmt-org-id-input") as HTMLInputElement | null;
-  const mgmtOrgNameInput = document.getElementById("mgmt-org-name-input") as HTMLInputElement | null;
-  const mgmtEmpIdInput = document.getElementById("mgmt-emp-id-input") as HTMLInputElement | null;
-  const mgmtCoordUrlInput = document.getElementById("mgmt-coord-url-input") as HTMLInputElement | null;
-  const mgmtEnrollBtn = document.getElementById("mgmt-enroll-btn") as HTMLButtonElement | null;
-  const mgmtSyncPolicyBtn = document.getElementById("mgmt-sync-policy-btn") as HTMLButtonElement | null;
-  const mgmtUnenrollBtn = document.getElementById("mgmt-unenroll-btn") as HTMLButtonElement | null;
-
-  mgmtEnrollBtn?.addEventListener("click", () => {
-    const organizationId = mgmtOrgIdInput?.value.trim() || "";
-    const organizationName = mgmtOrgNameInput?.value.trim() || undefined;
-    const employeeId = mgmtEmpIdInput?.value.trim() || "";
-    const coordinatorUrl = mgmtCoordUrlInput?.value.trim() || undefined;
-    if (!organizationId || !employeeId) {
-      if (mgmtStatusText) {
-        mgmtStatusText.textContent = "Organization ID and Employee ID are required to enroll.";
-      }
-      return;
-    }
-    if (mgmtStatusText) mgmtStatusText.textContent = "Enrolling device in Enterprise MANAGE mode…";
-    void chrome.runtime.sendMessage({
-      type: "POPUP_MANAGEMENT_ENROLL",
-      requestId: requestId(),
-      organizationId,
-      ...(organizationName ? { organizationName } : {}),
-      employeeId,
-      ...(coordinatorUrl ? { coordinatorUrl } : {}),
-    });
-  });
-
-  mgmtSyncPolicyBtn?.addEventListener("click", () => {
-    if (mgmtStatusText) mgmtStatusText.textContent = "Syncing signed enterprise policy…";
-    void chrome.runtime.sendMessage({
-      type: "POPUP_SYNC_MANAGED_POLICY",
-      requestId: requestId(),
-      force: true,
-    });
-  });
-
-  mgmtUnenrollBtn?.addEventListener("click", () => {
-    if (mgmtStatusText) mgmtStatusText.textContent = "Returning to standalone LOCAL mode…";
-    void chrome.runtime.sendMessage({
-      type: "POPUP_MANAGEMENT_UNENROLL",
-      requestId: requestId(),
-    });
-  });
-
-  const oauthConnectBtn = document.getElementById("oauth-connect-btn") as HTMLButtonElement | null;
-  const apiSyncPolicyBtn = document.getElementById("api-sync-policy-btn") as HTMLButtonElement | null;
-  const apiDisconnectBtn = document.getElementById("api-disconnect-btn") as HTMLButtonElement | null;
-  const oauthStatus = document.getElementById("oauth-status") as HTMLParagraphElement | null;
-  const apiConnectionStatus = document.getElementById("api-connection-status") as HTMLParagraphElement | null;
-
-  oauthConnectBtn?.addEventListener("click", () => {
-    if (oauthStatus) {
-      oauthStatus.hidden = false;
-      oauthStatus.textContent = "Checking OAuth connection status…";
-    }
-    void chrome.runtime.sendMessage({
-      type: "POPUP_OAUTH_CONNECT",
-      requestId: requestId(),
-    });
-  });
-
-  apiSyncPolicyBtn?.addEventListener("click", () => {
-    if (apiConnectionStatus) {
-      apiConnectionStatus.textContent = "Requesting gateway policy sync…";
-    }
-    const gwOrigin = originInput?.value.trim().replace(/\/+$/, "");
-    if (gwOrigin && /^https:\/\/[^/]+$/.test(gwOrigin)) {
-      void chrome.runtime.sendMessage({
-        type: "POPUP_API_CONNECT",
-        requestId: requestId(),
-        apiUrl: gwOrigin,
-      });
-    }
-    void chrome.runtime.sendMessage({
-      type: "POPUP_API_SYNC_POLICY",
-      requestId: requestId(),
-    });
-  });
-
-  apiDisconnectBtn?.addEventListener("click", () => {
-    void chrome.runtime.sendMessage({
-      type: "POPUP_API_DISCONNECT",
-      requestId: requestId(),
-    });
-  });
-
-  // ---------- Office Manager Pairing Controls ----------
+  // ---------- Office Manager Pairing Controls (Single-Entry) ----------
   const officePairBtn = document.getElementById("office-pair-btn") as HTMLButtonElement | null;
-  const officeUnpairBtn = document.getElementById("office-unpair-btn") as HTMLButtonElement | null;
+  const officePairingEmailInput = document.getElementById("office-pairing-email-input") as HTMLInputElement | null;
   const officePairingInput = document.getElementById("office-pairing-input") as HTMLInputElement | null;
   const officeManagerStatus = document.getElementById("office-manager-status");
+  const officeBrowserBinding = document.getElementById("office-browser-binding");
+  const officeAdminLockNotice = document.getElementById("office-admin-lock-notice") as HTMLElement | null;
+  const pairingConsentDialog = document.getElementById("pairing-consent-dialog") as HTMLDialogElement | null;
+  const pairingConsentCancel = document.getElementById("pairing-consent-cancel") as HTMLButtonElement | null;
+  const pairingConsentConfirm = document.getElementById("pairing-consent-confirm") as HTMLButtonElement | null;
+  const pairingConflictDialog = document.getElementById("pairing-conflict-dialog") as HTMLDialogElement | null;
+  const pairingConflictDesc = document.getElementById("pairing-conflict-desc");
+  const pairingConflictConfirm = document.getElementById("pairing-conflict-confirm") as HTMLButtonElement | null;
 
   async function checkOfficeManagerPairingStatus() {
+    const detected = detectBrowserFamily();
+    const profileSignoutBtn = document.getElementById("profile-signout-btn") as HTMLButtonElement | null;
     if (typeof chrome !== "undefined" && chrome.storage?.local) {
       const stored = (await chrome.storage.local.get([
         "gw_coordinator_policy",
@@ -4636,13 +4583,31 @@ export async function initPopup(): Promise<void> {
         gw_coordinator_policy?: { managed?: boolean; organizationName?: string; policyVersion?: number };
         gw_coordinator_url?: string;
         gw_applied_managed_policy?: { organization_name?: string; organization_id?: string; policy_version?: number };
-        gw_management_enrollment?: { organization_name?: string; organization_id?: string };
+        gw_management_enrollment?: {
+          organization_name?: string;
+          organization_id?: string;
+          browser_family?: string;
+          subscription_lapsed?: boolean;
+        };
       };
       const managedPolicy = stored.gw_applied_managed_policy;
       const enrollment = stored.gw_management_enrollment;
       const coordPolicy = stored.gw_coordinator_policy;
+      const isManaged = Boolean(managedPolicy || (enrollment && enrollment.organization_id) || (coordPolicy && coordPolicy.managed));
 
-      if (managedPolicy || (enrollment && enrollment.organization_id) || (coordPolicy && coordPolicy.managed)) {
+      if (officeBrowserBinding) {
+        if (isManaged && enrollment?.subscription_lapsed) {
+          officeBrowserBinding.textContent = `Host: ${detected.displayName} · Subscription lapsed (policy locked locally)`;
+        } else if (isManaged) {
+          officeBrowserBinding.textContent = `Host: ${detected.displayName} · 1 active instance bound (1 user = 1 seat)`;
+        } else {
+          officeBrowserBinding.textContent = `Host: ${detected.displayName} · Unpaired (1 instance per browser family)`;
+        }
+      }
+
+      if (profileSignoutBtn) profileSignoutBtn.hidden = isManaged;
+
+      if (isManaged) {
         const orgName =
           managedPolicy?.organization_name ||
           enrollment?.organization_name ||
@@ -4654,18 +4619,27 @@ export async function initPopup(): Promise<void> {
           officeManagerStatus.textContent = t(currentLang, "office_status_managed", { org: orgName, ver });
           officeManagerStatus.style.color = "var(--gw-emerald, #10b981)";
         }
-        // Paired: the form must be visible so Unpair is reachable.
-        if (officeManagerForm) officeManagerForm.hidden = false;
+        // Admin-locked post-pairing: hide pairing inputs & any user-facing unpair controls.
+        if (officeManagerForm) officeManagerForm.hidden = true;
         if (officePairStartBtn) officePairStartBtn.hidden = true;
-        if (officePairingInput) officePairingInput.style.display = "none";
-        if (officePairBtn) officePairBtn.style.display = "none";
-        if (officeUnpairBtn) officeUnpairBtn.style.display = "inline-block";
+        if (officeAdminLockNotice) officeAdminLockNotice.hidden = false;
         return;
       }
+    } else if (officeBrowserBinding) {
+      officeBrowserBinding.textContent = `Host: ${detected.displayName} · Unpaired (1 instance per browser family)`;
+    }
+    if (profileSignoutBtn) profileSignoutBtn.hidden = false;
+    if (officeAdminLockNotice) officeAdminLockNotice.hidden = true;
+    if (officePairStartBtn && officeManagerForm?.hidden) {
+      officePairStartBtn.hidden = false;
     }
     if (officeManagerStatus) {
       officeManagerStatus.textContent = t(currentLang, "office_status_local");
       officeManagerStatus.style.color = "inherit";
+    }
+    if (officePairingEmailInput) {
+      officePairingEmailInput.style.display = "block";
+      officePairingEmailInput.disabled = false;
     }
     if (officePairingInput) {
       officePairingInput.style.display = "block";
@@ -4675,37 +4649,36 @@ export async function initPopup(): Promise<void> {
       officePairBtn.style.display = "inline-block";
       officePairBtn.disabled = false;
     }
-    if (officeUnpairBtn) officeUnpairBtn.style.display = "none";
   }
 
-  // Pair Extension is a deliberate step: the code/enrollment form stays
-  // hidden until the user clicks Pair Extension (profile menu or here).
+  // Pair Extension is a deliberate step inside Office Manager Coordination:
+  // the form stays hidden until the user clicks Pair Extension here.
   const officePairStartBtn = document.getElementById("office-pair-start-btn") as HTMLButtonElement | null;
   const officeManagerForm = document.getElementById("office-manager-form") as HTMLDivElement | null;
   officePairStartBtn?.addEventListener("click", () => {
     if (officeManagerForm) officeManagerForm.hidden = false;
     if (officePairStartBtn) officePairStartBtn.hidden = true;
-    officePairingInput?.focus();
+    (officePairingEmailInput ?? officePairingInput)?.focus();
   });
 
   void checkOfficeManagerPairingStatus();
 
-  officePairBtn?.addEventListener("click", async () => {
+  async function validateOfficePairingPreconditions(): Promise<{ code: string; coordinatorUrl: string } | null> {
     if (!isTrustedPolicyPublicKeyConfigured()) {
       if (officeManagerStatus) {
         officeManagerStatus.textContent = "Managed mode unavailable — trusted policy signing key is not configured.";
         officeManagerStatus.style.color = "var(--gw-crimson, #ef4444)";
       }
-      return;
+      return null;
     }
 
     const code = officePairingInput?.value.trim().toUpperCase();
-    if (!code || code.length !== 6) {
+    if (!code || code.length < 6 || code.length > 8) {
       if (officeManagerStatus) {
         officeManagerStatus.textContent = t(currentLang, "office_err_invalid_code");
         officeManagerStatus.style.color = "var(--gw-crimson, #ef4444)";
       }
-      return;
+      return null;
     }
 
     const storedCoord = await chrome.storage.local.get("gw_coordinator_url");
@@ -4716,9 +4689,15 @@ export async function initPopup(): Promise<void> {
         officeManagerStatus.textContent = coordCheck.error ?? "HTTPS coordinator URL is not configured.";
         officeManagerStatus.style.color = "var(--gw-crimson, #ef4444)";
       }
-      return;
+      return null;
     }
-    const coordinatorUrl = coordCheck.normalizedUrl;
+    return { code, coordinatorUrl: coordCheck.normalizedUrl };
+  }
+
+  async function executeOfficePairing(confirmReplace: boolean): Promise<void> {
+    const validated = await validateOfficePairingPreconditions();
+    if (!validated) return;
+    const { code, coordinatorUrl } = validated;
 
     if (officeManagerStatus) {
       officeManagerStatus.textContent = t(currentLang, "office_connecting");
@@ -4726,11 +4705,45 @@ export async function initPopup(): Promise<void> {
     }
 
     try {
+      const deviceId = await getInstallationId();
+      const detected = detectBrowserFamily();
+      const emailVal = officePairingEmailInput?.value.trim().toLowerCase() ?? "";
+      const userEmailHash = emailVal ? await computeUserEmailHash(coordinatorUrl, emailVal) : undefined;
+      const deviceActivationHash = userEmailHash
+        ? await computeDeviceActivationHash(userEmailHash, detected.family, deviceId)
+        : undefined;
+
       const res = await fetch(`${coordinatorUrl}/api/v1/coordinator/pair`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pairingCode: code }),
+        body: JSON.stringify({
+          pairingCode: code,
+          installation_id: deviceId,
+          browser_family: detected.family,
+          ...(userEmailHash ? { user_email_hash: userEmailHash } : {}),
+          ...(deviceActivationHash ? { device_activation_hash: deviceActivationHash } : {}),
+          ...(confirmReplace ? { confirm_replace: true } : {}),
+        }),
       });
+
+      if (res.status === 409) {
+        const conflictBody = (await res.json().catch(() => ({}))) as {
+          code?: string;
+          browser_family?: string;
+          message?: string;
+        };
+        if (pairingConflictDesc) {
+          pairingConflictDesc.textContent =
+            conflictBody.message || buildDuplicateBrowserConflictMessage(detected.family);
+        }
+        if (officeManagerStatus) {
+          officeManagerStatus.textContent =
+            conflictBody.message || buildDuplicateBrowserConflictMessage(detected.family);
+          officeManagerStatus.style.color = "var(--gw-amber, #f59e0b)";
+        }
+        pairingConflictDialog?.showModal();
+        return;
+      }
 
       if (!res.ok) {
         throw new Error(`Coordinator returned HTTP ${res.status}`);
@@ -4742,14 +4755,21 @@ export async function initPopup(): Promise<void> {
           gw_coordinator_policy: data.policy,
           gw_coordinator_url: coordinatorUrl,
         });
-        const deviceId = await getInstallationId();
         const orgId = data.organizationId || data.policy.organizationId || data.policy.organization_id || "org_office_manager";
         const orgName = data.organizationName || data.policy.organizationName || data.policy.organization_name || "Office Manager";
         const employeeId = data.employeeId || "employee";
+        const orgEmailHash = emailVal ? await computeUserEmailHash(orgId, emailVal) : userEmailHash;
+        const orgActivationHash = orgEmailHash
+          ? await computeDeviceActivationHash(orgEmailHash, detected.family, deviceId)
+          : undefined;
         const enrollment: ManagementEnrollment = {
           organization_id: orgId,
           organization_name: orgName,
           employee_id: employeeId,
+          ...(emailVal ? { employee_email: emailVal } : {}),
+          ...(orgEmailHash ? { user_email_hash: orgEmailHash } : {}),
+          browser_family: detected.family,
+          ...(orgActivationHash ? { device_activation_hash: orgActivationHash } : {}),
           device_id: deviceId,
           coordinator_url: coordinatorUrl,
           enrolled_at: new Date().toISOString(),
@@ -4763,6 +4783,7 @@ export async function initPopup(): Promise<void> {
               organizationId: orgId,
               organizationName: orgName,
               employeeId,
+              ...(emailVal ? { employeeEmail: emailVal } : {}),
               coordinatorUrl,
               requestId: requestId(),
             });
@@ -4780,30 +4801,32 @@ export async function initPopup(): Promise<void> {
         officeManagerStatus.style.color = "var(--gw-crimson, #ef4444)";
       }
     }
+  }
+
+  officePairBtn?.addEventListener("click", async () => {
+    const validated = await validateOfficePairingPreconditions();
+    if (!validated) return;
+    if (pairingConsentDialog && typeof pairingConsentDialog.showModal === "function") {
+      pairingConsentDialog.showModal();
+      pairingConsentCancel?.focus();
+    } else {
+      void executeOfficePairing(false);
+    }
   });
 
-  officeUnpairBtn?.addEventListener("click", async () => {
-    if (typeof chrome !== "undefined" && chrome.storage?.local) {
-      await chrome.storage.local.remove([
-        "gw_coordinator_policy",
-        "gw_coordinator_url",
-        "gw_applied_managed_policy",
-        "gw_management_enrollment",
-      ]);
-      await clearManagementEnrollment();
-      try {
-        if (typeof chrome !== "undefined" && chrome.runtime?.sendMessage) {
-          await chrome.runtime.sendMessage({
-            type: "POPUP_MANAGEMENT_UNENROLL",
-            requestId: requestId(),
-          });
-        }
-      } catch {
-        // Ignore messaging error
-      }
-      await checkOfficeManagerPairingStatus();
-      await refreshProtectionStatus();
-    }
+  pairingConsentCancel?.addEventListener("click", () => {
+    pairingConsentDialog?.close();
+    officePairBtn?.focus();
+  });
+
+  pairingConsentConfirm?.addEventListener("click", () => {
+    pairingConsentDialog?.close();
+    void executeOfficePairing(false);
+  });
+
+  pairingConflictConfirm?.addEventListener("click", () => {
+    pairingConflictDialog?.close();
+    void executeOfficePairing(true);
   });
 
   // ---------- Redaction Wizard & Custom Rules Controller ----------
@@ -5672,7 +5695,8 @@ export async function initPopup(): Promise<void> {
     dialog.showModal();
   }
 
-  chrome.runtime.onMessage.addListener(async (raw: unknown) => {
+  if (typeof chrome !== "undefined" && chrome.runtime?.onMessage) {
+    chrome.runtime.onMessage.addListener(async (raw: unknown) => {
     const validation = validateMessage(raw);
     if (!validation.ok) return;
     const message = validation.message;
@@ -6148,29 +6172,7 @@ export async function initPopup(): Promise<void> {
       }
       return;
     }
-    if (message.type === "POPUP_OAUTH_STATUS") {
-      if (oauthStatus) {
-        oauthStatus.hidden = false;
-        oauthStatus.textContent = message.message || (message.connected ? `Connected (${message.tenantName ?? message.tenantId ?? "Workspace"})` : "Not connected via OAuth.");
-      }
-      return;
-    }
-    if (message.type === "POPUP_API_STATUS_STATE") {
-      if (apiConnectionStatus) {
-        const stateLabel = message.connectionState ? `Gateway API: ${message.connectionState}` : "Gateway API: disconnected";
-        apiConnectionStatus.textContent = message.error ? `${stateLabel} (${message.error})` : stateLabel;
-      }
-      if (apiDisconnectBtn) {
-        apiDisconnectBtn.hidden = message.connectionState !== "connected";
-      }
-      return;
-    }
-    if (message.type === "POPUP_API_POLICY_STATE") {
-      if (apiConnectionStatus) {
-        apiConnectionStatus.textContent = message.success
-          ? `Policy synced (${message.rulesCount ?? 0} rules, v${message.policyVersion ?? "1"}).`
-          : message.error || "Gateway policy sync unavailable.";
-      }
+    if (message.type === "POPUP_OAUTH_STATUS" || message.type === "POPUP_API_STATUS_STATE" || message.type === "POPUP_API_POLICY_STATE") {
       return;
     }
     if (message.type === "POPUP_API_SUBMIT_RESULT" || message.type === "POPUP_COMMUNITY_CONTRIBUTE_RESULT") {
@@ -6184,20 +6186,11 @@ export async function initPopup(): Promise<void> {
       return;
     }
     if (message.type === "POPUP_MANAGEMENT_STATUS_STATE") {
-      if (mgmtStatusText) {
-        if (message.error) {
-          mgmtStatusText.textContent = message.error;
-        } else if (message.enrolled && message.mode === "MANAGE") {
-          const orgLabel = message.organizationName || message.organizationId || "Organization";
-          const verLabel = message.appliedPolicyVersion !== undefined ? ` (Policy v${message.appliedPolicyVersion})` : "";
-          mgmtStatusText.textContent = `MANAGE Mode enrolled: ${orgLabel}${verLabel}`;
-        } else {
-          mgmtStatusText.textContent = "Standalone (LOCAL Mode)";
-        }
+      if (message.error && officeManagerStatus) {
+        officeManagerStatus.textContent = message.error;
+        officeManagerStatus.style.color = "var(--gw-crimson, #ef4444)";
       }
-      if (mgmtUnenrollBtn) {
-        mgmtUnenrollBtn.hidden = !message.enrolled;
-      }
+      await checkOfficeManagerPairingStatus();
       void refreshProtectionStatus();
       return;
     }
@@ -6265,15 +6258,16 @@ export async function initPopup(): Promise<void> {
       }
       return;
     }
-  });
+    });
+  }
 
   const initialTab = await getActiveWebTab().catch(() => undefined);
   void sendMessage({ type: "POPUP_GET_STATE", requestId: requestId(), ...(initialTab?.id ? { tabId: initialTab.id } : {}) });
   const initialPatterns = await loadCustomPatterns().catch(() => null);
   if (initialPatterns) renderCustomPatterns(initialPatterns);
-  void chrome.runtime.sendMessage({ type: "POPUP_CUSTOM_PATTERNS_GET", requestId: requestId() }).catch(() => {});
-  void chrome.runtime.sendMessage({ type: "POPUP_MANAGEMENT_GET_STATUS", requestId: requestId() }).catch(() => {});
-  void chrome.runtime.sendMessage({ type: "POPUP_API_GET_STATUS", requestId: requestId() }).catch(() => {});
+  void sendMessage({ type: "POPUP_CUSTOM_PATTERNS_GET", requestId: requestId() }).catch(() => {});
+  void sendMessage({ type: "POPUP_MANAGEMENT_GET_STATUS", requestId: requestId() }).catch(() => {});
+  void sendMessage({ type: "POPUP_API_GET_STATUS", requestId: requestId() }).catch(() => {});
 
   // Check for Side Panel handoff from toolbar popup
   async function checkWizardSidePanelHandoff(): Promise<void> {

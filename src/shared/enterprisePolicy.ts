@@ -64,6 +64,8 @@ export interface EnterprisePolicy {
   customRules?: PolicyRule[];
   /** True when an administrator has explicitly unlocked this paired seat for local overrides. */
   seatUnlocked?: boolean;
+  /** Per-feature administrator delegations ("Unlock for User"), strictly distinct from toggling on/off. */
+  unlockedFeatures?: string[];
   /** Optional metadata from local office coordinator when enrolled via desktop app */
   coordinatorOrigin?: string;
   organizationName?: string;
@@ -201,6 +203,14 @@ export function parseEnterprisePolicy(raw: unknown): EnterprisePolicy {
     seatUnlocked = raw.seatUnlocked;
   }
 
+  let unlockedFeatures: string[] | undefined;
+  if (raw.unlockedFeatures !== undefined) {
+    if (!Array.isArray(raw.unlockedFeatures) || !raw.unlockedFeatures.every((f) => typeof f === "string" && f.length > 0 && f.length <= 64)) {
+      return { ...FAIL_CLOSED_ENTERPRISE_POLICY };
+    }
+    unlockedFeatures = [...new Set(raw.unlockedFeatures)];
+  }
+
   return {
     managed: true,
     valid: true,
@@ -217,6 +227,7 @@ export function parseEnterprisePolicy(raw: unknown): EnterprisePolicy {
     ...(maxNodeChars !== undefined ? { maxNodeChars } : {}),
     ...(customRules ? { customRules } : {}),
     ...(seatUnlocked !== undefined ? { seatUnlocked } : {}),
+    ...(unlockedFeatures ? { unlockedFeatures } : {}),
     ...(coordinatorOrigin ? { coordinatorOrigin } : {}),
     ...(organizationName ? { organizationName } : {}),
     ...(policyVersion ? { policyVersion } : {}),
@@ -320,9 +331,17 @@ export async function loadEnterprisePolicy(options?: LoadEnterprisePolicyOptions
         (pairingState.status === "paired" || pairingState.status === "paired_offline") &&
         pairingState.unlocked === true;
 
+      const mergedUnlockedFeatures = Array.from(
+        new Set([
+          ...(managedPolicyToEnterprisePolicy(check.policy).unlockedFeatures ?? []),
+          ...(Array.isArray(enrollment.unlocked_features) ? enrollment.unlocked_features : []),
+        ]),
+      );
+
       return {
         ...managedPolicyToEnterprisePolicy(check.policy),
         ...(seatUnlocked ? { seatUnlocked: true } : {}),
+        ...(mergedUnlockedFeatures.length > 0 ? { unlockedFeatures: mergedUnlockedFeatures } : {}),
       };
     } catch {
       return { ...FAIL_CLOSED_ENTERPRISE_POLICY };
@@ -390,18 +409,31 @@ export function resolveEffectiveProtection(
     };
   }
 
+  const unlockedSet = new Set(policy.unlockedFeatures ?? []);
+  const modeUnlocked = unlockedSet.has("protectionMode");
+  const categoriesUnlocked = unlockedSet.has("enabledCategories") || unlockedSet.has("categories");
+
   if (!policy.userCanDisable) {
     // Locked: the admin mode is a floor, never a ceiling. An admin "off" is
     // explicit and wins outright; otherwise the wider of the admin and user
     // modes enforces, so a user who enables more keeps the wider coverage.
+    if (modeUnlocked) {
+      return {
+        mode: settings.protectionMode,
+        locked: false,
+        managed: true,
+        enabledCategories: categoriesUnlocked ? [...settings.enabledCategories] : [...enabled],
+        lockedCategories: categoriesUnlocked ? [] : [...enforced],
+      };
+    }
     const adminMode = policy.protectionMode;
     if (adminMode === "off") {
       return {
         mode: "off",
         locked: true,
         managed: true,
-        enabledCategories: [...enforced],
-        lockedCategories: [...enforced],
+        enabledCategories: categoriesUnlocked ? [...settings.enabledCategories] : [...enforced],
+        lockedCategories: categoriesUnlocked ? [] : [...enforced],
       };
     }
     const rank: Record<ProtectionMode, number> = { off: 0, "this-tab": 1, "always-on": 2 };
@@ -411,16 +443,16 @@ export function resolveEffectiveProtection(
       mode: rank[userMode] >= rank[adminMode] ? userMode : adminMode,
       locked: true,
       managed: true,
-      enabledCategories: [...enabled],
-      lockedCategories: [...enforced],
+      enabledCategories: categoriesUnlocked ? [...settings.enabledCategories] : [...enabled],
+      lockedCategories: categoriesUnlocked ? [] : [...enforced],
     };
   }
   return {
     mode: settings.protectionMode,
     locked: false,
     managed: true,
-    enabledCategories: [...enabled],
-    lockedCategories: [...enforced],
+    enabledCategories: categoriesUnlocked ? [...settings.enabledCategories] : [...enabled],
+    lockedCategories: categoriesUnlocked ? [] : [...enforced],
   };
 }
 

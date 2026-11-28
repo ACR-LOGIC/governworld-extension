@@ -13,7 +13,10 @@
 import { previewObjectUrl } from "../shared/docStore.js";
 import { evaluateComplianceScore } from "../shared/complianceScore.js";
 import { classifyDestination } from "../shared/destinationClassifier.js";
+import { ensureInvokerPolyfill } from "../shared/webPlatformPolyfills.js";
 import type { DocKind, DocPageMeta, Finding, Rect, RedactionStyle, RedactionOptions } from "../shared/types.js";
+
+ensureInvokerPolyfill();
 
 const SESSION_KEY = "reviewSession";
 
@@ -90,7 +93,6 @@ const dom = {
   close: el<HTMLButtonElement>("close"),
   redact: el<HTMLButtonElement>("redact"),
   confirm: el<HTMLDialogElement>("confirm"),
-  confirmCancel: el<HTMLButtonElement>("confirm-cancel"),
   confirmGo: el<HTMLButtonElement>("confirm-go"),
 };
 
@@ -603,7 +605,7 @@ function stepZoomOut(): void {
     setZoom(widest > 0 && stage > 0 ? Math.min(MAX_ZOOM, stage / widest) : 1);
     return;
   }
-  const below = [...ZOOM_STEPS].reverse().find((z) => z < zoom);
+  const below = ZOOM_STEPS.findLast((z) => z < zoom);
   setZoom(below ?? MIN_ZOOM);
 }
 
@@ -664,8 +666,6 @@ function wire(): void {
   dom.stampText?.addEventListener("input", () => {
     for (const redraw of redrawers) redraw();
   });
-  dom.redact?.addEventListener("click", () => dom.confirm?.showModal());
-  dom.confirmCancel?.addEventListener("click", () => dom.confirm?.close());
   dom.confirmGo?.addEventListener("click", () => {
     dom.confirm?.close();
     void requestRedaction();

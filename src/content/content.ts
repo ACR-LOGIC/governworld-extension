@@ -1034,7 +1034,7 @@ if (g.__gwRedactionContentLoaded !== true) {
               (m) => m.confidence >= threshold(m.category)
             );
             let redacted = selText;
-            const sorted = [...matches].sort((a, b) => b.start - a.start);
+            const sorted = matches.toSorted((a, b) => b.start - a.start);
             for (const m of sorted) {
               const repl = msg.settings?.maskPlaceholders
                 ? placeholderLabelFor(m.category)
@@ -1157,7 +1157,7 @@ if (g.__gwRedactionContentLoaded !== true) {
           );
           if (active.length > 0) {
             let resultText = selectedText;
-            const sortedActive = [...active].sort((a, b) => b.startOffset - a.startOffset);
+            const sortedActive = active.toSorted((a, b) => b.startOffset - a.startOffset);
             for (const f of sortedActive) {
               const fs = Math.max(start, f.startOffset) - start;
               const fe = Math.min(end, f.endOffset) - start;
@@ -1211,7 +1211,7 @@ if (g.__gwRedactionContentLoaded !== true) {
         );
         if (matches.length === 0) return;
         let redacted = rawSelText;
-        const sorted = [...matches].sort((a, b) => b.start - a.start);
+        const sorted = matches.toSorted((a, b) => b.start - a.start);
         for (const m of sorted) {
           const repl = (placeholdersEnabled || currentSettings?.maskPlaceholders)
             ? `[${placeholderLabelFor(m.category)}]`

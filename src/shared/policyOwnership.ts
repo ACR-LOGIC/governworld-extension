@@ -19,6 +19,53 @@ import type { NetworkDestinationPolicy } from "./networkGuard.js";
 
 export type SettingOwnership = "administrator" | "user" | "system";
 
+export const ADMIN_CONTROLLABLE_FEATURES = [
+  "protectionMode",
+  "pasteGuardEnabled",
+  "enabledCategories",
+  "confidenceThresholds",
+  "networkDestinationPolicy",
+  "networkAllowlist",
+  "defaultRedactionStyle",
+  "defaultStampText",
+  "autoMaskSingleNames",
+  "maxVisibleChars",
+  "maxNodeChars",
+  "customRules",
+  "sitePolicies",
+] as const;
+
+export type AdminControllableFeature = (typeof ADMIN_CONTROLLABLE_FEATURES)[number];
+
+const ADMIN_FEATURE_SET = new Set<string>(ADMIN_CONTROLLABLE_FEATURES);
+
+export function isAdminControllableFeature(value: unknown): value is AdminControllableFeature {
+  return typeof value === "string" && ADMIN_FEATURE_SET.has(value);
+}
+
+function canonicalAdminFeatureKey(settingKey: string): string {
+  switch (settingKey) {
+    case "categories":
+      return "enabledCategories";
+    case "enabled":
+      return "pasteGuardEnabled";
+    case "customPatterns":
+      return "customRules";
+    default:
+      return settingKey;
+  }
+}
+
+export function isFeatureUnlockedForUser(settingKey: string, policy: EnterprisePolicy): boolean {
+  if (!policy.managed || !policy.valid) return false;
+  if (policy.seatUnlocked === true) return true;
+  if (!Array.isArray(policy.unlockedFeatures) || policy.unlockedFeatures.length === 0) {
+    return false;
+  }
+  const canonical = canonicalAdminFeatureKey(settingKey);
+  return policy.unlockedFeatures.includes(settingKey) || policy.unlockedFeatures.includes(canonical);
+}
+
 /**
  * Authoritative registry of setting keys to ownership classifications.
  */
@@ -39,6 +86,7 @@ export const SETTING_OWNERSHIP_MAP: Record<string, SettingOwnership> = {
   customRules: "administrator",
   customPatterns: "administrator",
   autoMaskSingleNames: "administrator",
+  sitePolicies: "administrator",
 
   // --- User-controlled settings ---
   language: "user",
@@ -92,8 +140,8 @@ const PROTECTION_MODE_RANK: Record<ProtectionMode, number> = {
 
 function arraysEqualUnordered(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false;
-  const sa = [...a].sort();
-  const sb = [...b].sort();
+  const sa = a.toSorted();
+  const sb = b.toSorted();
   // eslint-disable-next-line security/detect-object-injection
   return sa.every((v, i) => v === sb[i]);
 }
@@ -137,8 +185,9 @@ export function validateSettingMutation(
 
   // When managed:
   if (ownership === "administrator") {
-    // Per-seat administrator unlock allows local overrides when the policy itself is valid.
-    if (policy.valid && policy.seatUnlocked === true) {
+    // Per-seat or per-feature administrator unlock delegates ONLY the unlocked
+    // feature back to the user when the policy itself is valid.
+    if (isFeatureUnlockedForUser(settingKey, policy)) {
       return { allowed: true, effectiveValue: proposedValue };
     }
 
@@ -441,8 +490,8 @@ export function applySettingsWithPolicy(
     return { settings: result, rejectedKeys };
   }
 
-  // Final invariant check: administrator-enforced categories must NEVER be missing under management
-  if (policy.enforcedCategories.length > 0) {
+  // Final invariant check: administrator-enforced categories must NEVER be missing unless unlocked for user
+  if (policy.enforcedCategories.length > 0 && !isFeatureUnlockedForUser("enabledCategories", policy)) {
     const currentSet = new Set(result.enabledCategories);
     for (const enforcedCat of policy.enforcedCategories) {
       currentSet.add(enforcedCat);
@@ -452,16 +501,20 @@ export function applySettingsWithPolicy(
 
   // Final invariant check: all locked administrator settings enforced even when requestedUpdates is {}
   if (!policy.userCanDisable) {
-    const adminMode = policy.protectionMode;
-    if (adminMode === "off") {
-      result.protectionMode = "off";
-    // eslint-disable-next-line security/detect-object-injection
-    } else if (PROTECTION_MODE_RANK[result.protectionMode] < PROTECTION_MODE_RANK[adminMode]) {
-      result.protectionMode = adminMode;
+    if (!isFeatureUnlockedForUser("protectionMode", policy)) {
+      const adminMode = policy.protectionMode;
+      if (adminMode === "off") {
+        result.protectionMode = "off";
+      // eslint-disable-next-line security/detect-object-injection
+      } else if (PROTECTION_MODE_RANK[result.protectionMode] < PROTECTION_MODE_RANK[adminMode]) {
+        result.protectionMode = adminMode;
+      }
+      result.pasteGuardEnabled = result.protectionMode !== "off";
+    } else {
+      result.pasteGuardEnabled = result.protectionMode !== "off";
     }
-    result.pasteGuardEnabled = result.protectionMode !== "off";
 
-    if (policy.confidenceThresholds) {
+    if (policy.confidenceThresholds && !isFeatureUnlockedForUser("confidenceThresholds", policy)) {
       const clamped = { ...result.confidenceThresholds };
       for (const cat of ALL_CATEGORIES) {
         // eslint-disable-next-line security/detect-object-injection
@@ -473,19 +526,19 @@ export function applySettingsWithPolicy(
       }
       result.confidenceThresholds = clamped;
     }
-    if (policy.defaultRedactionStyle !== undefined) {
+    if (policy.defaultRedactionStyle !== undefined && !isFeatureUnlockedForUser("defaultRedactionStyle", policy)) {
       result.defaultRedactionStyle = policy.defaultRedactionStyle;
     }
-    if (policy.defaultStampText !== undefined) {
+    if (policy.defaultStampText !== undefined && !isFeatureUnlockedForUser("defaultStampText", policy)) {
       result.defaultStampText = policy.defaultStampText;
     }
-    if (policy.autoMaskSingleNames !== undefined) {
+    if (policy.autoMaskSingleNames !== undefined && !isFeatureUnlockedForUser("autoMaskSingleNames", policy)) {
       result.autoMaskSingleNames = policy.autoMaskSingleNames;
     }
-    if (policy.maxVisibleChars !== undefined) {
+    if (policy.maxVisibleChars !== undefined && !isFeatureUnlockedForUser("maxVisibleChars", policy)) {
       result.maxVisibleChars = policy.maxVisibleChars;
     }
-    if (policy.maxNodeChars !== undefined) {
+    if (policy.maxNodeChars !== undefined && !isFeatureUnlockedForUser("maxNodeChars", policy)) {
       result.maxNodeChars = policy.maxNodeChars;
     }
   }

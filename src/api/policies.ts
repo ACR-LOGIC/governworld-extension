@@ -27,12 +27,12 @@ export interface VerifyPolicyIntegrityOptions {
  */
 export function canonicalizePolicyRules(rules: PolicyRule[]): string {
   // Sort rules by id to ensure order-independence
-  const sorted = [...rules].sort((a, b) => a.id.localeCompare(b.id));
+  const sorted = rules.toSorted((a, b) => a.id.localeCompare(b.id));
   return JSON.stringify(
     sorted.map((r) => ({
       category: r.category,
       confidence: r.confidence,
-      cues: r.cues ? [...r.cues].sort() : undefined,
+      cues: r.cues ? r.cues.toSorted() : undefined,
       description: r.description,
       id: r.id,
       pattern: r.pattern,

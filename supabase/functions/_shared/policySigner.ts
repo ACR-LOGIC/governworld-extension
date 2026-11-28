@@ -54,6 +54,7 @@ export interface ManagedPolicySettings {
   defaultStampText?: string;
   maxVisibleChars?: number;
   maxNodeChars?: number;
+  unlockedFeatures?: string[];
 }
 
 export interface ManagedPolicyEnvelope {
@@ -96,12 +97,12 @@ export class PolicyBodyValidationError extends Error {
  * Byte-exact port of src/api/policies.ts:canonicalizePolicyRules
  */
 export function canonicalizePolicyRules(rules: PolicyRule[]): string {
-  const sorted = [...rules].sort((a, b) => a.id.localeCompare(b.id));
+  const sorted = rules.toSorted((a, b) => a.id.localeCompare(b.id));
   return JSON.stringify(
     sorted.map((r) => ({
       category: r.category,
       confidence: r.confidence,
-      cues: r.cues ? [...r.cues].sort() : undefined,
+      cues: r.cues ? r.cues.toSorted() : undefined,
       description: r.description,
       id: r.id,
       pattern: r.pattern,
@@ -119,7 +120,7 @@ export function canonicalizeManagedPolicySettings(settings: ManagedPolicySetting
     const val = (settings as Record<string, unknown>)[k];
     if (val !== undefined) {
       if (Array.isArray(val)) {
-        obj[k] = [...val].sort();
+        obj[k] = val.toSorted();
       } else if (typeof val === "object" && val !== null) {
         const subKeys = Object.keys(val).sort();
         const subObj: Record<string, unknown> = {};
@@ -329,6 +330,16 @@ export function normalizeAndValidatePolicyBody(raw: unknown): {
     settings.maxNodeChars = rawSettings.maxNodeChars;
   }
 
+  if (rawSettings.unlockedFeatures !== undefined) {
+    if (
+      !Array.isArray(rawSettings.unlockedFeatures) ||
+      !rawSettings.unlockedFeatures.every((f) => typeof f === "string" && f.trim().length > 0 && f.length <= 64)
+    ) {
+      throw new PolicyBodyValidationError("Invalid settings.unlockedFeatures");
+    }
+    settings.unlockedFeatures = [...new Set(rawSettings.unlockedFeatures.map((f) => f.trim()))];
+  }
+
   let rules: PolicyRule[] = [];
   if (obj.rules !== undefined) {
     if (!Array.isArray(obj.rules)) {
@@ -406,6 +417,7 @@ export async function buildAndSignManagedPolicyEnvelope(params: {
   seat_id: string;
   installation_id: string;
   unlocked: boolean;
+  unlocked_features?: string[];
   policy_seq: number;
 }): Promise<{ policy_envelope: ManagedPolicyEnvelope | null; policy_version: number }> {
   if (!params.policy) {
@@ -414,9 +426,16 @@ export async function buildAndSignManagedPolicyEnvelope(params: {
 
   const signingKey = await getEd25519SigningKey();
   const normalized = normalizeAndValidatePolicyBody(params.policy.body ?? {});
+  const mergedUnlockedFeatures = Array.from(
+    new Set([
+      ...(normalized.settings.unlockedFeatures ?? []),
+      ...(Array.isArray(params.unlocked_features) ? params.unlocked_features : []),
+    ]),
+  );
   const effectiveSettings: ManagedPolicySettings = {
     ...normalized.settings,
     userCanDisable: params.unlocked ? true : (normalized.settings.userCanDisable ?? false),
+    ...(mergedUnlockedFeatures.length > 0 ? { unlockedFeatures: mergedUnlockedFeatures } : {}),
   };
 
   const nowMs = Date.now();

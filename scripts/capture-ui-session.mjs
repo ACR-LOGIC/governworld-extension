@@ -275,7 +275,7 @@ try {
             .catch((e) => {
               clearTimeout(timer);
               chrome.runtime.onMessage.removeListener(listener);
-              reject(new Error(`sendMessage failed: ${e.message}`));
+              reject(new Error(`sendMessage failed: ${e.message}`, { cause: e }));
             });
         }),
       "ui-session-scan",

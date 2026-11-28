@@ -1,6 +1,10 @@
 // Copyright (c) 2026 Andres Chavez Ramirez. All rights reserved.
 import { initPopup } from "./popup.js";
 import { sanitizeErrorForLog } from "../shared/errorSanitizer.js";
+import { ensureInvokerPolyfill, ensureSwitchPolyfill } from "../shared/webPlatformPolyfills.js";
+
+ensureInvokerPolyfill();
+ensureSwitchPolyfill();
 
 /**
  * Initialisation failures must not be silent.

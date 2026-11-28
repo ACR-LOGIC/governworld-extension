@@ -62,7 +62,6 @@
             <p class="footnote profile-popover__guarantee" data-i18n="profile_guarantee">Page text and documents stay on this device.</p>
             <div class="profile-popover__actions">
               <button id="profile-goto-account-btn" class="profile-popover__item" type="button" data-i18n="settings_profile">Profile &amp; Account</button>
-              <button id="profile-pair-btn" class="profile-popover__item" type="button" data-i18n="profile_pair_extension">Pair Extension</button>
               <button id="profile-goto-settings-btn" class="profile-popover__item" type="button" data-i18n="tab_settings">Settings</button>
               <button id="profile-help-btn" class="profile-popover__item" type="button" data-i18n="profile_help_guides">Help &amp; Guides</button>
               <button id="profile-goto-about-btn" class="profile-popover__item" type="button" data-i18n="settings_about">About &amp; Diagnostics</button>
@@ -743,22 +742,19 @@
 
       <div class="settings-layout">
         <nav class="settings-nav" aria-label="Settings sections" role="navigation">
-          <div class="settings-nav-card">
-            <button class="settings-nav-btn settings-nav-btn--active" type="button" data-settings-page="profile" id="settings-nav-profile" aria-label="Profile & Account">
-              <span class="settings-nav-card__icon" aria-hidden="true">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-                  <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-                </svg>
-              </span>
-              <span class="settings-nav-card__text">
-                <span class="settings-nav-card__title" data-i18n="settings_profile">Profile &amp; Account</span>
-                <span class="settings-nav-card__desc" data-i18n="settings_card_profile_desc">Pair your extension with your organization.</span>
-              </span>
-              <span class="settings-nav-arrow" aria-hidden="true">›</span>
-            </button>
-            <button id="settings-nav-pair-btn" class="btn btn--primary btn--sm" type="button" data-i18n="profile_pair_extension">Pair Extension</button>
-          </div>
+          <button class="settings-nav-btn settings-nav-btn--active" type="button" data-settings-page="profile" id="settings-nav-profile" aria-label="Profile & Account">
+            <span class="settings-nav-card__icon" aria-hidden="true">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+              </svg>
+            </span>
+            <span class="settings-nav-card__text">
+              <span class="settings-nav-card__title" data-i18n="settings_profile">Profile &amp; Account</span>
+              <span class="settings-nav-card__desc" data-i18n="settings_card_profile_desc">Pair your extension with your organization.</span>
+            </span>
+            <span class="settings-nav-arrow" aria-hidden="true">›</span>
+          </button>
           <button class="settings-nav-btn" type="button" data-settings-page="protection" id="settings-nav-protection" aria-label="Protection">
             <span class="settings-nav-card__icon" aria-hidden="true">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -891,65 +887,22 @@
             <p class="footnote">GovernWorld runs detection, OCR, and redaction on your device by default with no account required. Page text and documents stay on this device.</p>
           </div>
 
-          <!-- Local Office Manager Pairing Card -->
+          <!-- Unified Office Manager Coordination & Single-Entry Pairing -->
           <div id="office-manager-card" class="office-card">
             <div class="office-card__title">Office Manager Coordination</div>
-            <p class="footnote">Link this browser extension to your organization's local Office Manager to switch to managed mode.</p>
-            <div id="office-manager-status" class="footnote">Status: Local unmanaged</div>
+            <p class="footnote">Link this browser extension to your organization's coordinator to switch to managed mode (1 user = 1 seat across distinct browser families).</p>
+            <div id="office-browser-binding" class="office-card__binding footnote">Host browser: Detecting…</div>
+            <div id="office-manager-status" class="footnote" role="status" aria-live="polite">Status: Local unmanaged</div>
+            <p id="office-admin-lock-notice" class="office-card__lock-notice footnote" role="note" hidden data-i18n="office_admin_lock_notice">Managed and locked by your organization administrator. Once paired, only your administrator can unpair or reset this extension.</p>
             <button id="office-pair-start-btn" class="btn btn--primary btn--sm" type="button" data-i18n="profile_pair_extension">Pair Extension</button>
             <div id="office-manager-form" class="office-card__form" hidden>
-              <input id="office-pairing-input" class="office-card__input" type="text" maxlength="6" placeholder="6-digit Pairing Code" />
+              <input id="office-pairing-email-input" class="office-card__input office-card__input--email" type="email" autocomplete="email" aria-label="Work email (for email-bound token)" placeholder="Work email (for email-bound token)" />
+              <input id="office-pairing-input" class="office-card__input" type="text" maxlength="8" aria-label="6- or 8-digit Pairing Token" placeholder="6- or 8-digit Pairing Token" />
               <div class="office-card__actions">
                 <button id="office-pair-btn" class="btn btn--primary btn--sm" type="button">Pair with Office Manager</button>
-                <button id="office-unpair-btn" class="btn btn--ghost btn--sm" type="button" style="display: none;">Unpair</button>
               </div>
             </div>
           </div>
-
-          <!-- Enterprise Signed Policy Enrollment & Sync (POPUP_MANAGEMENT_*) -->
-          <details id="enterprise-mgmt-card" class="about-collapsible">
-            <summary data-i18n="mgmt_card_title">Enterprise Device Enrollment &amp; Signed Policy Sync</summary>
-            <div class="about-collapsible__body">
-              <p class="footnote" data-i18n="mgmt_card_desc">Enroll this browser installation with your organization's Ed25519 policy coordinator or force-sync the active managed policy.</p>
-              <p id="mgmt-status-text" class="footnote" role="status" aria-live="polite" data-i18n="mgmt_status_default">Operating Mode: LOCAL (Unenrolled)</p>
-              <div class="form-row">
-                <label for="mgmt-org-id-input" data-i18n="mgmt_org_id_label">Organization ID</label>
-                <input id="mgmt-org-id-input" type="text" placeholder="org-acme-01" />
-              </div>
-              <div class="form-row">
-                <label for="mgmt-org-name-input" data-i18n="mgmt_org_name_label">Organization Name (Optional)</label>
-                <input id="mgmt-org-name-input" type="text" placeholder="Acme Health" />
-              </div>
-              <div class="form-row">
-                <label for="mgmt-emp-id-input" data-i18n="mgmt_emp_id_label">Employee / Device Label</label>
-                <input id="mgmt-emp-id-input" type="text" placeholder="emp-1042" />
-              </div>
-              <div class="form-row">
-                <label for="mgmt-coord-url-input" data-i18n="mgmt_coord_url_label">Coordinator URL (Optional)</label>
-                <input id="mgmt-coord-url-input" type="url" placeholder="http://127.0.0.1:4820" />
-              </div>
-              <div class="office-card__actions">
-                <button id="mgmt-enroll-btn" class="btn btn--primary btn--sm" type="button" data-i18n="mgmt_enroll_btn">Enroll Device</button>
-                <button id="mgmt-sync-policy-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="mgmt_sync_btn">Sync Policy</button>
-                <button id="mgmt-unenroll-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="mgmt_unenroll_btn">Unenroll</button>
-              </div>
-            </div>
-          </details>
-
-          <!-- Optional OAuth & Gateway API Connection -->
-          <details id="gateway-api-card" class="about-collapsible">
-            <summary data-i18n="api_card_title">Workspace OAuth &amp; Gateway API Connection (Optional)</summary>
-            <div class="about-collapsible__body">
-              <p class="footnote" data-i18n="api_card_desc">Optional workspace connection for team policy sync and rule submissions. Local scanning works without connecting.</p>
-              <div class="office-card__actions">
-                <button id="oauth-connect-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="oauth_connect_btn">Sign in with OAuth</button>
-                <button id="api-sync-policy-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="api_sync_policy_btn">Sync Workspace Policy</button>
-                <button id="api-disconnect-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="api_disconnect_btn">Disconnect API</button>
-              </div>
-              <p id="oauth-status" class="footnote" role="status" aria-live="polite"></p>
-              <p id="api-connection-status" class="footnote" role="status" aria-live="polite"></p>
-            </div>
-          </details>
           <hr class="section-divider" />
 
           <!-- Organization settings. Hidden entirely for members: a member sees
@@ -986,11 +939,11 @@
         <div class="settings-page" id="settings-page-protection" data-settings-page="protection" hidden>
           <h3 data-i18n="protection_settings_title">Protection Settings</h3>
           <label class="toggle-row">
-            <input id="paste-guard-toggle" type="checkbox" role="switch" aria-checked="true" />
+            <input id="paste-guard-toggle" type="checkbox" switch role="switch" aria-checked="true" />
             <span data-i18n="paste_guard_toggle">Paste Shield</span>
           </label>
           <label class="toggle-row">
-            <input id="always-on-toggle" type="checkbox" role="switch" aria-checked="false" />
+            <input id="always-on-toggle" type="checkbox" switch role="switch" aria-checked="false" />
             <span data-i18n="always_on_toggle">Always protect all sites</span>
           </label>
           <p class="footnote" data-i18n="always_on_desc">Runs on every site you visit. Needs site access you approve, revocable anytime.</p>
@@ -998,12 +951,12 @@
           <p id="protection-state" class="footnote" role="status" aria-live="polite"></p>
           <p id="managed-lock-notice" class="footnote" role="status" hidden></p>
           <label class="toggle-row">
-            <input id="context-menus-toggle" type="checkbox" role="switch" aria-checked="false" />
+            <input id="context-menus-toggle" type="checkbox" switch role="switch" aria-checked="false" />
             <span data-i18n="context_menus_toggle">Context Menu Protection</span>
           </label>
           <button type="button" class="help-link help-link--sm" data-guide="guide-context-menus" data-i18n="ctx_menu_guide" data-i18n-aria-label="guide-context-menus">Context menu guide ↗</button>
           <label class="toggle-row">
-            <input id="auto-copy-toggle" type="checkbox" role="switch" aria-checked="false" />
+            <input id="auto-copy-toggle" type="checkbox" switch role="switch" aria-checked="false" />
             <span data-i18n="auto_copy_toggle">Automatically copy sanitized text</span>
           </label>
           <div class="form-row">
@@ -1070,12 +1023,12 @@
             <p class="footnote" data-i18n="categories_label">Protection Categories</p>
             <fieldset id="category-list" class="category-list" aria-label="Detection categories list"></fieldset>
             <label class="toggle-row" id="auto-mask-single-names-row">
-              <input id="auto-mask-single-names-toggle" type="checkbox" role="switch" aria-checked="false" />
+              <input id="auto-mask-single-names-toggle" type="checkbox" switch role="switch" aria-checked="false" />
               <span data-i18n="auto_mask_single_names_toggle">Auto-mask single names (Possible name)</span>
             </label>
             <p class="footnote" id="auto-mask-single-names-desc" data-i18n="auto_mask_single_names_desc">Default off: single names remain review-only (unchecked) to avoid false positives, while multi-part structured names still auto-mask.</p>
             <label class="toggle-row" id="medical-dictionary-row">
-              <input id="medical-dictionary-toggle" type="checkbox" role="switch" aria-checked="false" />
+              <input id="medical-dictionary-toggle" type="checkbox" switch role="switch" aria-checked="false" />
               <span data-i18n="medical_dictionary_toggle">Medical dictionary (diagnoses &amp; medications)</span>
             </label>
             <p class="footnote" id="medical-dictionary-desc" data-i18n="medical_dictionary_desc">Default off: lazy-loads an offline clinical term list (conditions, medications, procedures) only when enabled.</p>
@@ -1109,7 +1062,7 @@
             </div>
           </div>
           <label class="toggle-row">
-            <input id="placeholder-toggle" type="checkbox" role="switch" aria-checked="false" />
+            <input id="placeholder-toggle" type="checkbox" switch role="switch" aria-checked="false" />
             <span data-i18n="placeholder_toggle">Show redaction labels</span>
           </label>
           <div class="form-row">
@@ -1156,23 +1109,23 @@
             </select>
           </div>
           <label class="toggle-row">
-            <input id="high-contrast-toggle" type="checkbox" role="switch" aria-checked="false" />
+            <input id="high-contrast-toggle" type="checkbox" switch role="switch" aria-checked="false" />
             <span data-i18n="high_contrast_toggle">High Contrast</span>
           </label>
           <label class="toggle-row">
-            <input id="dyslexia-toggle" type="checkbox" role="switch" aria-checked="false" />
+            <input id="dyslexia-toggle" type="checkbox" switch role="switch" aria-checked="false" />
             <span data-i18n="dyslexia_toggle">Dyslexia-Friendly Mode</span>
           </label>
           <label class="toggle-row">
-            <input id="reduced-motion-toggle" type="checkbox" role="switch" aria-checked="false" />
+            <input id="reduced-motion-toggle" type="checkbox" switch role="switch" aria-checked="false" />
             <span data-i18n="reduced_motion_toggle">Reduced Motion</span>
           </label>
           <label class="toggle-row">
-            <input id="speech-toggle" type="checkbox" role="switch" aria-checked="false" />
+            <input id="speech-toggle" type="checkbox" switch role="switch" aria-checked="false" />
             <span data-i18n="speech_toggle">Speech Announcements</span>
           </label>
           <label class="toggle-row">
-            <input id="verbose-aria-toggle" type="checkbox" role="switch" aria-checked="false" />
+            <input id="verbose-aria-toggle" type="checkbox" switch role="switch" aria-checked="false" />
             <span data-i18n="verbose_aria_toggle">Verbose ARIA Mode</span>
           </label>
           <button type="button" class="help-link help-link--sm" data-guide="guide-accessibility" data-i18n="info_btn" data-i18n-aria-label="guide-accessibility">Info ↗</button>
@@ -1187,37 +1140,37 @@
 
           <h4 style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-muted); margin: 12px 0 6px;" data-i18n="notify_channels_title">Alert Channels</h4>
           <label class="toggle-row">
-            <input id="notifications-toggle" type="checkbox" role="switch" aria-checked="false" />
+            <input id="notifications-toggle" type="checkbox" switch role="switch" aria-checked="false" />
             <span data-i18n="notify_os_desktop">Desktop &amp; OS notifications</span>
           </label>
           <label class="toggle-row">
-            <input id="notify-toast-toggle" type="checkbox" role="switch" aria-checked="true" />
+            <input id="notify-toast-toggle" type="checkbox" switch role="switch" aria-checked="true" />
             <span data-i18n="notify_in_page_toasts">In-page toast alerts</span>
           </label>
           <label class="toggle-row">
-            <input id="notify-badge-toggle" type="checkbox" role="switch" aria-checked="true" />
+            <input id="notify-badge-toggle" type="checkbox" switch role="switch" aria-checked="true" />
             <span data-i18n="notify_icon_badges">Toolbar badge indicators</span>
           </label>
           <label class="toggle-row">
-            <input id="notify-sound-toggle" type="checkbox" role="switch" aria-checked="false" />
+            <input id="notify-sound-toggle" type="checkbox" switch role="switch" aria-checked="false" />
             <span data-i18n="notify_sound_alerts">Audio &amp; speech alerts</span>
           </label>
 
           <h4 style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-text-muted); margin: 12px 0 6px;" data-i18n="notify_events_title">Event Triggers</h4>
           <label class="toggle-row">
-            <input id="notify-findings-toggle" type="checkbox" role="switch" aria-checked="true" />
+            <input id="notify-findings-toggle" type="checkbox" switch role="switch" aria-checked="true" />
             <span data-i18n="notify_event_findings">Page scan sensitive findings</span>
           </label>
           <label class="toggle-row">
-            <input id="notify-paste-toggle" type="checkbox" role="switch" aria-checked="true" />
+            <input id="notify-paste-toggle" type="checkbox" switch role="switch" aria-checked="true" />
             <span data-i18n="notify_event_paste">Paste Shield interceptions</span>
           </label>
           <label class="toggle-row">
-            <input id="notify-policy-toggle" type="checkbox" role="switch" aria-checked="true" />
+            <input id="notify-policy-toggle" type="checkbox" switch role="switch" aria-checked="true" />
             <span data-i18n="notify_event_policy">Policy &amp; protection mode changes</span>
           </label>
           <label class="toggle-row">
-            <input id="notify-redact-toggle" type="checkbox" role="switch" aria-checked="true" />
+            <input id="notify-redact-toggle" type="checkbox" switch role="switch" aria-checked="true" />
             <span data-i18n="notify_event_redact">Document redaction complete</span>
           </label>
 
@@ -1328,6 +1281,18 @@
               <span class="diag-value" data-i18n="diag_no_network">Not used in Local Only mode ✓</span>
             </div>
             <div class="diag-item">
+              <span class="diag-label" data-i18n="diag_browser_family">Host Browser</span>
+              <span class="diag-value" id="diag-browser-family-value">—</span>
+            </div>
+            <div class="diag-item">
+              <span class="diag-label" data-i18n="diag_telemetry_isolation">Telemetry Isolation</span>
+              <span class="diag-value" id="diag-telemetry-isolation-value" data-i18n="diag_telemetry_isolated_val">Strict Fixed Schema (Zero PII) ✓</span>
+            </div>
+            <div class="diag-item">
+              <span class="diag-label" data-i18n="diag_heartbeat">Health Heartbeat</span>
+              <span class="diag-value" id="diag-heartbeat-value" data-i18n="diag_heartbeat_local">Inactive (Local Only) ✓</span>
+            </div>
+            <div class="diag-item">
               <span class="diag-label" data-i18n="diag_version">Version</span>
               <span class="diag-value" id="diag-version-value">—</span>
             </div>
@@ -1335,8 +1300,8 @@
 
           <div class="about-actions">
             <div class="about-actions__pair">
-              <button id="reset-settings-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="reset_settings_btn">Reset all settings</button>
-              <button id="clear-audit-btn" class="btn btn--ghost btn--sm" type="button" data-i18n="clear_audit_btn">Clear audit trail</button>
+              <button id="reset-settings-btn" class="btn btn--ghost btn--sm" type="button" commandfor="reset-confirm-dialog" command="show-modal" data-i18n="reset_settings_btn">Reset all settings</button>
+              <button id="clear-audit-btn" class="btn btn--ghost btn--sm" type="button" commandfor="clear-audit-dialog" command="show-modal" data-i18n="clear_audit_btn">Clear audit trail</button>
             </div>
             <div class="about-legal-links">
               <a id="privacy-link" href="#" class="footnote" data-i18n="privacy_link">Privacy policy</a>
@@ -1553,7 +1518,7 @@
               </div>
               <div id="guide-settings" class="guide-card">
                 <h4 data-i18n="guide-settings">Settings — Navigating All 7 Sections</h4>
-                <p class="footnote">Use the top-right <strong>Profile Avatar</strong> menu and choose <strong>Settings</strong> to access: <strong>Profile &amp; Account</strong> (Office Manager pairing, Enterprise Device Enrollment, OAuth/API), <strong>Protection</strong> (Paste Shield, Always-On, detection presets, 24 categories, confidence thresholds), <strong>Appearance</strong>, <strong>Notifications</strong>, <strong>Privacy</strong>, <strong>Advanced</strong> (scan limits &amp; OCR), and <strong>About &amp; Diagnostics</strong>.</p>
+                <p class="footnote">Use the top-right <strong>Profile Avatar</strong> menu and choose <strong>Settings</strong> to access: <strong>Profile &amp; Account</strong> (single-entry Office Manager Coordination pairing and administrator lock status), <strong>Protection</strong> (Paste Shield, Always-On, detection presets, 24 categories, confidence thresholds), <strong>Appearance</strong>, <strong>Notifications</strong>, <strong>Privacy</strong>, <strong>Advanced</strong> (scan limits &amp; OCR), and <strong>About &amp; Diagnostics</strong>.</p>
               </div>
               <div id="guide-shortcuts" class="guide-card">
                 <h4 data-i18n="guide-shortcuts">Shortcuts — Keyboard Hotkeys</h4>
@@ -1569,7 +1534,7 @@
               </div>
               <div id="guide-cloud" class="guide-card">
                 <h4 data-i18n="guide-cloud">Cloud &amp; Enterprise Coordination</h4>
-                <p class="footnote">Cloud analysis is disabled by default so all page and document scanning runs locally on your device. Optional Organization Gateway, OAuth, and Office Manager pairing in <strong>Profile menu → Settings → Profile &amp; Account</strong> pull Ed25519-signed compliance policies and emit 15-minute metadata-only status checks (device UUID, browser info, extension/policy versions) while keeping accessibility controls unlocked and transmitting zero browsing history, URLs, page text, or documents.</p>
+                <p class="footnote">Cloud analysis is disabled by default so all page and document scanning runs locally on your device. Optional Office Manager Coordination pairing in <strong>Profile menu → Settings → Profile &amp; Account</strong> (subject to explicit pre-pairing confirmation and administrator-only unpairing) pulls Ed25519-signed compliance policies and emits 15-minute closed-schema metadata health checks while keeping accessibility controls unlocked and transmitting zero browsing history, URLs, page text, or documents.</p>
               </div>
               <div id="guide-privacy" class="guide-card">
                 <h4 data-i18n="guide-privacy">Privacy &amp; Zero-Egress Guarantee</h4>
@@ -1583,22 +1548,6 @@
           </details>
         </div>
       </div>
-      </div>
-
-      <!-- Bottom Pair Extension card (second trigger for the same pairing
-           form on the Profile & Account page — one form, one handler). -->
-      <div class="settings-pair-card">
-        <span class="settings-nav-card__icon" aria-hidden="true">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
-            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
-          </svg>
-        </span>
-        <div class="settings-pair-card__text">
-          <strong data-i18n="settings_pair_card_title">Pair Extension</strong>
-          <span class="footnote" data-i18n="settings_pair_card_desc">Connect this extension with your organization for centralized management.</span>
-        </div>
-        <button id="settings-pair-now-btn" class="btn btn--primary btn--sm" type="button" data-i18n="settings_pair_now">Pair Now</button>
       </div>
     </section>
   </main>
@@ -1659,7 +1608,7 @@
     <h3 id="reset-confirm-title" data-i18n="dialog_reset_title">Reset All Settings</h3>
     <p id="reset-confirm-desc" class="footnote" data-i18n="dialog_reset_desc">This will restore all settings to their defaults. Your custom logic will be preserved.</p>
     <div class="dialog-actions">
-      <button id="reset-cancel" class="btn btn--ghost btn--sm" type="button" data-i18n="dialog_cancel">Cancel</button>
+      <button id="reset-cancel" class="btn btn--ghost btn--sm" type="button" commandfor="reset-confirm-dialog" command="close" data-i18n="dialog_cancel">Cancel</button>
       <button id="reset-confirm" class="btn btn--primary btn--sm" type="button" data-i18n="dialog_reset_confirm">Reset Settings</button>
     </div>
   </dialog>
@@ -1668,8 +1617,29 @@
     <h3 id="clear-audit-title" data-i18n="dialog_clear_audit_title">Clear Audit Trail</h3>
     <p id="clear-audit-desc" class="footnote" data-i18n="dialog_clear_audit_desc">This will permanently delete all audit records. This action cannot be undone.</p>
     <div class="dialog-actions">
-      <button id="clear-audit-cancel" class="btn btn--ghost btn--sm" type="button" data-i18n="dialog_cancel">Cancel</button>
+      <button id="clear-audit-cancel" class="btn btn--ghost btn--sm" type="button" commandfor="clear-audit-dialog" command="close" data-i18n="dialog_cancel">Cancel</button>
       <button id="clear-audit-confirm" class="btn btn--primary btn--sm" type="button" data-i18n="dialog_clear_audit_confirm">Clear Audit</button>
+    </div>
+  </dialog>
+
+  <dialog id="pairing-consent-dialog" class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="pairing-consent-title" aria-describedby="pairing-consent-desc">
+    <h3 id="pairing-consent-title" data-i18n="pairing_consent_title">Confirm Organization Pairing</h3>
+    <div id="pairing-consent-desc" class="dialog__body footnote">
+      <p data-i18n="pairing_consent_body_1">By pairing this extension, you are granting your organization's administrator control over its configuration and policies.</p>
+      <p><strong data-i18n="pairing_consent_body_2">Once paired, you cannot unpair this extension yourself. Unpairing can only be performed or approved by your administrator.</strong></p>
+    </div>
+    <div class="dialog-actions">
+      <button id="pairing-consent-cancel" class="btn btn--ghost btn--sm" type="button" commandfor="pairing-consent-dialog" command="close" data-i18n="dialog_cancel">Cancel</button>
+      <button id="pairing-consent-confirm" class="btn btn--primary btn--sm" type="button" data-i18n="pairing_consent_confirm">Accept &amp; Pair Extension</button>
+    </div>
+  </dialog>
+
+  <dialog id="pairing-conflict-dialog" class="dialog" role="alertdialog" aria-modal="true" aria-labelledby="pairing-conflict-title" aria-describedby="pairing-conflict-desc">
+    <h3 id="pairing-conflict-title" data-i18n="pairing_conflict_title">Active Extension Already Paired</h3>
+    <p id="pairing-conflict-desc" class="footnote"></p>
+    <div class="dialog-actions">
+      <button id="pairing-conflict-cancel" class="btn btn--ghost btn--sm" type="button" commandfor="pairing-conflict-dialog" command="close" data-i18n="dialog_cancel">Cancel</button>
+      <button id="pairing-conflict-confirm" class="btn btn--primary btn--sm" type="button" data-i18n="pairing_conflict_confirm">Unpair &amp; Reset Previous</button>
     </div>
   </dialog>
 

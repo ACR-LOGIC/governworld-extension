@@ -41,7 +41,7 @@ function percentile(sorted, p) {
 }
 
 function summarize(samples) {
-  const s = [...samples].sort((a, b) => a - b);
+  const s = samples.toSorted((a, b) => a - b);
   return {
     n: s.length,
     p50: percentile(s, 50),
@@ -395,7 +395,7 @@ try {
       await page.evaluate(() => {
         document.getElementById("stage").innerHTML =
           '<p id="seed-node">Seed record: test.user@example.test</p><p id="editable-node">Initial clean clinical status line.</p>';
-        document.getElementById("batch-container").innerHTML = "";
+        document.getElementById("batch-container").replaceChildren();
       });
       const st = await injectAndScan();
       await applyMasks((st.findings || []).map((f) => f.id));
@@ -462,7 +462,7 @@ try {
       await page.goto(fixtureUrl, { waitUntil: "load" });
       await page.evaluate(() => {
         document.getElementById("stage").innerHTML = '<p id="editable-node">Baseline clean text.</p>';
-        document.getElementById("batch-container").innerHTML = "";
+        document.getElementById("batch-container").replaceChildren();
       });
       await injectAndScan();
       await page.evaluate(() => {
@@ -511,7 +511,7 @@ try {
       await page.goto(fixtureUrl, { waitUntil: "load" });
       await page.evaluate(() => {
         document.getElementById("stage").innerHTML = '<p id="editable-node">Clean start page.</p>';
-        document.getElementById("batch-container").innerHTML = "";
+        document.getElementById("batch-container").replaceChildren();
       });
       const initState = await injectAndScan();
       expectOrRecord("init clean", (initState.findings || []).length === 0);
@@ -584,7 +584,7 @@ try {
     const sampleText = "Direct care notice to josé.maría@example.test and élise.müller@klinik.example.de today.";
     await page.evaluate((text) => {
       document.getElementById("stage").innerHTML = `<p id="unicode-email" style="font-size:20px;padding:16px">${text}</p>`;
-      document.getElementById("batch-container").innerHTML = "";
+      document.getElementById("batch-container").replaceChildren();
     }, sampleText);
     const st = await injectAndScan();
     await applyMasks((st.findings || []).map((f) => f.id));
@@ -626,7 +626,7 @@ try {
     await page.goto(fixtureUrl, { waitUntil: "load" });
     await page.evaluate(() => {
       const stage = document.getElementById("stage");
-      stage.innerHTML = "";
+      stage.replaceChildren();
       const frag = document.createDocumentFragment();
       for (let i = 0; i < 10000; i++) {
         const p = document.createElement("p");
@@ -637,7 +637,7 @@ try {
         frag.appendChild(p);
       }
       stage.appendChild(frag);
-      document.getElementById("batch-container").innerHTML = "";
+      document.getElementById("batch-container").replaceChildren();
     });
     const st10k = await injectAndScan();
     await popup.waitForTimeout(300);
@@ -671,7 +671,7 @@ try {
     await page.goto(fixtureUrl, { waitUntil: "load" });
     await page.evaluate(() => {
       const stage = document.getElementById("stage");
-      stage.innerHTML = "";
+      stage.replaceChildren();
       const frag = document.createDocumentFragment();
       for (let i = 0; i < 220; i++) {
         const p = document.createElement("p");

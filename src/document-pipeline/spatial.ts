@@ -119,7 +119,7 @@ export function sortReadingOrder<T extends { token: OcrToken }>(
   items: readonly T[],
   lineTolerance = 4
 ): T[] {
-  return [...items].sort((a, b) => {
+  return items.toSorted((a, b) => {
     const ay = a.token.bbox.y + a.token.bbox.height / 2;
     const by = b.token.bbox.y + b.token.bbox.height / 2;
     if (Math.abs(ay - by) <= lineTolerance) {

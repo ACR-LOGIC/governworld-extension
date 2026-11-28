@@ -15,6 +15,7 @@
  * - Safe-state fail-closed design for expired, revoked, or invalid policies.
  */
 
+import type { BrowserFamily } from "./browserFamily.js";
 import type { FindingCategory, RedactionStyle } from "./types.js";
 import type { ProtectionMode } from "./settings.js";
 import type { NetworkDestinationPolicy } from "./networkGuard.js";
@@ -49,6 +50,7 @@ export interface ManagedPolicySettings {
   maxVisibleChars?: number;
   maxNodeChars?: number;
   customRules?: PolicyRule[];
+  unlockedFeatures?: string[];
 }
 
 export interface ManagedPolicyEnvelope {
@@ -76,6 +78,13 @@ export interface ManagementEnrollment {
   organization_name?: string;
   employee_id: string;
   employee_email?: string;
+  user_email_hash?: string;
+  browser_family?: BrowserFamily;
+  device_activation_hash?: string;
+  seat_id?: string;
+  subscription_lapsed?: boolean;
+  lapsed_at?: string;
+  unlocked_features?: string[];
   device_id: string; // installation UUID
   enrolled_at: string; // ISO 8601
   coordinator_url?: string;
@@ -122,7 +131,7 @@ export function canonicalizeManagedPolicySettings(settings: ManagedPolicySetting
         obj[k] = JSON.parse(canonicalizePolicyRules(val as PolicyRule[]));
       } else if (Array.isArray(val)) {
         // eslint-disable-next-line security/detect-object-injection
-        obj[k] = [...val].sort();
+        obj[k] = val.toSorted();
       } else if (typeof val === "object" && val !== null) {
         const subKeys = Object.keys(val).sort();
         const subObj: Record<string, unknown> = {};
@@ -397,6 +406,14 @@ export async function verifyAndValidateManagedPolicy(
   if (settings.customRules !== undefined && !Array.isArray(settings.customRules)) {
     return { valid: false, code: "SCHEMA_INVALID", reason: "Invalid customRules." };
   }
+  if (settings.unlockedFeatures !== undefined) {
+    if (
+      !Array.isArray(settings.unlockedFeatures) ||
+      !settings.unlockedFeatures.every((f) => typeof f === "string" && f.trim().length > 0 && f.length <= 64)
+    ) {
+      return { valid: false, code: "SCHEMA_INVALID", reason: "Invalid unlockedFeatures." };
+    }
+  }
 
   // 6. Content Hash Check
   let computedHash: string;
@@ -478,6 +495,9 @@ export function managedPolicyToEnterprisePolicy(envelope: ManagedPolicyEnvelope)
     ...(settings.maxVisibleChars !== undefined ? { maxVisibleChars: settings.maxVisibleChars } : {}),
     ...(settings.maxNodeChars !== undefined ? { maxNodeChars: settings.maxNodeChars } : {}),
     ...(customRules ? { customRules: [...customRules] } : {}),
+    ...(Array.isArray(settings.unlockedFeatures) && settings.unlockedFeatures.length > 0
+      ? { unlockedFeatures: [...new Set(settings.unlockedFeatures)] }
+      : {}),
     coordinatorOrigin: envelope.organization_id,
     organizationName: envelope.organization_name || envelope.organization_id,
     policyVersion: envelope.policy_version,

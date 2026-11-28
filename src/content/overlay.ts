@@ -114,7 +114,6 @@ export function createOverlay(
     if (rects.length > 0 && !host.isConnected && root.body) {
       root.body.appendChild(host);
     }
-    layer.replaceChildren();
     const vw = Math.max(
       1,
       root.defaultView?.innerWidth ||
@@ -129,6 +128,7 @@ export function createOverlay(
         (typeof window !== "undefined" ? window.innerHeight : 0) ||
         768
     );
+    const fragment = root.createDocumentFragment();
     for (const rect of rects) {
       if (
         !Number.isFinite(rect.x) ||
@@ -145,8 +145,9 @@ export function createOverlay(
       }
       const el = root.createElement("div");
       applyStyle(el, rect);
-      layer.appendChild(el);
+      fragment.appendChild(el);
     }
+    layer.replaceChildren(fragment);
   };
 
   const schedulePaint = () => {

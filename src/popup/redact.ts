@@ -62,7 +62,7 @@ async function render(ref: RedactedDocRef): Promise<void> {
   if (!sheetsEl) return;
   sheetsEl.replaceChildren();
 
-  for (const page of [...ref.pages].sort((a, b) => a.pageIndex - b.pageIndex)) {
+  for (const page of ref.pages.toSorted((a, b) => a.pageIndex - b.pageIndex)) {
     const bytes = await getDocBytes(page.key);
     if (!bytes) {
       fail("This redacted document is no longer available. Re-run the redaction to print it again.");
